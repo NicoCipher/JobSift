@@ -7,6 +7,7 @@ from pathlib import Path
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.domain.models import CandidateProfile, SourceTarget
 from job_scout.orchestration.pipeline import run_pipeline
+from job_scout.profile import create_profile_interactively
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -19,7 +20,14 @@ def main() -> None:
     collect.add_argument("--company", required=True)
     collect.add_argument("--database", default="jobs.sqlite3")
     collect.add_argument("--csv", default="exports/jobs.csv")
+    profile = commands.add_parser("profile")
+    profile_commands = profile.add_subparsers(dest="profile_command", required=True)
+    profile_create = profile_commands.add_parser("create")
+    profile_create.add_argument("--output-dir", default="config/clients")
     args = parser.parse_args()
+    if args.command == "profile":
+        create_profile_interactively(output_dir=args.output_dir)
+        return
     profile = CandidateProfile.model_validate_json(Path(args.client).read_text(encoding="utf-8"))
     summary = run_pipeline(
         collector=GreenhouseCollector(),

@@ -32,6 +32,15 @@ def test_title_and_remote_conflict() -> None:
     assert classify_remote("Remote", "Work 3 days per week in-office") is RemoteStatus.HYBRID
 
 
+def test_office_remote_evidence_and_specific_conflict() -> None:
+    assert classify_remote(None, None, ["Remote US"], []) is RemoteStatus.REMOTE
+    assert (
+        classify_remote("Remote - United States", "This role is hybrid, 3 days per week in office")
+        is RemoteStatus.HYBRID
+    )
+    assert classify_remote(None, None, ["Remote Engineering"], []) is RemoteStatus.UNKNOWN
+
+
 def test_fingerprint_ignores_collection_time() -> None:
     args = {
         "title": "Engineer",

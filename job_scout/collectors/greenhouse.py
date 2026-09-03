@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from typing import Any
@@ -7,13 +8,20 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError
 
-from job_scout.domain.models import CollectionResult, CollectionStatus, Job, SourceTarget
+from job_scout.domain.models import (
+    CollectionResult,
+    CollectionStatus,
+    EmploymentType,
+    Job,
+    SourceTarget,
+)
 from job_scout.normalization.core import (
     canonicalize_url,
     classify_remote,
     content_fingerprint,
     html_to_text,
 )
+from job_scout.normalization.location import normalize_location
 
 
 class _Location(BaseModel):
@@ -42,6 +50,7 @@ class _GreenhouseJob(BaseModel):
     first_published: datetime | None = None
     departments: list[_Department] = Field(default_factory=list)
     offices: list[_Office] = Field(default_factory=list)
+    metadata: Any = None
 
 
 class _Payload(BaseModel):
@@ -119,6 +128,11 @@ class GreenhouseCollector:
         location = item.location.name if item.location else None
         office_names = [office.name for office in item.offices if office.name]
         office_locations = [office.location for office in item.offices if office.location]
+        normalized_location = normalize_location(location, office_locations)
+        employment_type, employment_evidence = self._employment_type_from_metadata(item.metadata)
+        location_evidence = " | ".join(
+            value for value in [location, *office_names, *office_locations] if value
+        )
         raw_metadata = {
             "job_id": item.id,
             "board_token": target.board_id,
@@ -130,6 +144,7 @@ class GreenhouseCollector:
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
             "first_published": item.first_published.isoformat() if item.first_published else None,
             "absolute_url": str(item.absolute_url),
+            "employment_type_evidence": employment_evidence,
         }
         return Job(
             id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"greenhouse:{target.board_id}:{item.id}")),
@@ -143,13 +158,49 @@ class GreenhouseCollector:
             job_url=canonical,
             canonical_url=canonical,
             location_text=location,
-            remote_status=classify_remote(location, text),
+            country=normalized_location.country,
+            region=normalized_location.region,
+            city=normalized_location.city,
+            remote_status=classify_remote(location, text, office_names, office_locations),
+            employment_type=employment_type,
             department=item.departments[0].name if item.departments else None,
             offices=office_names,
             posted_at=item.first_published,
             updated_at=item.updated_at,
             content_fingerprint=content_fingerprint(
-                title=item.title, description=text, location=location, employment_type=None
+                title=item.title,
+                description=text,
+                location=location_evidence or None,
+                employment_type=employment_type,
             ),
             raw_metadata=raw_metadata,
         )
+
+    @staticmethod
+    def _employment_type_from_metadata(
+        metadata: Any,
+    ) -> tuple[EmploymentType | None, dict[str, str] | None]:
+        if not isinstance(metadata, list):
+            return None, None
+        mapping = {
+            "full time": EmploymentType.FULL_TIME,
+            "part time": EmploymentType.PART_TIME,
+            "contract": EmploymentType.CONTRACT,
+            "temporary": EmploymentType.TEMPORARY,
+            "internship": EmploymentType.INTERNSHIP,
+            "freelance": EmploymentType.FREELANCE,
+        }
+        for field in metadata:
+            if not isinstance(field, dict):
+                continue
+            name = re.sub(r"[_-]+", " ", str(field.get("name") or "")).casefold().strip()
+            if name != "employment type":
+                continue
+            value = field.get("value")
+            if not isinstance(value, str):
+                return None, None
+            normalized = re.sub(r"[_-]+", " ", value).casefold().strip()
+            employment_type = mapping.get(normalized)
+            if employment_type:
+                return employment_type, {"field": str(field["name"]), "value": value}
+        return None, None

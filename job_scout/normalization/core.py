@@ -4,6 +4,7 @@ import hashlib
 import html
 import json
 import re
+from collections.abc import Iterable
 from html.parser import HTMLParser
 from typing import ClassVar
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -71,10 +72,25 @@ def normalize_title(value: str) -> str:
     return " ".join(value.split())
 
 
-def classify_remote(location: str | None, description: str | None) -> RemoteStatus:
+def classify_remote(
+    location: str | None,
+    description: str | None,
+    office_names: Iterable[str] = (),
+    office_locations: Iterable[str] = (),
+) -> RemoteStatus:
     loc = (location or "").casefold()
     body = (description or "").casefold()
-    combined = f"{loc} {body}"
+    office_location_text = " ".join(office_locations).casefold()
+    explicit_remote_offices = " ".join(
+        name
+        for name in office_names
+        if re.fullmatch(
+            r"\s*remote(?:\s*[-–—,]?\s*(?:us|usa|united states|global|worldwide))?\s*",
+            name,
+            re.IGNORECASE,
+        )
+    ).casefold()
+    combined = f"{loc} {office_location_text} {explicit_remote_offices} {body}"
     if re.search(r"\b(hybrid|days? (?:a|per) week (?:in|on)[ -]?office)\b", combined):
         return RemoteStatus.HYBRID
     if re.search(r"\b(on[ -]?site|in[ -]?office)\b", combined):
