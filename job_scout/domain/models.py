@@ -93,6 +93,7 @@ class Job(BaseModel):
     canonical_url: HttpUrl
     location_text: str | None = None
     country: str | None = None
+    eligible_countries: set[str] = Field(default_factory=set)
     region: str | None = None
     city: str | None = None
     remote_status: RemoteStatus = RemoteStatus.UNKNOWN
@@ -115,6 +116,16 @@ class Job(BaseModel):
         if not value:
             raise ValueError("must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def align_country_evidence(self) -> Job:
+        if self.country and not self.eligible_countries:
+            self.eligible_countries = {self.country}
+        elif self.country and self.country not in self.eligible_countries:
+            raise ValueError("country must be present in eligible_countries")
+        elif not self.country and len(self.eligible_countries) == 1:
+            self.country = next(iter(self.eligible_countries))
+        return self
 
 
 class RemotePolicy(BaseModel):

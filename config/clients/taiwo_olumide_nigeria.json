@@ -1,0 +1,62 @@
+{
+  "client_id": "taiwo_olumide",
+  "countries": [
+    "Nigeria"
+  ],
+  "employment_types": [],
+  "excluded_keywords": [
+    "security clearance required",
+    "U.S. citizenship required",
+    "United States citizenship",
+    "must be located in the United States",
+    "authorized to work in the United States"
+  ],
+  "excluded_seniority": [
+    "manager",
+    "director",
+    "senior",
+    "staff",
+    "lead",
+    "principal"
+  ],
+  "notes": "Early-career IT support candidate based in Lagos, Nigeria. Must be open to applicants working from Nigeria; target roles should build networking, systems, and cybersecurity experience.",
+  "remote_policy": {
+    "allowed": [
+      "remote"
+    ],
+    "exclude": [
+      "hybrid",
+      "onsite"
+    ],
+    "unknown_policy": "review"
+  },
+  "skills": {
+    "preferred": [
+      "Networking",
+      "Windows",
+      "Linux",
+      "Active Directory",
+      "Security"
+    ],
+    "required": [
+      "Troubleshooting"
+    ]
+  },
+  "target_roles": {
+    "exclude": [
+      "Customer Support Manager",
+      "Sales Support"
+    ],
+    "include": [
+      "IT Support Specialist",
+      "Technical Support Engineer",
+      "Support Engineer",
+      "Help Desk Technician",
+      "Service Desk Analyst",
+      "Desktop Support Technician",
+      "Junior Systems Administrator"
+    ]
+  },
+  "unknown_country_policy": "review",
+  "unknown_employment_type_policy": "review"
+}

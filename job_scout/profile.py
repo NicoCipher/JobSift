@@ -49,10 +49,25 @@ def canonicalize_country_input(value: str) -> str | None:
     value = value.strip()
     if not value or value.casefold() == "any":
         return None
-    key = re.sub(r"[.\s]+", "", value).casefold()
-    if key in {"us", "usa", "unitedstates", "unitedstatesofamerica"}:
-        return "United States"
-    raise ValueError("currently choose United States (US/USA) or Any")
+    key = re.sub(r"[^a-z0-9]+", "", value.casefold())
+    aliases = {
+        "nigeria": "Nigeria",
+        "ng": "Nigeria",
+        "nga": "Nigeria",
+        "india": "India",
+        "uk": "United Kingdom",
+        "unitedkingdom": "United Kingdom",
+        "canada": "Canada",
+        "us": "United States",
+        "usa": "United States",
+        "unitedstates": "United States",
+        "unitedstatesofamerica": "United States",
+    }
+    if key in aliases:
+        return aliases[key]
+    raise ValueError(
+        "currently choose Nigeria, India, United Kingdom, United States, Canada, or Any"
+    )
 
 
 def _work_mode(choice: str) -> tuple[str, RemotePolicy]:
@@ -144,7 +159,7 @@ def create_profile_interactively(
         output_fn=output_fn,
     )
     country = _ask(
-        prompt="Country [United States/Any]: ",
+        prompt="Country [Nigeria/India/United Kingdom/United States/Canada/Any]: ",
         parser=canonicalize_country_input,
         input_fn=input_fn,
         output_fn=output_fn,

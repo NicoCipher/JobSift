@@ -59,10 +59,18 @@ US_STATE_CODES = frozenset(
         "DC",
     ]
 )
-US_COUNTRY_PATTERN = re.compile(
-    r"(?<![A-Za-z])(?:United States(?: of America)?|U\.S\.A\.?|USA|U\.S\.)(?![A-Za-z])",
-    re.IGNORECASE,
-)
+COUNTRY_PATTERNS = {
+    "Nigeria": re.compile(r"(?<![A-Za-z])(?:Nigeria|NGA)(?![A-Za-z])", re.IGNORECASE),
+    "India": re.compile(r"(?<![A-Za-z])India(?![A-Za-z])", re.IGNORECASE),
+    "United Kingdom": re.compile(
+        r"(?<![A-Za-z])(?:United Kingdom|U\.K\.|UK)(?![A-Za-z])", re.IGNORECASE
+    ),
+    "United States": re.compile(
+        r"(?<![A-Za-z])(?:United States(?: of America)?|U\.S\.A\.?|USA|U\.S\.|US)(?![A-Za-z])",
+        re.IGNORECASE,
+    ),
+    "Canada": re.compile(r"(?<![A-Za-z])Canada(?![A-Za-z])", re.IGNORECASE),
+}
 CITY_STATE_PATTERN = re.compile(
     r"^\s*([^,]+?)\s*,\s*([A-Za-z]{2})(?:\s*,\s*(?:United States|USA|US))?\s*$",
     re.IGNORECASE,
@@ -71,9 +79,13 @@ CITY_STATE_PATTERN = re.compile(
 
 @dataclass(frozen=True)
 class NormalizedLocation:
-    country: str | None = None
+    countries: frozenset[str] = frozenset()
     region: str | None = None
     city: str | None = None
+
+    @property
+    def country(self) -> str | None:
+        return next(iter(self.countries)) if len(self.countries) == 1 else None
 
 
 def normalize_location(
@@ -86,10 +98,15 @@ def normalize_location(
         city = match.group(1).strip()
         if city.casefold() not in {"remote", "hybrid", "onsite", "on-site"}:
             return NormalizedLocation(
-                country="United States", region=match.group(2).upper(), city=city
+                countries=frozenset({"United States"}),
+                region=match.group(2).upper(),
+                city=city,
             )
 
     evidence = [primary, *(value.strip() for value in office_locations if value.strip())]
-    if any(US_COUNTRY_PATTERN.search(value) for value in evidence):
-        return NormalizedLocation(country="United States")
-    return NormalizedLocation()
+    countries = frozenset(
+        country
+        for country, pattern in COUNTRY_PATTERNS.items()
+        if any(pattern.search(value) for value in evidence)
+    )
+    return NormalizedLocation(countries=countries)

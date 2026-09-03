@@ -49,6 +49,8 @@ The company name is configuration evidence because the Greenhouse list endpoint 
 ## Greenhouse eligibility evidence
 
 - **Structured/direct:** job location, associated office names/locations, title, description, departments, timestamps, URL, and board-defined metadata.
-- **Deterministic text:** explicit `United States`/`USA` evidence and `City, ST` US locations; explicit remote, hybrid, and on-site wording.
+- **Deterministic text:** explicit Nigeria, India, United Kingdom, United States, and Canada evidence; `City, ST` US locations; explicit remote, hybrid, and on-site wording. Several explicit countries are retained without collapsing them into one.
 - **Ambiguous:** `Remote`, `Americas`, `Global`, generic office/team names, or conflicting work-mode statements. These do not establish a country; specific hybrid/on-site evidence overrides weaker remote wording.
 - **Unavailable as a standard field:** employment type. It remains unknown unless an exact `Employment Type` custom metadata field contains a recognized value.
+
+Remote status and work-country eligibility are evaluated independently. A remote vacancy restricted to a different country is not treated as globally eligible.

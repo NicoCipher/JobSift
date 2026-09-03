@@ -159,6 +159,7 @@ class GreenhouseCollector:
             canonical_url=canonical,
             location_text=location,
             country=normalized_location.country,
+            eligible_countries=set(normalized_location.countries),
             region=normalized_location.region,
             city=normalized_location.city,
             remote_status=classify_remote(location, text, office_names, office_locations),

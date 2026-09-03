@@ -13,7 +13,7 @@ from job_scout.domain.models import (
 )
 from job_scout.normalization.core import normalize_title
 
-MATCHER_VERSION = "deterministic-v2"
+MATCHER_VERSION = "deterministic-v3"
 
 # Higher-authority title evidence wins when a title contains multiple levels.
 SENIORITY_PRECEDENCE = (
@@ -33,6 +33,18 @@ SENIORITY_PATTERNS = {
     level: re.compile(rf"\b{re.escape(level.value)}\b", re.IGNORECASE)
     for level in SENIORITY_PRECEDENCE
 }
+
+US_WORK_ELIGIBILITY_PATTERNS = (
+    re.compile(
+        r"\b(?:must\s+be\s+(?:a\s+)?)?(?:United States|U\.S\.)\s+Citizen\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:United States|U\.S\.)\s+citizenship\s+(?:is\s+)?required\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bauthorized to work in (?:the )?United States\b", re.IGNORECASE),
+)
 
 
 def _contains(needle: str, haystack: str) -> bool:
@@ -72,6 +84,12 @@ def _unknown_evidence(
         reviews.append(f"{label} is unknown")
 
 
+def _restricted_work_countries(description: str) -> set[str]:
+    if any(pattern.search(description) for pattern in US_WORK_ELIGIBILITY_PATTERNS):
+        return {"United States"}
+    return set()
+
+
 def match_job(job: Job, profile: CandidateProfile) -> JobMatch:
     rejects: list[str] = []
     reviews: list[str] = []
@@ -80,15 +98,30 @@ def match_job(job: Job, profile: CandidateProfile) -> JobMatch:
     body = f"{job.title}\n{job.description_text or ''}"
 
     if profile.countries:
-        if job.country is None:
+        job_countries = set(job.eligible_countries)
+        if not job_countries and job.country:
+            job_countries.add(job.country)
+        if not job_countries:
             _unknown_evidence(
                 label="country",
                 policy=profile.unknown_country_policy,
                 rejects=rejects,
                 reviews=reviews,
             )
-        elif job.country.casefold() not in {c.casefold() for c in profile.countries}:
-            rejects.append(f"country {job.country!r} is not allowed")
+        elif not {country.casefold() for country in job_countries} & {
+            country.casefold() for country in profile.countries
+        }:
+            countries = ", ".join(sorted(job_countries))
+            rejects.append(f"job eligibility countries [{countries}] do not include the candidate")
+
+        restricted_countries = _restricted_work_countries(job.description_text or "")
+        if restricted_countries and not {country.casefold() for country in restricted_countries} & {
+            country.casefold() for country in profile.countries
+        }:
+            countries = ", ".join(sorted(restricted_countries))
+            rejects.append(
+                f"explicit citizenship or work authorization restricts the role to {countries}"
+            )
 
     if job.remote_status in profile.remote_policy.exclude:
         rejects.append(f"remote status {job.remote_status.value!r} is excluded")
