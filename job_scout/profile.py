@@ -24,26 +24,49 @@ def _items(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _required_items(value: str) -> list[str]:
+    items = _items(value)
+    if not items:
+        raise ValueError("enter at least one target job title")
+    return items
+
+
+def _required_name(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("enter a client name or identifier")
+    return value
+
+
 def _client_id(value: str) -> str:
     identifier = re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_")
     if not identifier:
-        raise ValueError("client name or identifier is required")
+        raise ValueError("client name must contain letters or numbers")
     return identifier
 
 
-def _work_mode(value: str) -> tuple[str, RemotePolicy]:
-    key = value.casefold().strip().replace("-", " ")
-    if key in {"", "any"}:
-        return "Any", RemotePolicy()
+def canonicalize_country_input(value: str) -> str | None:
+    value = value.strip()
+    if not value or value.casefold() == "any":
+        return None
+    key = re.sub(r"[.\s]+", "", value).casefold()
+    if key in {"us", "usa", "unitedstates", "unitedstatesofamerica"}:
+        return "United States"
+    raise ValueError("currently choose United States (US/USA) or Any")
+
+
+def _work_mode(choice: str) -> tuple[str, RemotePolicy]:
     mapping = {
-        "remote": ("Remote only", RemoteStatus.REMOTE),
-        "hybrid": ("Hybrid only", RemoteStatus.HYBRID),
-        "on site": ("On-site only", RemoteStatus.ONSITE),
-        "onsite": ("On-site only", RemoteStatus.ONSITE),
+        "1": ("Remote only", RemoteStatus.REMOTE),
+        "2": ("Hybrid only", RemoteStatus.HYBRID),
+        "3": ("On-site only", RemoteStatus.ONSITE),
     }
-    if key not in mapping:
-        raise ValueError("work mode must be Remote, Hybrid, On-site, or Any")
-    label, selected = mapping[key]
+    choice = choice.strip()
+    if choice == "4":
+        return "Any", RemotePolicy()
+    if choice not in mapping:
+        raise ValueError("choose a number from 1 to 4")
+    label, selected = mapping[choice]
     return label, RemotePolicy(
         allowed={selected},
         exclude={
@@ -59,26 +82,47 @@ def _seniorities(value: str) -> set[Seniority]:
     for item in _items(value):
         key = item.casefold().strip()
         if key not in aliases:
-            raise ValueError(f"unsupported seniority exclusion: {item}")
+            supported = ", ".join(aliases)
+            raise ValueError(f"unsupported seniority {item!r}; use one of: {supported}")
         result.add(aliases[key])
     return result
 
 
-def _employment(value: str) -> tuple[str, set[EmploymentType]]:
-    key = value.casefold().strip().replace("-", " ").replace("_", " ")
-    if key in {"", "any"}:
-        return "Any", set()
+def _employment(choice: str) -> tuple[str, set[EmploymentType]]:
     mapping = {
-        "full time": EmploymentType.FULL_TIME,
-        "part time": EmploymentType.PART_TIME,
-        "contract": EmploymentType.CONTRACT,
-        "temporary": EmploymentType.TEMPORARY,
-        "internship": EmploymentType.INTERNSHIP,
-        "freelance": EmploymentType.FREELANCE,
+        "1": ("Full-time", EmploymentType.FULL_TIME),
+        "2": ("Part-time", EmploymentType.PART_TIME),
+        "3": ("Contract", EmploymentType.CONTRACT),
+        "4": ("Temporary", EmploymentType.TEMPORARY),
+        "5": ("Internship", EmploymentType.INTERNSHIP),
+        "6": ("Freelance", EmploymentType.FREELANCE),
     }
-    if key not in mapping:
-        raise ValueError("unsupported employment type")
-    return mapping[key].value.replace("_", " ").title(), {mapping[key]}
+    choice = choice.strip()
+    if choice == "7":
+        return "Any", set()
+    if choice not in mapping:
+        raise ValueError("choose a number from 1 to 7")
+    label, selected = mapping[choice]
+    return label, {selected}
+
+
+def _confirmation(value: str) -> bool:
+    key = value.strip().casefold()
+    if key in {"", "y", "yes"}:
+        return True
+    if key in {"n", "no"}:
+        return False
+    raise ValueError("enter Y or N")
+
+
+def _ask[T](
+    *, prompt: str, parser: Callable[[str], T], input_fn: InputFunction, output_fn: OutputFunction
+) -> T:
+    while True:
+        try:
+            return parser(input_fn(prompt))
+        except ValueError as exc:
+            output_fn(f"Please try again: {exc}")
 
 
 def create_profile_interactively(
@@ -86,22 +130,47 @@ def create_profile_interactively(
     input_fn: InputFunction = input,
     output_fn: OutputFunction = print,
     output_dir: str | Path = "config/clients",
-) -> Path:
-    name = input_fn("Client name or identifier: ").strip()
-    roles = _items(input_fn("Target job titles (comma-separated): "))
-    country = input_fn("Country/location requirement (blank for any): ").strip()
-    work_label, remote_policy = _work_mode(input_fn("Work mode [Remote/Hybrid/On-site/Any]: "))
-    excluded_seniority = _seniorities(
-        input_fn("Seniority levels to exclude (comma-separated, blank for none): ")
+) -> Path | None:
+    name = _ask(
+        prompt="Client name or identifier: ",
+        parser=_required_name,
+        input_fn=input_fn,
+        output_fn=output_fn,
+    )
+    roles = _ask(
+        prompt="Target job titles (comma-separated): ",
+        parser=_required_items,
+        input_fn=input_fn,
+        output_fn=output_fn,
+    )
+    country = _ask(
+        prompt="Country [United States/Any]: ",
+        parser=canonicalize_country_input,
+        input_fn=input_fn,
+        output_fn=output_fn,
+    )
+
+    output_fn("\nWork mode:\n1. Remote\n2. Hybrid\n3. On-site\n4. Any")
+    work_label, remote_policy = _ask(
+        prompt="Choose [1-4]: ", parser=_work_mode, input_fn=input_fn, output_fn=output_fn
+    )
+    excluded_seniority = _ask(
+        prompt="Seniority levels to exclude (comma-separated, blank for none): ",
+        parser=_seniorities,
+        input_fn=input_fn,
+        output_fn=output_fn,
     )
     required_skills = _items(input_fn("Required skills (comma-separated, blank for none): "))
     preferred_skills = _items(input_fn("Preferred skills (comma-separated, blank for none): "))
     excluded_titles = _items(input_fn("Titles to exclude (comma-separated, blank for none): "))
     excluded_keywords = _items(input_fn("Keywords to exclude (comma-separated, blank for none): "))
-    employment_label, employment_types = _employment(
-        input_fn(
-            "Employment type [Full-time/Part-time/Contract/Temporary/Internship/Freelance/Any]: "
-        )
+
+    output_fn(
+        "\nEmployment type:\n1. Full-time\n2. Part-time\n3. Contract\n4. Temporary"
+        "\n5. Internship\n6. Freelance\n7. Any"
+    )
+    employment_label, employment_types = _ask(
+        prompt="Choose [1-7]: ", parser=_employment, input_fn=input_fn, output_fn=output_fn
     )
     notes = input_fn("Additional notes (blank for none): ").strip() or None
 
@@ -120,25 +189,45 @@ def create_profile_interactively(
     )
 
     output_fn("\nProfile summary")
-    output_fn(f"Client: {name} ({profile.client_id})")
+    output_fn(f"Client: {name}")
     output_fn(f"Roles: {', '.join(profile.target_roles.include)}")
     output_fn(f"Country: {country or 'Any'}")
     output_fn(f"Work mode: {work_label}")
     output_fn(f"Required skills: {', '.join(required_skills) or 'None'}")
     output_fn(f"Preferred skills: {', '.join(preferred_skills) or 'None'}")
+    output_fn(f"Excluded titles: {', '.join(excluded_titles) or 'None'}")
     output_fn(
         "Excluded seniority: "
         + (", ".join(sorted(level.value.title() for level in excluded_seniority)) or "None")
     )
     output_fn(f"Employment type: {employment_label}")
+    output_fn(f"Keywords excluded: {', '.join(excluded_keywords) or 'None'}")
+    output_fn(f"Notes: {notes or 'None'}")
+
+    should_save = _ask(
+        prompt="\nSave this profile? [Y/n]: ",
+        parser=_confirmation,
+        input_fn=input_fn,
+        output_fn=output_fn,
+    )
+    if not should_save:
+        output_fn("Profile not saved. Run 'python -m job_scout profile create' to restart.")
+        return None
 
     destination = Path(output_dir) / f"{profile.client_id}.json"
-    destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
-        raise FileExistsError(f"profile already exists: {destination}")
+        output_fn(f"Profile not saved: {destination} already exists.")
+        return None
+    destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
         json.dumps(profile.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    output_fn(f"Saved: {destination}")
+    output_fn(f"\nProfile saved: {destination}")
+    output_fn(
+        "\nNext:\n"
+        f"python -m job_scout collect \\\n  --client {destination} \\\n"
+        '  --board <greenhouse-board-token> \\\n  --company "<company-name>" \\\n'
+        f"  --csv exports/{profile.client_id}.csv"
+    )
     return destination
