@@ -50,6 +50,12 @@ class MatchDecision(StrEnum):
     NEEDS_REVIEW = "needs_review"
 
 
+class UnknownEligibilityPolicy(StrEnum):
+    ALLOW = "allow"
+    REVIEW = "review"
+    REJECT = "reject"
+
+
 class CollectionStatus(StrEnum):
     SUCCESS = "success"
     PARTIAL = "partial"
@@ -114,7 +120,7 @@ class Job(BaseModel):
 class RemotePolicy(BaseModel):
     allowed: set[RemoteStatus] = Field(default_factory=set)
     exclude: set[RemoteStatus] = Field(default_factory=set)
-    reject_unknown: bool = False
+    unknown_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
 
 
 class RoleTargets(BaseModel):
@@ -140,9 +146,11 @@ class CandidateProfile(BaseModel):
     client_id: str
     target_roles: RoleTargets
     countries: set[str] = Field(default_factory=set)
+    unknown_country_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
     remote_policy: RemotePolicy = Field(default_factory=RemotePolicy)
     skills: Skills = Field(default_factory=Skills)
     employment_types: set[EmploymentType] = Field(default_factory=set)
+    unknown_employment_type_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
     excluded_seniority: set[Seniority] = Field(default_factory=set)
     excluded_keywords: list[str] = Field(default_factory=list)
     notes: str | None = None

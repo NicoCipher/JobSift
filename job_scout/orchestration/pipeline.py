@@ -55,9 +55,7 @@ def run_pipeline(
         repository.save_match(match)
         if match.decision in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}:
             counters["matched"] += 1
-            if state is JobLifecycle.NEW and not repository.is_exported(
-                job.id, profile.client_id, destination
-            ):
+            if not repository.is_exported(job.id, profile.client_id, destination):
                 exportable.append(job)
         else:
             counters["rejected"] += 1

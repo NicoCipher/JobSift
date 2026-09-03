@@ -2,11 +2,12 @@
   "client_id": "client_001",
   "target_roles": {"include": ["Backend Engineer", "Software Engineer"], "exclude": ["Engineering Manager"]},
   "countries": ["United States"],
-  "remote_policy": {"allowed": ["remote"], "exclude": ["hybrid", "onsite"], "reject_unknown": false},
+  "unknown_country_policy": "review",
+  "remote_policy": {"allowed": ["remote"], "exclude": ["hybrid", "onsite"], "unknown_policy": "review"},
   "skills": {"required": [], "preferred": ["Python", "TypeScript"]},
   "employment_types": ["full_time"],
+  "unknown_employment_type_policy": "review",
   "excluded_seniority": ["staff", "principal", "manager", "director"],
   "excluded_keywords": ["security clearance required"],
   "notes": null
 }
-

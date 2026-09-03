@@ -24,8 +24,16 @@ def write_csv(path: str | Path, jobs: Iterable[Job]) -> int:
     rows = [export_row(job) for job in jobs]
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", newline="", encoding="utf-8") as handle:
+    exists = destination.exists()
+    if exists:
+        with destination.open(newline="", encoding="utf-8") as handle:
+            if next(csv.reader(handle), None) != CSV_COLUMNS:
+                raise ValueError("existing CSV header does not match the export contract")
+        if not rows:
+            return 0
+    with destination.open("a" if exists else "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
+        if not exists:
+            writer.writeheader()
         writer.writerows(rows)
     return len(rows)

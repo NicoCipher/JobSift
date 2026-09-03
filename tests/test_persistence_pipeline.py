@@ -20,6 +20,8 @@ def test_fixture_to_csv_is_idempotent(tmp_path) -> None:
     )
     collector = GreenhouseCollector(httpx.Client(transport=transport))
     profile = CandidateProfile.model_validate_json(Path("config/clients/example.json").read_text())
+    profile.countries = set()
+    profile.employment_types = set()
     repo = SQLiteRepository(tmp_path / "jobs.db")
     csv_path = tmp_path / "jobs.csv"
     first = run_pipeline(
@@ -42,6 +44,8 @@ def test_fixture_to_csv_is_idempotent(tmp_path) -> None:
         csv_path=csv_path,
     )
     assert second.exported == 0 and second.unchanged == 2
+    with csv_path.open(newline="") as handle:
+        assert len(list(csv.DictReader(handle))) == 1
 
 
 def test_failure_does_not_change_job_lifecycle(tmp_path) -> None:
