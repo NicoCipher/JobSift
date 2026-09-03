@@ -22,6 +22,11 @@ def test_url_canonicalization_removes_only_tracking() -> None:
     )
 
 
+def test_description_cleanup_removes_script_and_style_content() -> None:
+    value = "<style>.hidden{}</style><p>Useful role.</p><script>alert('x')</script>"
+    assert html_to_text(value) == "Useful role."
+
+
 def test_title_and_remote_conflict() -> None:
     assert normalize_title("Full-Stack Engineer") == "full stack engineer"
     assert classify_remote("Remote", "Work 3 days per week in-office") is RemoteStatus.HYBRID

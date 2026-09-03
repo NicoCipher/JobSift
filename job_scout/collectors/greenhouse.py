@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError
@@ -20,22 +21,31 @@ class _Location(BaseModel):
 
 
 class _Department(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     name: str
+
+
+class _Office(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str | None = None
+    location: str | None = None
 
 
 class _GreenhouseJob(BaseModel):
     model_config = ConfigDict(extra="allow")
     id: int
     title: str
-    location: _Location = Field(default_factory=_Location)
+    location: _Location | None = None
     absolute_url: HttpUrl
     content: str | None = None
     updated_at: datetime | None = None
+    first_published: datetime | None = None
     departments: list[_Department] = Field(default_factory=list)
+    offices: list[_Office] = Field(default_factory=list)
 
 
 class _Payload(BaseModel):
-    jobs: list[_GreenhouseJob]
+    jobs: list[Any]
 
 
 class GreenhouseCollector:
@@ -59,7 +69,13 @@ class GreenhouseCollector:
                 return self._failure(
                     target, CollectionStatus.RATE_LIMITED, "provider rate limited request"
                 )
-            if response.status_code in {401, 403}:
+            if response.status_code == 403:
+                throttled = "retry-after" in {key.casefold() for key in response.headers} or any(
+                    marker in response.text.casefold() for marker in ("rate limit", "throttle")
+                )
+                status = CollectionStatus.RATE_LIMITED if throttled else CollectionStatus.FORBIDDEN
+                return self._failure(target, status, "HTTP 403")
+            if response.status_code == 401:
                 return self._failure(
                     target, CollectionStatus.AUTHENTICATION_FAILURE, f"HTTP {response.status_code}"
                 )
@@ -69,11 +85,19 @@ class GreenhouseCollector:
                 )
             response.raise_for_status()
             payload = _Payload.model_validate(response.json())
+            jobs: list[Job] = []
+            errors: list[str] = []
+            for index, raw_job in enumerate(payload.jobs):
+                try:
+                    jobs.append(self._normalize(_GreenhouseJob.model_validate(raw_job), target))
+                except (ValueError, ValidationError) as exc:
+                    errors.append(f"job[{index}] rejected: {exc}")
             return CollectionResult(
                 source=self.source,
                 target=target,
-                status=CollectionStatus.SUCCESS,
-                jobs=[self._normalize(item, target) for item in payload.jobs],
+                status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
+                jobs=jobs,
+                errors=errors,
             )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             return self._failure(target, CollectionStatus.NETWORK_FAILURE, type(exc).__name__)
@@ -92,7 +116,21 @@ class GreenhouseCollector:
     def _normalize(self, item: _GreenhouseJob, target: SourceTarget) -> Job:
         text = html_to_text(item.content)
         canonical = canonicalize_url(str(item.absolute_url))
-        location = item.location.name
+        location = item.location.name if item.location else None
+        office_names = [office.name for office in item.offices if office.name]
+        office_locations = [office.location for office in item.offices if office.location]
+        raw_metadata = {
+            "job_id": item.id,
+            "board_token": target.board_id,
+            "company": target.company,
+            "location": location,
+            "departments": [department.name for department in item.departments],
+            "offices": office_names,
+            "office_locations": office_locations,
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            "first_published": item.first_published.isoformat() if item.first_published else None,
+            "absolute_url": str(item.absolute_url),
+        }
         return Job(
             id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"greenhouse:{target.board_id}:{item.id}")),
             source=self.source,
@@ -107,9 +145,11 @@ class GreenhouseCollector:
             location_text=location,
             remote_status=classify_remote(location, text),
             department=item.departments[0].name if item.departments else None,
+            offices=office_names,
+            posted_at=item.first_published,
             updated_at=item.updated_at,
             content_fingerprint=content_fingerprint(
                 title=item.title, description=text, location=location, employment_type=None
             ),
-            raw_metadata=item.model_dump(mode="json"),
+            raw_metadata=raw_metadata,
         )

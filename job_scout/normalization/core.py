@@ -19,17 +19,29 @@ class _TextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.ignored_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"script", "style"}:
+            self.ignored_depth += 1
+            return
+        if self.ignored_depth:
+            return
         if tag.lower() in self.BLOCKS:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style"}:
+            self.ignored_depth = max(0, self.ignored_depth - 1)
+            return
+        if self.ignored_depth:
+            return
         if tag.lower() in self.BLOCKS:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
-        self.parts.append(data)
+        if not self.ignored_depth:
+            self.parts.append(data)
 
 
 def html_to_text(value: str | None) -> str | None:

@@ -4,10 +4,12 @@
       "id": 101,
       "title": "Backend Engineer",
       "updated_at": "2026-09-01T10:00:00Z",
+      "first_published": "2026-08-28T09:00:00Z",
       "location": {"name": "Remote - United States"},
       "absolute_url": "https://boards.greenhouse.io/acme/jobs/101?utm_source=test",
       "content": "&lt;p&gt;Build APIs with &lt;strong&gt;Python&lt;/strong&gt;.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Remote — US only&lt;/li&gt;&lt;/ul&gt;",
-      "departments": [{"id": 1, "name": "Engineering"}]
+      "departments": [{"id": 1, "name": "Engineering"}],
+      "offices": [{"id": 2, "name": "Remote US", "location": "United States"}]
     },
     {
       "id": 102,
@@ -20,4 +22,3 @@
   ],
   "meta": {"total": 2}
 }
-

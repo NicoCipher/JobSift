@@ -55,6 +55,7 @@ class CollectionStatus(StrEnum):
     PARTIAL = "partial"
     RATE_LIMITED = "rate_limited"
     AUTHENTICATION_FAILURE = "authentication_failure"
+    FORBIDDEN = "forbidden"
     INVALID_TARGET = "invalid_target"
     PROVIDER_ERROR = "provider_error"
     NETWORK_FAILURE = "network_failure"
@@ -92,6 +93,7 @@ class Job(BaseModel):
     employment_type: EmploymentType | None = None
     seniority: Seniority | None = None
     department: str | None = None
+    offices: list[str] = Field(default_factory=list)
     posted_at: datetime | None = None
     updated_at: datetime | None = None
     discovered_at: datetime = Field(default_factory=utc_now)

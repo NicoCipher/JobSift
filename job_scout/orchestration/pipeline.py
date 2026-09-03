@@ -37,7 +37,7 @@ def run_pipeline(
     csv_path: str | Path,
 ) -> PipelineSummary:
     result = collector.collect(target)
-    if result.status is not CollectionStatus.SUCCESS:
+    if result.status not in {CollectionStatus.SUCCESS, CollectionStatus.PARTIAL}:
         return PipelineSummary(status=result.status.value)
     counters = {"new": 0, "changed": 0, "unchanged": 0, "matched": 0, "rejected": 0}
     exportable = []
@@ -64,4 +64,6 @@ def run_pipeline(
     exported = write_csv(csv_path, exportable)
     for job in exportable:
         repository.mark_exported(job.id, profile.client_id, destination)
-    return PipelineSummary(received=len(result.jobs), exported=exported, **counters)
+    return PipelineSummary(
+        received=len(result.jobs), exported=exported, status=result.status.value, **counters
+    )

@@ -23,6 +23,8 @@ def test_greenhouse_fixture_normalizes() -> None:
     assert len(result.jobs) == 2
     assert result.jobs[0].remote_status is RemoteStatus.REMOTE
     assert str(result.jobs[0].canonical_url) == "https://boards.greenhouse.io/acme/jobs/101"
+    assert result.jobs[0].offices == ["Remote US"]
+    assert result.jobs[0].posted_at is not None
 
 
 def test_malformed_payload_is_not_empty_success() -> None:
@@ -34,3 +36,40 @@ def test_malformed_payload_is_not_empty_success() -> None:
 def test_rate_limit_is_explicit() -> None:
     result = collector(status=429).collect(SourceTarget(board_id="acme", company="Acme"))
     assert result.status is CollectionStatus.RATE_LIMITED
+
+
+def test_throttled_403_is_distinct_from_forbidden_403() -> None:
+    target = SourceTarget(board_id="acme", company="Acme")
+    limited = httpx.MockTransport(
+        lambda request: httpx.Response(403, text="Rate limit exceeded", request=request)
+    )
+    forbidden = httpx.MockTransport(
+        lambda request: httpx.Response(403, text="Forbidden", request=request)
+    )
+    assert (
+        GreenhouseCollector(httpx.Client(transport=limited)).collect(target).status
+        is CollectionStatus.RATE_LIMITED
+    )
+    assert (
+        GreenhouseCollector(httpx.Client(transport=forbidden)).collect(target).status
+        is CollectionStatus.FORBIDDEN
+    )
+
+
+def test_malformed_job_is_quarantined_without_losing_valid_jobs() -> None:
+    payload = json.loads(FIXTURE.read_text())
+    payload["jobs"].append({"id": 999, "title": ""})
+    result = collector(payload=payload).collect(SourceTarget(board_id="acme", company="Acme"))
+    assert result.status is CollectionStatus.PARTIAL
+    assert len(result.jobs) == 2
+    assert result.errors
+
+
+def test_raw_metadata_is_allowlisted() -> None:
+    payload = json.loads(FIXTURE.read_text())
+    payload["jobs"][0]["recruiter"] = {"email": "private@example.com"}
+    payload["jobs"][0]["candidate_fields"] = {"ssn": "000"}
+    result = collector(payload=payload).collect(SourceTarget(board_id="acme", company="Acme"))
+    metadata = result.jobs[0].raw_metadata
+    assert "recruiter" not in metadata
+    assert "candidate_fields" not in metadata
