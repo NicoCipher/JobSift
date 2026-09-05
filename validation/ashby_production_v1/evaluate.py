@@ -49,6 +49,9 @@ EXPECTED_BOARDS = (
     "vanta",
     "zapier",
 )
+FROZEN_RAW_MISSING = "frozen raw payload not present in this environment"
+FROZEN_RAW_HASH_MISMATCH = "frozen raw payload hash does not match cohort evidence"
+FROZEN_RAW_INVALID = "frozen raw payload is not a JSON job-board payload"
 
 
 def sha(path: Path) -> str:
@@ -57,6 +60,101 @@ def sha(path: Path) -> str:
 
 def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def frozen_payload(
+    row: dict[str, str], *, required: bool
+) -> tuple[bytes | None, dict | None, str | None]:
+    """Read one hash-verified historical payload when it is locally available.
+
+    Offline replay requires every payload. Live validation uses one only for an
+    optional historical provider-ID comparison, so an unavailable or invalid
+    artifact is evidence that comparison cannot be made, not a reason to skip
+    the current public board.
+    """
+    path = RAW / f"{row['board_token']}.json"
+    try:
+        content = path.read_bytes()
+    except FileNotFoundError:
+        if required:
+            raise
+        return None, None, FROZEN_RAW_MISSING
+    if hashlib.sha256(content).hexdigest() != row["sha256"]:
+        if required:
+            raise AssertionError(FROZEN_RAW_HASH_MISMATCH)
+        return None, None, FROZEN_RAW_HASH_MISMATCH
+    try:
+        payload = json.loads(content)
+    except ValueError:
+        if required:
+            raise
+        return None, None, FROZEN_RAW_INVALID
+    if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+        if required:
+            raise ValueError(FROZEN_RAW_INVALID)
+        return None, None, FROZEN_RAW_INVALID
+    return content, payload, None
+
+
+def historical_drift(
+    previous: dict | None,
+    baseline_reason: str | None,
+    current: object,
+    status: str,
+) -> dict[str, object]:
+    """Compare provider IDs only with hash-verified historical source evidence."""
+    unavailable = {
+        "historical_drift_available": False,
+        "historical_drift_reason": baseline_reason,
+        "previous_raw_count": None,
+        "added_provider_ids": None,
+        "removed_provider_ids": None,
+    }
+    if previous is None:
+        return unavailable
+    if not isinstance(current, dict) or not isinstance(current.get("jobs"), list):
+        return {
+            **unavailable,
+            "historical_drift_reason": "current response is not a JSON job-board payload",
+        }
+    if status not in {"success", "partial"}:
+        return {
+            **unavailable,
+            "historical_drift_reason": "current collection did not complete",
+        }
+    old_ids = {job["id"] for job in previous["jobs"] if isinstance(job, dict) and job.get("id")}
+    new_ids = {
+        job["id"]
+        for job in current["jobs"]
+        if isinstance(job, dict) and isinstance(job.get("id"), str)
+    }
+    return {
+        "historical_drift_available": True,
+        "historical_drift_reason": None,
+        "previous_raw_count": len(previous["jobs"]),
+        "added_provider_ids": sorted(new_ids - old_ids),
+        "removed_provider_ids": sorted(old_ids - new_ids),
+    }
+
+
+def validation_inputs(phase: str) -> list[dict[str, str]]:
+    """Enforce the frozen cohort and implementation invariants before collection."""
+    assert MATCHER_VERSION == "deterministic-v5"
+    assert DEDUPE_VERSION == "dedupe-v1"
+    assert sha(BRIEF) == "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6"
+    with COHORT.open(newline="") as handle:
+        cohort = list(csv.DictReader(handle))
+    assert tuple(row["board_token"] for row in cohort) == EXPECTED_BOARDS
+    if phase == "offline":
+        for row in cohort:
+            frozen_payload(row, required=True)
+    else:
+        offline = json.loads((HERE / "offline/summary.json").read_text())
+        assert offline["totals"]["raw_postings"] == 797
+        assert offline["totals"]["normalized"] == 797
+        assert offline["totals"].get("quarantined", 0) == 0
+        assert offline["statuses"] == {"success": 15}
+    return cohort
 
 
 class ObservedCollector:
@@ -80,20 +178,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.phase == "live" and (not args.commit or len(args.commit) != 40):
         parser.error("live validation requires the published 40-character commit SHA")
-    assert MATCHER_VERSION == "deterministic-v5"
-    assert DEDUPE_VERSION == "dedupe-v1"
-    assert sha(BRIEF) == "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6"
-    with COHORT.open(newline="") as handle:
-        cohort = list(csv.DictReader(handle))
-    assert tuple(row["board_token"] for row in cohort) == EXPECTED_BOARDS
-    for row in cohort:
-        assert sha(RAW / f"{row['board_token']}.json") == row["sha256"]
-    if args.phase == "live":
-        offline = json.loads((HERE / "offline/summary.json").read_text())
-        assert offline["totals"]["raw_postings"] == 797
-        assert offline["totals"]["normalized"] == 797
-        assert offline["totals"].get("quarantined", 0) == 0
-        assert offline["statuses"] == {"success": 15}
+    cohort = validation_inputs(args.phase)
     output = HERE / args.phase
     output.mkdir(parents=True, exist_ok=False)
     code = [
@@ -135,8 +220,7 @@ def main() -> None:
         board = row["board_token"]
         directory = output / board
         directory.mkdir()
-        prior_raw = (RAW / f"{board}.json").read_bytes()
-        previous = json.loads(prior_raw)
+        prior_raw, previous, baseline_reason = frozen_payload(row, required=args.phase == "offline")
         captured = []
         if args.phase == "offline":
             client = httpx.Client(
@@ -260,15 +344,6 @@ def main() -> None:
                 reader = csv.DictReader(handle)
                 assert reader.fieldnames == CSV_COLUMNS
                 assert len(list(reader)) == result.exported
-        old_ids = {j["id"] for j in previous["jobs"] if isinstance(j, dict) and j.get("id")}
-        new_ids = {
-            j["id"] for j in raw_jobs if isinstance(j, dict) and isinstance(j.get("id"), str)
-        }
-        comparable = (
-            isinstance(raw, dict)
-            and isinstance(raw.get("jobs"), list)
-            and result.status in {"success", "partial"}
-        )
         record = {
             "board": board,
             "company": row["company"],
@@ -279,13 +354,11 @@ def main() -> None:
             "database_sha256": sha(db),
             "csv_sha256": sha(csv_path) if csv_path.exists() else None,
             "response_sha256": hashlib.sha256(captured[-1]).hexdigest() if captured else None,
-            "previous_raw_count": len(previous["jobs"]),
-            "added_provider_ids": sorted(new_ids - old_ids) if comparable else None,
-            "removed_provider_ids": sorted(old_ids - new_ids) if comparable else None,
             "errors": observer.result.errors
             if observer.result
             else ["collection did not complete"],
         }
+        record.update(historical_drift(previous, baseline_reason, raw, result.status))
         boards.append(record)
         statuses[result.status] += 1
         totals.update(counts)
@@ -303,9 +376,9 @@ def main() -> None:
         "completed_at_utc": datetime.now(UTC).isoformat(),
     }
     write_json(output / "summary.json", summary)
-    for row in cohort:
-        assert sha(RAW / f"{row['board_token']}.json") == row["sha256"]
     if args.phase == "offline":
+        for row in cohort:
+            frozen_payload(row, required=True)
         assert totals["raw_postings"] == totals["normalized"] == 797
         assert totals["quarantined"] == 0 and statuses == {"success": 15}
     print(json.dumps(summary, indent=2))
