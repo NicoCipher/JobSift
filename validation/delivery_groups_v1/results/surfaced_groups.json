@@ -1,0 +1,81 @@
+[
+  {
+    "group_id": "2069c77c-a594-5294-9f8e-688b03495f3b",
+    "members": [
+      {
+        "job_id": "01e4566e-fe54-5788-837a-1d84ca27ce7a",
+        "source": "greenhouse",
+        "board": "gitlab",
+        "source_job_id": "8709925002",
+        "title": "Senior Assigned Support Engineer (AMER)",
+        "job_url": "https://job-boards.greenhouse.io/gitlab/jobs/8709925002",
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8709925002",
+        "apply_url": null,
+        "first_seen_at": "2026-09-03T19:51:05.818390+00:00",
+        "last_seen_at": "2026-09-03T19:51:05.818391+00:00",
+        "content_fingerprint": "e0b22bcf190179390b548083966b9257500e5bfc295945fd9cb841e390e9751c",
+        "description_sha256": "9330e3c3909eb6d7156a5791800d92ee885e147d153fe69e73e92b10de2fb980",
+        "posted_at": "2026-08-20T13:31:45-04:00",
+        "selected_for_delivery": true
+      }
+    ]
+  },
+  {
+    "group_id": "6d1ae1dc-38e4-5e63-ba13-382b147a4b60",
+    "members": [
+      {
+        "job_id": "bd00ddb3-3892-59aa-a974-dc5d82da1759",
+        "source": "greenhouse",
+        "board": "gitlab",
+        "source_job_id": "8628780002",
+        "title": "Support Engineer, U.S. Government Support",
+        "job_url": "https://job-boards.greenhouse.io/gitlab/jobs/8628780002",
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8628780002",
+        "apply_url": null,
+        "first_seen_at": "2026-09-03T19:51:06.038760+00:00",
+        "last_seen_at": "2026-09-03T19:51:06.038761+00:00",
+        "content_fingerprint": "d6546f7c3be3e8d5fc16d8cd3b634aa8167c0aaa0ffb6f9ce4fa8fab8861f258",
+        "description_sha256": "1829fa25e2d3cb445c0999dfa19e55e311e3145a5206e3de836e4661cb055f17",
+        "posted_at": "2026-07-14T15:14:38-04:00",
+        "selected_for_delivery": false
+      },
+      {
+        "job_id": "3b2112ca-327b-5000-9ec1-2dc1b18a896b",
+        "source": "greenhouse",
+        "board": "gitlab",
+        "source_job_id": "8707353002",
+        "title": "Support Engineer, U.S. Government Support",
+        "job_url": "https://job-boards.greenhouse.io/gitlab/jobs/8707353002",
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8707353002",
+        "apply_url": null,
+        "first_seen_at": "2026-09-03T19:51:06.040680+00:00",
+        "last_seen_at": "2026-09-03T19:51:06.040681+00:00",
+        "content_fingerprint": "9db4032daad405bc8eaec26abdebd550316c29110af70b40f865f634f7b73376",
+        "description_sha256": "1829fa25e2d3cb445c0999dfa19e55e311e3145a5206e3de836e4661cb055f17",
+        "posted_at": "2026-08-21T13:48:35-04:00",
+        "selected_for_delivery": true
+      }
+    ]
+  },
+  {
+    "group_id": "0aa0afd9-d72c-51a2-a703-2bf3391f4d55",
+    "members": [
+      {
+        "job_id": "e6147549-6889-5039-abbb-e7b7b63c84df",
+        "source": "greenhouse",
+        "board": "gitlab",
+        "source_job_id": "8654230002",
+        "title": "Support Engineer (AMER)",
+        "job_url": "https://job-boards.greenhouse.io/gitlab/jobs/8654230002",
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8654230002",
+        "apply_url": null,
+        "first_seen_at": "2026-09-03T19:51:06.036857+00:00",
+        "last_seen_at": "2026-09-03T19:51:06.036858+00:00",
+        "content_fingerprint": "04c2b9df764ca30bec602d84e89e38afc8c914e82c53a3ac2ff7811dd4aa08b9",
+        "description_sha256": "b6627284837bef4951f4d1397398285c24a90f09deb07bc1e38ca1545cd80035",
+        "posted_at": "2026-07-31T14:26:58-04:00",
+        "selected_for_delivery": true
+      }
+    ]
+  }
+]

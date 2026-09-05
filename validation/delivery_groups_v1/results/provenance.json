@@ -1,0 +1,119 @@
+{
+  "created_at_utc": "2026-09-05T08:58:50.457181+00:00",
+  "live_calls": false,
+  "python": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+  "matcher_module": "/workspace/scratch/ecc8b04aa457/JobSift/job_scout/matching/matcher.py",
+  "matcher_version": "deterministic-v5",
+  "dedupe_version": "dedupe-v1",
+  "brief_sha256": "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6",
+  "inputs": [
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/airtable/jobs.sqlite3",
+      "sha256": "4a404245aff8b0bebb96b4b9e59bde26b4566a6b082215b82864ffa4afad53be"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/anthropic/jobs.sqlite3",
+      "sha256": "43e825c44a6af61ecc99b43789b1aefe6ca645ffb10c19b0dd20a5953e961b50"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/cloudflare/jobs.sqlite3",
+      "sha256": "3f0aec181c277cf632fe0797ef6c5d38f35d8fc6f8c94952e95730d252988534"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/datadog/jobs.sqlite3",
+      "sha256": "b4b38a4c2f84cf3d29d02f46950bbf18d68e3c2c0cd7d4102348e504f2e17a4c"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/figma/jobs.sqlite3",
+      "sha256": "44f098246e26875c28bcfd0850a52417f2f79a46bb86e95f2632a544532bb8ce"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/gitlab/jobs.sqlite3",
+      "sha256": "7d4ccef3aa316a40bd2eee1274dde83ab52e360558cadd463a29d062a1f49165"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/grafanalabs/jobs.sqlite3",
+      "sha256": "b81b9013bd91f3309f344954bf9ad950c38600dd925551e2b46c64baaf215487"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/postman/jobs.sqlite3",
+      "sha256": "07f4ca3ee068355c9ac3ef726c0c8cfaab0678b08dec48e547aa5b55ba645d89"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/stripe/jobs.sqlite3",
+      "sha256": "ebd965ccae4669507b6fa967b47eef92cf45ce818f0dc9d85b6604004bcbb7c6"
+    },
+    {
+      "path": "validation/operator_style_v1/results/greenhouse/vercel/jobs.sqlite3",
+      "sha256": "78da9baec033ee5e0e9193015cca269e82fe22ea791a0c649373e24f3e352e78"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/1password/jobs.sqlite3",
+      "sha256": "f794b1250045b7caacc5e3b430ffeee275920019ca94230bffbfafcdf8f932f8"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/airbyte/jobs.sqlite3",
+      "sha256": "057770c511719735b61ef65cdc279339cdf7014c02e0e6f4ed186f2ca9ada1b1"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/claylabs/jobs.sqlite3",
+      "sha256": "a7af1c34d2aedc4f62152de29d72322f39c9ca31f11c66115c6da9a3c1411aa3"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/clickhouse/jobs.sqlite3",
+      "sha256": "dc512c870deb2399f21e19c2eb9a4e51d37f3f2f62244ea9c4cd1dbb7dd678bd"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/linear/jobs.sqlite3",
+      "sha256": "913773e6dc53804fa0dca5d95f25e975705e033d59277eaa9688588414819321"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/menlosecurity/jobs.sqlite3",
+      "sha256": "38637641ad5915e8969471c1b6f546cc483b39a85122d29419e4426aa7a24cfc"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/pleo/jobs.sqlite3",
+      "sha256": "0effdb30ebcf86d93a729599575bf9acd4c6d15b89b2a94653359261286d9267"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/posthog/jobs.sqlite3",
+      "sha256": "b87183b5f3a74c2ab210b82431183d1c63787ff98ad9874f11af2287c9fdc234"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/render/jobs.sqlite3",
+      "sha256": "bae79b33aca398e8d9e1c8e64ff3a54ffd5e64f7246a06e85c13e3031a661a08"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/satispay/jobs.sqlite3",
+      "sha256": "6c30c35f00932aacab195285a8f20078d6766df1ded5b6aad974445e9546489f"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/sentry/jobs.sqlite3",
+      "sha256": "db37931fab976927d2fdde95fbe8d51ce721f5fb31fa3d52cce231b9846526f0"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/supabase/jobs.sqlite3",
+      "sha256": "585cfb4c89f2cbc852ccc5b9842e16d5f52977a915d60ed18951b2dfc8367d63"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/temporal/jobs.sqlite3",
+      "sha256": "0507e8bbb71a89d4912c9c28167532e3a62db83bd4feb7f15ed7ec446c53a868"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/vanta/jobs.sqlite3",
+      "sha256": "16fb53d81aac90b7dacfa178f59d201d3d39c72424d62c34571a1431ad78aace"
+    },
+    {
+      "path": "validation/operator_style_v1/results/ashby_preserved_audit/zapier/jobs.sqlite3",
+      "sha256": "0231278ab6ea47754dd07a8a08ec0cd1f9c4a79986c81c6faf346a1d788630f1"
+    }
+  ],
+  "code_sha256": {
+    "job_scout/dedupe/resolver.py": "0478af257ad359fbac5fef5006858ff94749f8fba8b94889eca2fa5198112db6",
+    "job_scout/storage/sqlite.py": "d85fe4877d9bcb4724f122e9f68566e7e7717509b08ba3da80ca5e9475c8e324",
+    "job_scout/orchestration/pipeline.py": "25ee351db01636f4c41cc7880f7039ca2f2e3568fe5cdfdbe22492d5bbbc19be",
+    "job_scout/matching/matcher.py": "40be2da3a73dcaffa44e159a5e1ca460c1b1d2397bfc2c3987d1bcd0492c5446",
+    "job_scout/domain/models.py": "ebe896f8b11c248953b966628d48394585b45fec3b187025c0f05020f8f0896c",
+    "validation/delivery_groups_v1/replay_offline.py": "00f33e0ba10e8c2673f4a6d408148bf56c888f7bea703a43c32c4f9e2def41c6"
+  }
+}

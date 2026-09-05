@@ -1,0 +1,299 @@
+{
+  "baseline_commit": "0525ee70f2194ee103c59fefeee857ae1d898221",
+  "matcher_version": "deterministic-v5",
+  "dedupe_version": "dedupe-v1",
+  "matching_decisions_identical": true,
+  "aggregates": {
+    "greenhouse": {
+      "source_postings": 2651,
+      "matched_postings": 4,
+      "matched_delivery_groups": 3,
+      "delivered_leads": 3,
+      "suppressed_duplicate_deliveries": 1
+    },
+    "ashby_preserved_audit": {
+      "source_postings": 797,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0
+    }
+  },
+  "boards": [
+    {
+      "source_family": "greenhouse",
+      "board": "airtable",
+      "source_postings": 16,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "03dac52057ba65bc7a11ae47bd72b03b377d0629b61445779dc3a63a4f4a2b99",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "anthropic",
+      "source_postings": 584,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "951a5e05a76673ae60456a80cc964a38721019336af58f9b8dc31df98b93805c",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "cloudflare",
+      "source_postings": 327,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "2e38f7fdb4569f12cea3ae1ad2c7b4df276550bca22a99afc05ba2201e89f946",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "datadog",
+      "source_postings": 443,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "3fa202915dd1d1c9a9a1cd40494e32b42f618a0e4f7e617b6cf85f9bb59a5be7",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "figma",
+      "source_postings": 157,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "045971b6cfe6c19bfc3e4e1e0b97463ea903f6ca337b2e0da33001291b3b5327",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "gitlab",
+      "source_postings": 229,
+      "matched_postings": 4,
+      "matched_delivery_groups": 3,
+      "delivered_leads": 3,
+      "suppressed_duplicate_deliveries": 1,
+      "database_sha256": "aa16ccc40f2de2d2c5f02fe6e069e5e83a2b3e16adb202bef928ca6cdfe258ed",
+      "csv_sha256": "e74ded8cf44617256c24e9a4e52b36c7afde2aefe94f37e7d3ceaf2addbbccc2"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "grafanalabs",
+      "source_postings": 133,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "54776e7d67671490f627a8f43b1b2192b439739c6077720eb2f8800891c08ec5",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "postman",
+      "source_postings": 65,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "b934faac6ff0187d13d73a6ac651d8feabcd024d847ed27f622531d27aba0b02",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "stripe",
+      "source_postings": 609,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "3c7678d2568b2750136012620816f13cc19be60ea8a5b9bc4fa6f122751eef85",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "greenhouse",
+      "board": "vercel",
+      "source_postings": 88,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "af0d7c1d5387fac5250862d272d0501113f8872e93651cbac6cee4d5ea0c3f84",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "1password",
+      "source_postings": 64,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "f1f0f0beb8c7acef0a97b9a8eddf825d853dc213fa214cdfb31c9dd175ce36d8",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "airbyte",
+      "source_postings": 12,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "f4dde0420e9a0096b742ca8699a68eedd220fdcefdc7aca2a5104cba31533c7b",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "claylabs",
+      "source_postings": 59,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "43d3faea70492cd500e4c368787a01b5cdd6f1a1c3289e40b18674540e232de4",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "clickhouse",
+      "source_postings": 177,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "26b5b8906051aae94920d4bedc56ba100d00a72793acc6442a096c8a18af21b5",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "linear",
+      "source_postings": 28,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "4614dd4af9d716d93cbf83e6fe24438fd952d2ebbda19b0fb784639d06a8177c",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "menlosecurity",
+      "source_postings": 18,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "7886270e4a51b21ff51b1c50ed0e36bdd69f3af1cac09ee9cfa3b75308de579d",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "pleo",
+      "source_postings": 31,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "cc0b58759895f4133bd0979080c62333d5f21bd5742cc79bbd1b939700f283f1",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "posthog",
+      "source_postings": 9,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "949588adacd4cec838d5e58f32dc581068d2f1717e56e6486f631661f9889671",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "render",
+      "source_postings": 34,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "f91c01e21b6464b4336b6a347f4685790a5968eaa734f5c3e5201703956c94af",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "satispay",
+      "source_postings": 85,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "638ad6fe5f8b3d14e3af114f9b1d4638843c0d9c3f6b62eaf588deca56a18d7b",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "sentry",
+      "source_postings": 39,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "f1e7411ea68f4b2ddbccb45c03a2410f79a363bf73577d7545b71399e0fd12c3",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "supabase",
+      "source_postings": 61,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "f66b7b87a30995d436b9e280b810a2dd55c7c0b33876d1f7351e05076c968e6b",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "temporal",
+      "source_postings": 64,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "85ef6309339a33e5e34395c707b57dfd0b9b890051fbafa4606a4ae334d7e596",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "vanta",
+      "source_postings": 110,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "2b2d3232b6fe791321a403b6174c24608d20b94046b0bb37a8cca0a082663792",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    },
+    {
+      "source_family": "ashby_preserved_audit",
+      "board": "zapier",
+      "source_postings": 6,
+      "matched_postings": 0,
+      "matched_delivery_groups": 0,
+      "delivered_leads": 0,
+      "suppressed_duplicate_deliveries": 0,
+      "database_sha256": "4868147860461716892aeda2bae5f1c361cc9ed5ee6a6aaa2aed0ef437ef8929",
+      "csv_sha256": "b0a7749bb0a48ddd57852f0146f3650a44c1b37a43be96fdc1f59920dbf6e3d4"
+    }
+  ]
+}

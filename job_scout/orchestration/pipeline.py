@@ -56,10 +56,10 @@ def run_pipeline(
         repository.save_match(match)
         if match.decision in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}:
             counters["matched"] += 1
-            if not repository.is_exported(job.id, profile.client_id, destination):
-                exportable.append(job)
+            exportable.append(job)
         else:
             counters["rejected"] += 1
+    exportable = repository.select_deliveries(exportable, profile.client_id, destination)
     exported = write_csv(csv_path, exportable)
     for job in exportable:
         repository.mark_exported(job.id, profile.client_id, destination)

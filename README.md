@@ -4,6 +4,9 @@ JobSift is a standalone, deterministic job-sourcing engine for an operator who s
 
 ## Current scope
 
+Posting preservation, duplicate confidence, migration and client-specific delivery
+suppression are documented in [Delivery groups](docs/delivery_groups.md).
+
 - Strict canonical job and sourcing-brief contracts
 - Greenhouse Job Board API adapter
 - deterministic normalization, eligibility and ranking reasons

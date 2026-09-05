@@ -6,7 +6,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
+from job_scout.dedupe.resolver import delivery_keys, representative_key
 from job_scout.domain.models import Job, JobLifecycle, JobMatch
 
 SCHEMA = """
@@ -25,7 +27,6 @@ CREATE TABLE IF NOT EXISTS jobs (
   payload_json TEXT NOT NULL,
   UNIQUE(source, source_board_id, source_job_id)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_canonical_url ON jobs(canonical_url);
 CREATE TABLE IF NOT EXISTS job_matches (
   job_id TEXT NOT NULL REFERENCES jobs(id),
   client_id TEXT NOT NULL,
@@ -49,6 +50,23 @@ CREATE TABLE IF NOT EXISTS exports (
   exported_at TEXT NOT NULL,
   PRIMARY KEY(job_id, client_id, destination)
 );
+CREATE TABLE IF NOT EXISTS delivery_groups (id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS posting_delivery_groups (
+  job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+  group_id TEXT NOT NULL REFERENCES delivery_groups(id)
+);
+CREATE INDEX IF NOT EXISTS ix_posting_group ON posting_delivery_groups(group_id);
+CREATE TABLE IF NOT EXISTS delivery_keys (
+  job_id TEXT NOT NULL REFERENCES jobs(id), kind TEXT NOT NULL, value TEXT NOT NULL,
+  PRIMARY KEY(job_id, kind, value)
+);
+CREATE INDEX IF NOT EXISTS ix_delivery_key ON delivery_keys(kind, value);
+CREATE TABLE IF NOT EXISTS group_deliveries (
+  group_id TEXT NOT NULL REFERENCES delivery_groups(id),
+  client_id TEXT NOT NULL, destination TEXT NOT NULL,
+  job_id TEXT NOT NULL REFERENCES jobs(id), exported_at TEXT NOT NULL,
+  PRIMARY KEY(group_id, client_id, destination)
+);
 """
 
 
@@ -57,11 +75,34 @@ class SQLiteRepository:
         self.path = str(path)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute("PRAGMA foreign_key_check").fetchone():
+                raise ValueError(
+                    "database contains orphaned legacy rows; restore missing source evidence "
+                    "before delivery-group migration (no records were deleted)"
+                )
+            connection.execute("DROP INDEX IF EXISTS uq_jobs_canonical_url")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_jobs_canonical_url ON jobs(canonical_url)"
+            )
+            # Backfill only postings lacking a group; safe to reopen repeatedly.
+            for row in connection.execute(
+                "SELECT j.payload_json FROM jobs j LEFT JOIN posting_delivery_groups g "
+                "ON g.job_id=j.id WHERE g.job_id IS NULL ORDER BY j.id"
+            ).fetchall():
+                self._assign_group(connection, Job.model_validate_json(row[0]))
+            connection.execute(
+                "INSERT OR IGNORE INTO group_deliveries "
+                "SELECT g.group_id, e.client_id, e.destination, e.job_id, e.exported_at "
+                "FROM exports e JOIN posting_delivery_groups g ON g.job_id=e.job_id "
+                "ORDER BY e.exported_at, e.job_id"
+            )
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
             connection.commit()
@@ -71,16 +112,12 @@ class SQLiteRepository:
     def upsert_job(self, job: Job) -> JobLifecycle:
         now = datetime.now(UTC).isoformat()
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT id, content_fingerprint FROM jobs WHERE source=? AND source_board_id=? AND source_job_id=?",
                 (job.source, job.source_board_id, job.source_job_id),
             ).fetchone()
             if row is None:
-                duplicate = connection.execute(
-                    "SELECT id FROM jobs WHERE canonical_url=?", (str(job.canonical_url),)
-                ).fetchone()
-                if duplicate:
-                    return JobLifecycle.SEEN
                 connection.execute(
                     "INSERT INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
@@ -97,6 +134,7 @@ class SQLiteRepository:
                         job.model_dump_json(),
                     ),
                 )
+                self._assign_group(connection, job)
                 return JobLifecycle.NEW
             lifecycle = (
                 JobLifecycle.CHANGED
@@ -116,7 +154,70 @@ class SQLiteRepository:
                     job.id,
                 ),
             )
+            self._assign_group(connection, job)
             return lifecycle
+
+    def _assign_group(self, connection: sqlite3.Connection, job: Job) -> None:
+        keys = delivery_keys(job)
+        existing = connection.execute(
+            "SELECT group_id FROM posting_delivery_groups WHERE job_id=?", (job.id,)
+        ).fetchone()
+        groups = {existing[0]} if existing else set()
+        for kind, value in sorted(keys):
+            groups.update(
+                row[0]
+                for row in connection.execute(
+                    "SELECT g.group_id FROM delivery_keys k JOIN posting_delivery_groups g "
+                    "ON g.job_id=k.job_id WHERE k.kind=? AND k.value=?",
+                    (kind, value),
+                )
+            )
+        own_group = str(
+            uuid5(NAMESPACE_URL, json.dumps([job.source, job.source_board_id, job.source_job_id]))
+        )
+        group_id = min(groups | {own_group})
+        connection.execute("INSERT OR IGNORE INTO delivery_groups VALUES (?)", (group_id,))
+        # A group is historical delivery identity. Edits update evidence keys but
+        # never reset delivery history. Merge history before deleting old groups.
+        for old in sorted(groups - {group_id}):
+            connection.execute(
+                "INSERT OR IGNORE INTO group_deliveries "
+                "SELECT ?, client_id, destination, job_id, exported_at FROM group_deliveries "
+                "WHERE group_id=? ORDER BY exported_at, job_id",
+                (group_id, old),
+            )
+            connection.execute("DELETE FROM group_deliveries WHERE group_id=?", (old,))
+            connection.execute(
+                "UPDATE posting_delivery_groups SET group_id=? WHERE group_id=?", (group_id, old)
+            )
+            connection.execute("DELETE FROM delivery_groups WHERE id=?", (old,))
+        connection.execute(
+            "INSERT OR REPLACE INTO posting_delivery_groups VALUES (?, ?)", (job.id, group_id)
+        )
+        connection.execute("DELETE FROM delivery_keys WHERE job_id=?", (job.id,))
+        connection.executemany(
+            "INSERT INTO delivery_keys VALUES (?, ?, ?)",
+            [(job.id, kind, value) for kind, value in sorted(keys)],
+        )
+
+    def delivery_group_id(self, job_id: str) -> str:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT group_id FROM posting_delivery_groups WHERE job_id=?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"posting has no delivery group: {job_id}")
+            return row[0]
+
+    def select_deliveries(self, jobs: list[Job], client_id: str, destination: str) -> list[Job]:
+        representatives: dict[str, Job] = {}
+        for job in sorted(jobs, key=representative_key):
+            group = self.delivery_group_id(job.id)
+            if group not in representatives and not self.is_exported(
+                job.id, client_id, destination
+            ):
+                representatives[group] = job
+        return [representatives[group] for group in sorted(representatives)]
 
     def save_match(self, match: JobMatch) -> None:
         with self.connect() as connection:
@@ -138,7 +239,8 @@ class SQLiteRepository:
         with self.connect() as connection:
             return (
                 connection.execute(
-                    "SELECT 1 FROM exports WHERE job_id=? AND client_id=? AND destination=?",
+                    "SELECT 1 FROM group_deliveries d JOIN posting_delivery_groups g "
+                    "ON g.group_id=d.group_id WHERE g.job_id=? AND d.client_id=? AND d.destination=?",
                     (job_id, client_id, destination),
                 ).fetchone()
                 is not None
@@ -146,6 +248,21 @@ class SQLiteRepository:
 
     def mark_exported(self, job_id: str, client_id: str, destination: str) -> None:
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if (
+                connection.execute(
+                    "SELECT 1 FROM posting_delivery_groups WHERE job_id=?", (job_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"posting has no delivery group: {job_id}")
+            inserted = connection.execute(
+                "INSERT OR IGNORE INTO group_deliveries "
+                "SELECT group_id, ?, ?, job_id, ? FROM posting_delivery_groups WHERE job_id=?",
+                (client_id, destination, datetime.now(UTC).isoformat(), job_id),
+            ).rowcount
+            if not inserted:
+                return
             connection.execute(
                 "INSERT OR IGNORE INTO exports VALUES (?, ?, ?, ?)",
                 (job_id, client_id, destination, datetime.now(UTC).isoformat()),
