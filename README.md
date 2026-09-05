@@ -8,7 +8,7 @@ Posting preservation, duplicate confidence, migration and client-specific delive
 suppression are documented in [Delivery groups](docs/delivery_groups.md).
 
 - Strict canonical job and sourcing-brief contracts
-- Greenhouse Job Board API adapter
+- Greenhouse and Ashby public Job Board API adapters
 - deterministic normalization, eligibility and ranking reasons
 - SQLite identity, change tracking and export idempotency
 - exact five-column CSV export
@@ -52,6 +52,19 @@ python -m job_scout.cli collect \
 ```
 
 The company name is configuration evidence because the Greenhouse list endpoint does not guarantee a company-name field. A source failure returns an explicit status and never acts as evidence that prior jobs closed.
+
+Use `--source ashby` for an Ashby board. Omitting `--source` continues to select
+Greenhouse. Both sources can use the same database and CSV for shared delivery history:
+
+```bash
+python -m job_scout collect --source ashby \
+  --client config/search_briefs/taiwo_operator_sourcing_v1.json \
+  --board supabase --company Supabase \
+  --database jobs.sqlite3 --csv exports/taiwo.csv
+```
+
+See [Ashby contract and validation](docs/ashby.md) for identity precedence, structured
+locations, workplace conflicts, failure handling and the frozen evaluation workflow.
 
 ## Greenhouse eligibility evidence
 

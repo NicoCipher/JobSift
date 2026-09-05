@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.domain.models import SourceTarget
 from job_scout.orchestration.pipeline import run_pipeline
@@ -15,6 +16,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="job-scout")
     commands = parser.add_subparsers(dest="command", required=True)
     collect = commands.add_parser("collect")
+    collect.add_argument("--source", choices=("greenhouse", "ashby"), default="greenhouse")
     collect.add_argument("--client", required=True, help="Path to client JSON config")
     collect.add_argument("--board", required=True)
     collect.add_argument("--company", required=True)
@@ -30,7 +32,7 @@ def main() -> None:
         return
     profile = load_search_brief(Path(args.client))
     summary = run_pipeline(
-        collector=GreenhouseCollector(),
+        collector={"greenhouse": GreenhouseCollector, "ashby": AshbyCollector}[args.source](),
         target=SourceTarget(board_id=args.board, company=args.company),
         profile=profile,
         repository=SQLiteRepository(args.database),

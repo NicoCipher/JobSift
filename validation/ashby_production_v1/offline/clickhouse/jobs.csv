@@ -1,0 +1,83 @@
+Job Title,Company Name,Job Link,Job Description,Job Platform
+"Senior Technical Customer Support Engineer, Federal",ClickHouse,https://jobs.ashbyhq.com/clickhouse/e17a51f3-9b63-4c81-b419-2ea6d3db0211/application,"We are growing our support team at ClickHouse, and we're looking for a Senior Technical Customer Support Engineer, Federal, to serve the specific needs of our U.S. public sector customers, federal agencies, and the contractors and integrators who support them. This role sits within our global Support Engineering team but has a dedicated focus to deliver the same excellent, technically deep support our commercial customers rely on, while meeting the compliance, security, and operational constraints that federal environments require.
+
+You'll be the primary technical point of contact for customers operating ClickHouse in government-authorized environments, triaging and resolving support cases, guiding customers through secure deployment and operational best practices, and partnering closely with our Product, Engineering, and Go-To-Market teams to make sure ClickHouse's platform meets the bar federal customers require.
+
+This is a U.S. Persons-only role. Because of the export-control status of the data, systems, and customer environments involved, all candidates must independently qualify as U.S. Persons before being considered. This applies regardless of visa sponsorship status, work authorization, or physical location within the U.S. Beyond this requirement, you'll also need to be prepared to work within the access, communication, and documentation controls that federal engagements demand.
+
+What you will be doing:
+
+ - Serving as the primary technical support contact for ClickHouse's U.S. federal and public-sector customers, across cases, chat, Slack, and meetings, consistent with applicable federal communication and data-handling requirements
+
+ - Developing solutions based on ClickHouse Cloud and ClickHouse open-source, and sharing them with federal customers and internal teams via documentation, knowledge base articles, and internal runbooks tailored to government deployment patterns
+
+ - Guiding customers through deployment, configuration, and troubleshooting within government-authorized environments, including AWS GovCloud-adjacent infrastructure where applicable
+
+ - Working closely with our global Support Services, Engineering, Security/Compliance, Product Management, and Go-To-Market teams to represent the requirements of federal customers and help prioritize the roadmap accordingly
+
+ - Supporting technical aspects of federal POCs, security questionnaires, and Authority to Operate (ATO)-adjacent evaluations in partnership with Go-To-Market and Security teams
+
+And of course:
+
+ - You will deliver excellent customer service as a technical engineer and representative of ClickHouse to our federal customer base. Our Support Engineers provide professional response, on-call coverage, and guidance within required SLAs on technical cases opened via the ticketing system, email, Slack, chat, and/or phone
+
+ - You will build strong, trusted relationships with colleagues, customers, and partners, including government program stakeholders and the systems integrators and resellers who support them
+
+What you bring along:
+
+ - Required: U.S. Person status, as defined above and verified during the interview process prior to any offer
+
+ - Technical breadth and depth in ClickHouse open-source or ClickHouse Cloud, or in domains relevant to ClickHouse, such as SQL databases, OLAP, cloud-native SaaS, and distributed systems
+
+ - Previous technical experience in roles such as Support Engineer, Consultant, Database Administrator, Site Reliability Engineer, Solutions Engineer, Software Engineer, and/or Systems Engineer
+
+ - Proven experience developing familiarity with the operational and compliance realities of federal IT environments (e.g., FedRAMP, DOD IL, AWS GovCloud, air-gapped or sovereign-cloud deployments)
+
+ - Strong communication skills, sound judgment around sensitive data handling
+
+ - A mindset of teamwork, empathy, and solving challenging problems under the additional rigor that government customers require
+
+ - You are self-driven, curious, and eager to continuously learn and grow
+
+Bonus points:
+
+ - Prior experience supporting federal, state/local/education (SLED), or other public-sector customers in a technical support, TAM, or solutions engineering capacity
+
+ - Experience with FedRAMP-authorized services, AWS GovCloud, Azure Government, or equivalent sovereign/air-gapped cloud environments
+
+ - An active or recently active U.S. government security clearance (not required, but a plus for future-facing work with more sensitive agencies)
+
+ - Experience with ClickHouse
+
+ - Experience with OSS and open-source technologies, as a user, community member, or contributor
+
+ - Experience with data pipelines such as Kafka, Kinesis, Spark, RabbitMQ, or others
+
+
+PERKS
+
+ - Flexible work environment - ClickHouse is a globally distributed company and remote-friendly. We currently operate in over 25 countries.
+
+ - Healthcare - Employer contributions towards your healthcare.
+
+ - Equity in the company - Every new team member who joins our company receives stock options.
+
+ - Time off - Flexible time off in the US, generous entitlement in other countries.
+
+ - A USD$500 Home office setup if you’re a remote employee.
+
+ - Global Gatherings – We believe in the power of in-person connection and offer opportunities to engage with colleagues at company-wide offsites.
+
+
+CULTURE - WE ALL SHAPE IT
+
+As part of a rapidly scaling start-up, you will be instrumental in shaping our culture.
+
+Are you interested in finding out more about our culture? Learn more about our values here https://clickhouse.com/company/careers. Check out our blog posts https://clickhouse.com/blog or follow us on LinkedIn https://www.linkedin.com/company/clickhouseinc/life/0c1ee7f4-2129-488d-b413-e7f6270659fd/?viewAsMember=true to find out more about what’s happening at ClickHouse.
+
+
+EQUAL OPPORTUNITY & PRIVACY
+
+ClickHouse provides equal employment opportunities to all employees and applicants and prohibits discrimination and harassment of any type based on factors such as race, color, religion, age, sex, national origin, disability status, genetics, protected veteran status, sexual orientation, gender identity or expression, or any other characteristic protected by federal, state or local laws.
+
+Please see here https://clickhouse.com/legal/applicant-privacy-notice for our Privacy Statement.",Ashby

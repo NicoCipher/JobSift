@@ -1,0 +1,438 @@
+[
+  {
+    "apply_url": "https://jobs.ashbyhq.com/claylabs/41246b56-fd7c-4b2c-af73-ce64cbfb3b21/application",
+    "board": "claylabs",
+    "company": "Clay",
+    "countries": [
+      "United States"
+    ],
+    "decision": "reject",
+    "delivered": false,
+    "delivery_group": "7576faa5-7b64-5901-93e0-0501d2630b20",
+    "id": "8b8a0d9e-3794-5338-9778-05194ea89ffc",
+    "job_url": "https://jobs.ashbyhq.com/claylabs/41246b56-fd7c-4b2c-af73-ce64cbfb3b21",
+    "location": "New York",
+    "matched_reasons": [],
+    "rejection_reasons": [
+      "work mode 'hybrid' does not match the brief"
+    ],
+    "source_job_id": "41246b56-fd7c-4b2c-af73-ce64cbfb3b21",
+    "title": "IT Support Engineer",
+    "work_mode": "hybrid"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/d0b7194e-24a9-4d48-a5b2-2f8439a5c15f/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "c6770c9a-0c32-56a8-ae12-2c8dcfa6fea5",
+    "id": "1b904027-413d-56f0-a73e-82710a537a94",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/d0b7194e-24a9-4d48-a5b2-2f8439a5c15f",
+    "location": "APJ",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "d0b7194e-24a9-4d48-a5b2-2f8439a5c15f",
+    "title": "Senior Technical Customer Support Engineer - Australia",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/e17a51f3-9b63-4c81-b419-2ea6d3db0211/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [
+      "United States"
+    ],
+    "decision": "strong_match",
+    "delivered": true,
+    "delivery_group": "a4626861-bbb8-5f4d-b0ab-9c8ea8d3efca",
+    "id": "21d6524f-07e9-5eb1-98b2-3a4bdd66f8dd",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/e17a51f3-9b63-4c81-b419-2ea6d3db0211",
+    "location": "United States",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "target market matched: United States",
+      "work mode matched: remote",
+      "preferred skill matched: Troubleshooting",
+      "preferred skill matched: Security"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "e17a51f3-9b63-4c81-b419-2ea6d3db0211",
+    "title": "Senior Technical Customer Support Engineer, Federal",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/a3ac6567-8d36-44a1-bf55-95bca0eddc57/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [
+      "India"
+    ],
+    "decision": "reject",
+    "delivered": false,
+    "delivery_group": "1b4d3db5-8e04-5135-b9d1-c369e7443f0d",
+    "id": "2ddb8af4-1516-5ef4-9930-ff116a508bb6",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/a3ac6567-8d36-44a1-bf55-95bca0eddc57",
+    "location": "India",
+    "matched_reasons": [],
+    "rejection_reasons": [
+      "target market countries [India] do not match the brief"
+    ],
+    "source_job_id": "a3ac6567-8d36-44a1-bf55-95bca0eddc57",
+    "title": "Senior Technical Customer Support Engineer - India",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/a4baf283-573b-4433-a858-77397ed7e830/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "c801e545-2a27-50fb-8014-6c0f46b1c337",
+    "id": "33aec6a8-7982-5587-9efc-4bedb90c2d87",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/a4baf283-573b-4433-a858-77397ed7e830",
+    "location": "AMER",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "a4baf283-573b-4433-a858-77397ed7e830",
+    "title": "Senior Technical Customer Support Engineer",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/15aa047b-b3e2-479c-86fd-a7eaf4537474/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "234341c7-981a-5cf9-8987-113e13b0a82c",
+    "id": "7be0c6f9-1181-5502-8e4f-3431321736db",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/15aa047b-b3e2-479c-86fd-a7eaf4537474",
+    "location": "APJ",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "15aa047b-b3e2-479c-86fd-a7eaf4537474",
+    "title": "Support Engineer - China (Alibaba Cloud Strategic Accounts) \u652f\u6301\u5de5\u7a0b\u5e08 - \u4e2d\u56fd\uff08\u963f\u91cc\u4e91\u6218\u7565\u5ba2\u6237\uff09",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/fd8daa96-8c56-4f15-9817-ce55e97a8964/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "b5e57622-0ffd-5d4d-8b55-44f0ed3b3f5a",
+    "id": "a5e94be3-9e04-59a4-a62b-8cd56bf73e7c",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/fd8daa96-8c56-4f15-9817-ce55e97a8964",
+    "location": "EMEA",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "fd8daa96-8c56-4f15-9817-ce55e97a8964",
+    "title": "Technical Customer Support Engineer - EMEA",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/5107c165-8312-4fa6-8411-443a528ccd2d/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "9d6091cc-cb95-54ca-921c-e28c41850119",
+    "id": "b5e75fc4-0091-5772-b9f9-44de0fbb34a2",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/5107c165-8312-4fa6-8411-443a528ccd2d",
+    "location": "LatAm",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "5107c165-8312-4fa6-8411-443a528ccd2d",
+    "title": "Senior Technical Customer Support Engineer - LATAM",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/clickhouse/86f88674-eb78-4abc-93f4-c8be453d15ae/application",
+    "board": "clickhouse",
+    "company": "ClickHouse",
+    "countries": [],
+    "decision": "reject",
+    "delivered": false,
+    "delivery_group": "2e3af37e-70ed-5615-bb25-623875d888c5",
+    "id": "fb6f4b91-d432-58b9-a8c8-a20bd7a227fd",
+    "job_url": "https://jobs.ashbyhq.com/clickhouse/86f88674-eb78-4abc-93f4-c8be453d15ae",
+    "location": "EMEA",
+    "matched_reasons": [],
+    "rejection_reasons": [
+      "work mode 'hybrid' does not match the brief"
+    ],
+    "source_job_id": "86f88674-eb78-4abc-93f4-c8be453d15ae",
+    "title": "Technical Customer Support Engineer, AI Infrastructure & Observability - EMEA",
+    "work_mode": "hybrid"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/sentry/725334ed-ffef-4ead-8606-103267d9d640/application",
+    "board": "sentry",
+    "company": "Sentry",
+    "countries": [
+      "Australia"
+    ],
+    "decision": "reject",
+    "delivered": false,
+    "delivery_group": "cbb528d6-e19f-5f55-b629-34d4a0a53875",
+    "id": "1682cd1b-a055-5487-a29f-c1ce5dcb230a",
+    "job_url": "https://jobs.ashbyhq.com/sentry/725334ed-ffef-4ead-8606-103267d9d640",
+    "location": "Sydney, Australia",
+    "matched_reasons": [],
+    "rejection_reasons": [
+      "target market countries [Australia] do not match the brief",
+      "work mode 'hybrid' does not match the brief"
+    ],
+    "source_job_id": "725334ed-ffef-4ead-8606-103267d9d640",
+    "title": "Senior Technical Support Engineer",
+    "work_mode": "hybrid"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/sentry/a078cfdc-4dcc-47b4-93da-a49e4f39d322/application",
+    "board": "sentry",
+    "company": "Sentry",
+    "countries": [
+      "United States"
+    ],
+    "decision": "reject",
+    "delivered": false,
+    "delivery_group": "f6d4addd-e2a4-5816-b97d-7e468b16460e",
+    "id": "67146f8c-594d-5312-89f5-80ec6f68a7ff",
+    "job_url": "https://jobs.ashbyhq.com/sentry/a078cfdc-4dcc-47b4-93da-a49e4f39d322",
+    "location": "San Francisco, California",
+    "matched_reasons": [],
+    "rejection_reasons": [
+      "work mode 'hybrid' does not match the brief"
+    ],
+    "source_job_id": "a078cfdc-4dcc-47b4-93da-a49e4f39d322",
+    "title": "Technical Support Engineer (4PM-12AM PST)",
+    "work_mode": "hybrid"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/sentry/889f98a2-07dd-4e7c-9682-3f137c57dc88/application",
+    "board": "sentry",
+    "company": "Sentry",
+    "countries": [
+      "Canada"
+    ],
+    "decision": "reject",
+    "delivered": false,
+    "delivery_group": "e7cc9a7f-010c-529e-8ee1-58e19ab3f56d",
+    "id": "c5b32c98-cf3c-5f10-b5b1-fdb57065d25c",
+    "job_url": "https://jobs.ashbyhq.com/sentry/889f98a2-07dd-4e7c-9682-3f137c57dc88",
+    "location": "Toronto, Ontario, Canada",
+    "matched_reasons": [],
+    "rejection_reasons": [
+      "target market countries [Canada] do not match the brief",
+      "work mode 'hybrid' does not match the brief"
+    ],
+    "source_job_id": "889f98a2-07dd-4e7c-9682-3f137c57dc88",
+    "title": "Technical Support Engineer",
+    "work_mode": "hybrid"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/f18b1173-51c3-4ff6-bcda-89f8111931f4/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "b7f5a87b-9d52-560d-bddc-7dab8fd42bbf",
+    "id": "204455d9-ada7-5783-b8e7-5c16c21309c1",
+    "job_url": "https://jobs.ashbyhq.com/supabase/f18b1173-51c3-4ff6-bcda-89f8111931f4",
+    "location": "Remote, AMER",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Troubleshooting",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "f18b1173-51c3-4ff6-bcda-89f8111931f4",
+    "title": "Database Support Engineer (AMER)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/e4e3ccb7-7b7d-42a2-be0f-26cbb5ae4abd/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "3eece895-f058-53ae-a924-9ea97225bec2",
+    "id": "2de97cea-9cb9-5377-9503-e104b6cd4a4f",
+    "job_url": "https://jobs.ashbyhq.com/supabase/e4e3ccb7-7b7d-42a2-be0f-26cbb5ae4abd",
+    "location": "Remote, AMER",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "e4e3ccb7-7b7d-42a2-be0f-26cbb5ae4abd",
+    "title": "Support Engineer (AMER)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/3889002e-536e-4046-a330-70e942b0cc96/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "c6c91b38-093c-5855-b335-55da26a2c6ff",
+    "id": "48c28b86-67c7-505c-acf3-271454e1f141",
+    "job_url": "https://jobs.ashbyhq.com/supabase/3889002e-536e-4046-a330-70e942b0cc96",
+    "location": "Remote, EMEA",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Troubleshooting",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "3889002e-536e-4046-a330-70e942b0cc96",
+    "title": "Database Support Engineer (EMEA)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/c01f7436-1fdd-4a3e-8b96-8cadc33b006e/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "ca1b3be6-6cac-5cc4-9f27-1a0fa8ac98cb",
+    "id": "529e20f1-b1df-50cf-926c-178bce34eec7",
+    "job_url": "https://jobs.ashbyhq.com/supabase/c01f7436-1fdd-4a3e-8b96-8cadc33b006e",
+    "location": "Remote, EMEA",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "c01f7436-1fdd-4a3e-8b96-8cadc33b006e",
+    "title": "Support Engineer (EMEA)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/142135ae-a15f-4ec7-90bb-cb4e7968bc09/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "14a522f3-3180-52d0-851f-f38ab444eb6a",
+    "id": "971ece81-0236-58e6-879d-b5bc5588b459",
+    "job_url": "https://jobs.ashbyhq.com/supabase/142135ae-a15f-4ec7-90bb-cb4e7968bc09",
+    "location": "Remote, APAC",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "142135ae-a15f-4ec7-90bb-cb4e7968bc09",
+    "title": "Support Engineer (APAC)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/590a0742-97f1-47f4-81a2-567efc939ae2/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "662939cb-64d5-5f02-8204-7748e9ea43eb",
+    "id": "9745892b-cb68-5aa7-9986-92a9ff44ceaf",
+    "job_url": "https://jobs.ashbyhq.com/supabase/590a0742-97f1-47f4-81a2-567efc939ae2",
+    "location": "Remote, Global",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "590a0742-97f1-47f4-81a2-567efc939ae2",
+    "title": "Support Engineer (EMEA - Weekends)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/62945518-2468-4cf5-9f36-904b60f75183/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "5aa2c7e1-2d5b-5dc2-828e-6d1e2b813cd3",
+    "id": "a56553d9-cd0a-5025-969a-e29e08d4bbb3",
+    "job_url": "https://jobs.ashbyhq.com/supabase/62945518-2468-4cf5-9f36-904b60f75183",
+    "location": "Remote, APAC",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Troubleshooting",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "62945518-2468-4cf5-9f36-904b60f75183",
+    "title": "Database Support Engineer (APAC)",
+    "work_mode": "remote"
+  },
+  {
+    "apply_url": "https://jobs.ashbyhq.com/supabase/dcf09dfe-55bc-44ba-b5db-1a2de7f33216/application",
+    "board": "supabase",
+    "company": "Supabase",
+    "countries": [],
+    "decision": "needs_review",
+    "delivered": false,
+    "delivery_group": "898f8bee-9537-5905-92b7-f5192c1a68ce",
+    "id": "d76af870-ba02-591a-9b54-c9cee9aceb8a",
+    "job_url": "https://jobs.ashbyhq.com/supabase/dcf09dfe-55bc-44ba-b5db-1a2de7f33216",
+    "location": "Remote, AMER",
+    "matched_reasons": [
+      "target role matched: Support Engineer",
+      "work mode matched: remote",
+      "preferred skill matched: Linux",
+      "needs review: target market is unknown"
+    ],
+    "rejection_reasons": [],
+    "source_job_id": "dcf09dfe-55bc-44ba-b5db-1a2de7f33216",
+    "title": "Support Engineer (AMER - Weekends)",
+    "work_mode": "remote"
+  }
+]

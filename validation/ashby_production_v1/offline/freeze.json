@@ -1,0 +1,174 @@
+{
+  "baseline_commit": "e20787a1148bfb046f73802ceb44b01a2a520014",
+  "brief_sha256": "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6",
+  "code_sha256": {
+    "job_scout/cli.py": "cd1bddbf4e239c68a58fdf1b2c6e552a09a09481d2fc000c092a258ccc2a46a3",
+    "job_scout/collectors/ashby.py": "9eeab082ecb05ef3f31517dacad514c843592682b266d9f1dbc91c3b63e01580",
+    "job_scout/collectors/greenhouse.py": "bafd872d0cccc6e0dccb57fa3867c11311c9e38a8ec20fb86292464a4fe5ef8b",
+    "job_scout/dedupe/resolver.py": "0478af257ad359fbac5fef5006858ff94749f8fba8b94889eca2fa5198112db6",
+    "job_scout/matching/matcher.py": "40be2da3a73dcaffa44e159a5e1ca460c1b1d2397bfc2c3987d1bcd0492c5446",
+    "job_scout/orchestration/pipeline.py": "25ee351db01636f4c41cc7880f7039ca2f2e3568fe5cdfdbe22492d5bbbc19be",
+    "job_scout/storage/sqlite.py": "d85fe4877d9bcb4724f122e9f68566e7e7717509b08ba3da80ca5e9475c8e324",
+    "validation/ashby_production_v1/evaluate.py": "7a3b0ae816fd01e72b2466b321088721285b6a28d3f8f15d2d210fa2d917bf81"
+  },
+  "cohort": [
+    {
+      "board_token": "1password",
+      "company": "1Password",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/1password",
+      "jobs_received": "64",
+      "public_board_available": "yes",
+      "selection_reason": "Security SaaS with a substantial technical organization and a distributed, multinational operating model.",
+      "sha256": "bad184d166bedc76628147b193087943a4076427b729b714b95b625568eebec1",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "airbyte",
+      "company": "Airbyte",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/airbyte",
+      "jobs_received": "12",
+      "public_board_available": "yes",
+      "selection_reason": "Cloud/data-infrastructure software company with a distributed technical workforce.",
+      "sha256": "aa4c791abd6df74cb1c22d29e1ba81f22cd060e6c0f80dfb4de38b7d6397aa99",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "claylabs",
+      "company": "Clay",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/claylabs",
+      "jobs_received": "59",
+      "public_board_available": "yes",
+      "selection_reason": "B2B software platform with a substantial engineering and technical customer organization.",
+      "sha256": "76f5ce0c3eefb7e198306c12b4d1f73ffc61d651e5de1c1c7e3b61c00702c712",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "clickhouse",
+      "company": "ClickHouse",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/clickhouse",
+      "jobs_received": "177",
+      "public_board_available": "yes",
+      "selection_reason": "Cloud/database infrastructure company operating a distributed multinational workforce.",
+      "sha256": "c0374b2935c1c737b82c1b1d9cfa01529677e3af1b515f6002c2217ca573ca20",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "linear",
+      "company": "Linear",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/linear",
+      "jobs_received": "28",
+      "public_board_available": "yes",
+      "selection_reason": "Software-development platform with a distributed technical team and active careers presence.",
+      "sha256": "477364e59910775a83f02f34975a2f97a33569e0188a44f73ecb92a5ac931c45",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "menlosecurity",
+      "company": "Menlo Security",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/menlosecurity",
+      "jobs_received": "18",
+      "public_board_available": "yes",
+      "selection_reason": "Cloud/browser-security company with an international technical workforce.",
+      "sha256": "03c179b42a2eb4057e29b6b241757047c60e9e872fa9967fd34d532572f13bfe",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "pleo",
+      "company": "Pleo",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/pleo",
+      "jobs_received": "31",
+      "public_board_available": "yes",
+      "selection_reason": "European SaaS/fintech platform operating across multiple countries.",
+      "sha256": "c4d8733fd78c5e5df8b5f5adee92c9ac82420e5b6e8cfab28707798e212d5946",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "posthog",
+      "company": "PostHog",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/posthog",
+      "jobs_received": "9",
+      "public_board_available": "yes",
+      "selection_reason": "Developer-tools SaaS company with an explicitly remote, distributed operating model.",
+      "sha256": "c7684c6a06228b1396886a72be561f91e6713eced0f1a83d2013134b1c1af739",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "render",
+      "company": "Render",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/render",
+      "jobs_received": "34",
+      "public_board_available": "yes",
+      "selection_reason": "Cloud application platform with a substantial engineering organization and distributed work model.",
+      "sha256": "fdce23d91a58dbb50edb5587e8310a9b83411cf7b40984914f1f2cc1ab458d02",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "satispay",
+      "company": "Satispay",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/satispay",
+      "jobs_received": "85",
+      "public_board_available": "yes",
+      "selection_reason": "Technology payments company with teams and hiring across multiple European countries.",
+      "sha256": "e076f5f4be41100bc26db0aa8a851937b23e1349117c5267520a2660eb84ae74",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "sentry",
+      "company": "Sentry",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/sentry",
+      "jobs_received": "39",
+      "public_board_available": "yes",
+      "selection_reason": "Developer-infrastructure/observability company with a multinational technical workforce.",
+      "sha256": "7d9277f8f14aaf706044a3c51cd521437a1be713675c90518c67125ffec5de91",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "supabase",
+      "company": "Supabase",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/supabase",
+      "jobs_received": "61",
+      "public_board_available": "yes",
+      "selection_reason": "Developer cloud platform with an explicitly remote, globally distributed workforce.",
+      "sha256": "4a99ef55926ae1f8cb9def94de7bab5d313fdaf061cc6dcab70e4044472054f3",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "temporal",
+      "company": "Temporal",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/temporal",
+      "jobs_received": "64",
+      "public_board_available": "yes",
+      "selection_reason": "Cloud/workflow infrastructure company with a distributed technical workforce.",
+      "sha256": "b907d09868242b8c89637f86180d395253292139794b4e6b304663f0b0a4cc7c",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "vanta",
+      "company": "Vanta",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/vanta",
+      "jobs_received": "110",
+      "public_board_available": "yes",
+      "selection_reason": "Security/compliance SaaS company with a multinational technical organization.",
+      "sha256": "4c0bd0c9c19ee0359b515ca5367d740833f77485b7d072c3ec7d06bcf3391893",
+      "verification_date": "2026-09-03"
+    },
+    {
+      "board_token": "zapier",
+      "company": "Zapier",
+      "endpoint": "https://api.ashbyhq.com/posting-api/job-board/zapier",
+      "jobs_received": "6",
+      "public_board_available": "yes",
+      "selection_reason": "Automation SaaS company with a longstanding remote, distributed workforce.",
+      "sha256": "2da5221fa8b2f9fbe7bf95366ee7a6a843c8c67a3613cf36417ea47a0c74d18b",
+      "verification_date": "2026-09-03"
+    }
+  ],
+  "cohort_sha256": "dd0875de7154c60e2aac9ef17aae08c0a13f77adc1616876c8d388bad4118fb1",
+  "dedupe_version": "dedupe-v1",
+  "implementation_commit": null,
+  "live_calls": false,
+  "matcher_version": "deterministic-v5",
+  "phase": "offline",
+  "python": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+  "started_at_utc": "2026-09-05T17:03:44.147823+00:00"
+}

@@ -1,0 +1,64 @@
+{
+  "completed_at_utc": "2026-09-05T17:03:46.072260+00:00",
+  "distributions": {
+    "countries": {
+      "Australia": 3,
+      "Austria": 2,
+      "Canada": 80,
+      "Denmark": 5,
+      "France": 4,
+      "Germany": 6,
+      "India": 18,
+      "Ireland": 12,
+      "Israel": 1,
+      "Italy": 50,
+      "Japan": 2,
+      "Luxembourg": 16,
+      "Netherlands": 8,
+      "Poland": 2,
+      "Portugal": 5,
+      "Singapore": 3,
+      "Spain": 11,
+      "United Kingdom": 60,
+      "United States": 389
+    },
+    "employment": {
+      "contract": 1,
+      "full_time": 796
+    },
+    "identity_source": {
+      "provider_id": 797
+    },
+    "work_mode": {
+      "hybrid": 253,
+      "onsite": 29,
+      "remote": 503,
+      "unknown": 12
+    }
+  },
+  "phase": "offline",
+  "statuses": {
+    "success": 15
+  },
+  "totals": {
+    "country_known": 603,
+    "country_unknown": 194,
+    "delivered_leads": 1,
+    "delivery_groups": 780,
+    "duplicate_deliveries_suppressed": 0,
+    "listed_postings": 797,
+    "management_rejected": 0,
+    "matched_delivery_groups": 1,
+    "multi_country": 61,
+    "needs_review": 13,
+    "normalized": 797,
+    "quarantined": 0,
+    "raw_postings": 797,
+    "reject": 783,
+    "skipped_unlisted": 0,
+    "strong_match": 1,
+    "target_market_conflicts": 3,
+    "target_role_relevant": 20,
+    "work_mode_conflicts": 5
+  }
+}
