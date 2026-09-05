@@ -9,6 +9,7 @@ from job_scout.domain.models import (
     CollectionStatus,
     JobLifecycle,
     MatchDecision,
+    SearchBrief,
     SourceTarget,
 )
 from job_scout.export.csv_exporter import write_csv
@@ -32,7 +33,7 @@ def run_pipeline(
     *,
     collector: JobCollector,
     target: SourceTarget,
-    profile: CandidateProfile,
+    profile: SearchBrief | CandidateProfile,
     repository: SQLiteRepository,
     csv_path: str | Path,
 ) -> PipelineSummary:

@@ -4,7 +4,7 @@ JobSift is a standalone, deterministic job-sourcing engine for an operator who s
 
 ## Current scope
 
-- Strict canonical job and client contracts
+- Strict canonical job and sourcing-brief contracts
 - Greenhouse Job Board API adapter
 - deterministic normalization, eligibility and ranking reasons
 - SQLite identity, change tracking and export idempotency
@@ -25,13 +25,17 @@ ruff check .
 
 ## Run
 
-Create a validated client profile through operator-friendly prompts:
+Create a validated `SearchBrief` through operator-friendly prompts:
 
 ```bash
 python -m job_scout profile create
 ```
 
-Unknown country, work-mode, and constrained employment-type evidence defaults to manual review. The operator can select `Any` when a field should not constrain eligibility.
+The brief describes the jobs the client wants sourced. Target job market, candidate residence, and optional work-country eligibility are separate facts. Candidate residence is informational unless the operator explicitly enables work-eligibility filtering.
+
+Rules use four explicit intents: `must`, `prefer`, `avoid`, and `ignore`. The normal flow keeps experience, employment type, and work-eligibility filtering under optional advanced restrictions. Missing preferred terms never reject a relevant job.
+
+The optional maximum required experience is an operator eligibility ceiling, not a claim about the candidate's own experience. When configured, only a clearly mandatory minimum above that ceiling rejects a job. Preferred, ambiguous, unrelated, or absent experience evidence does not create a hard rejection. Existing `CandidateProfile` JSON remains loadable through an explicit compatibility translation; old country constraints retain their work-eligibility meaning and are never silently reinterpreted as target markets.
 
 Collect one configured Greenhouse board:
 
@@ -54,3 +58,5 @@ The company name is configuration evidence because the Greenhouse list endpoint 
 - **Unavailable as a standard field:** employment type. It remains unknown unless an exact `Employment Type` custom metadata field contains a recognized value.
 
 Remote status and work-country eligibility are evaluated independently. A remote vacancy restricted to a different country is not treated as globally eligible.
+
+Under a new `SearchBrief`, target market is evaluated independently from candidate residence. Citizenship and work-authorization wording affects sourcing only when the brief explicitly enables work-eligibility filtering or adds the wording as an avoid term.

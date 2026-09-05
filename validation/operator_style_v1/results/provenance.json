@@ -1,0 +1,111 @@
+{
+  "ashby_jobs_expected": 797,
+  "brief_path": "config/search_briefs/taiwo_operator_sourcing_v1.json",
+  "brief_sha256": "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6",
+  "created_at_utc": "2026-09-05T07:39:43.644104+00:00",
+  "greenhouse_jobs_expected": 2651,
+  "inputs": [
+    {
+      "path": "validation/coverage/airtable.sqlite3",
+      "sha256": "575060c4bf6a4c25ee3d38b59d869f1dfc0ef3e945a81c18c891895d0b9a4231"
+    },
+    {
+      "path": "validation/coverage/anthropic.sqlite3",
+      "sha256": "59ee9c0bb51f9ef4ad5262a7a8cb65694f4d1476d234c982b3fa187e71d4b389"
+    },
+    {
+      "path": "validation/coverage/cloudflare.sqlite3",
+      "sha256": "ee43495e64f53ac7a8a1a63447675e5c11528f4d1311daf5cb1aeabc94d2ed09"
+    },
+    {
+      "path": "validation/coverage/datadog.sqlite3",
+      "sha256": "c2bffda3673dd6e1b619ee83b22f6f5385e65310db66dd1bae733cbadb9c27ad"
+    },
+    {
+      "path": "validation/coverage/figma.sqlite3",
+      "sha256": "73ec12b11d381b4ac2c4fcadaa2bbccaf1043f1d0d4eca6090c3017b003f4d43"
+    },
+    {
+      "path": "validation/coverage/gitlab.sqlite3",
+      "sha256": "e75efec1a71ce42954d38ce8f13254cb32dd09334260f48f0857cf4626e03891"
+    },
+    {
+      "path": "validation/coverage/grafanalabs.sqlite3",
+      "sha256": "fe11e0133430ef65caf46fd82b8c9dfcf9cadc98783deb698a9f7056f2943482"
+    },
+    {
+      "path": "validation/coverage/postman.sqlite3",
+      "sha256": "6460fd340569dd9315f25fec5c3747dcd562ae1fb21c2eb3016798d1abbf8776"
+    },
+    {
+      "path": "validation/coverage/stripe.sqlite3",
+      "sha256": "355e565a3171691a4715390172c6ff02b0c0e7563daeefa14a215b6a286fe130"
+    },
+    {
+      "path": "validation/coverage/vercel.sqlite3",
+      "sha256": "3da2252e93194cfc675133b537fbe538ddf3f3216f007e572beaf48d3771d7b2"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/1password.json",
+      "sha256": "bad184d166bedc76628147b193087943a4076427b729b714b95b625568eebec1"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/airbyte.json",
+      "sha256": "aa4c791abd6df74cb1c22d29e1ba81f22cd060e6c0f80dfb4de38b7d6397aa99"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/claylabs.json",
+      "sha256": "76f5ce0c3eefb7e198306c12b4d1f73ffc61d651e5de1c1c7e3b61c00702c712"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/clickhouse.json",
+      "sha256": "c0374b2935c1c737b82c1b1d9cfa01529677e3af1b515f6002c2217ca573ca20"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/linear.json",
+      "sha256": "477364e59910775a83f02f34975a2f97a33569e0188a44f73ecb92a5ac931c45"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/menlosecurity.json",
+      "sha256": "03c179b42a2eb4057e29b6b241757047c60e9e872fa9967fd34d532572f13bfe"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/pleo.json",
+      "sha256": "c4d8733fd78c5e5df8b5f5adee92c9ac82420e5b6e8cfab28707798e212d5946"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/posthog.json",
+      "sha256": "c7684c6a06228b1396886a72be561f91e6713eced0f1a83d2013134b1c1af739"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/render.json",
+      "sha256": "fdce23d91a58dbb50edb5587e8310a9b83411cf7b40984914f1f2cc1ab458d02"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/satispay.json",
+      "sha256": "e076f5f4be41100bc26db0aa8a851937b23e1349117c5267520a2660eb84ae74"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/sentry.json",
+      "sha256": "7d9277f8f14aaf706044a3c51cd521437a1be713675c90518c67125ffec5de91"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/supabase.json",
+      "sha256": "4a99ef55926ae1f8cb9def94de7bab5d313fdaf061cc6dcab70e4044472054f3"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/temporal.json",
+      "sha256": "b907d09868242b8c89637f86180d395253292139794b4e6b304663f0b0a4cc7c"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/vanta.json",
+      "sha256": "4c0bd0c9c19ee0359b515ca5367d740833f77485b7d072c3ec7d06bcf3391893"
+    },
+    {
+      "path": "/workspace/scratch/ecc8b04aa457/ashby_coverage_audit_2026-09-03/raw/zapier.json",
+      "sha256": "2da5221fa8b2f9fbe7bf95366ee7a6a843c8c67a3613cf36417ea47a0c74d18b"
+    }
+  ],
+  "live_calls": false,
+  "matcher_version": "deterministic-v5"
+}

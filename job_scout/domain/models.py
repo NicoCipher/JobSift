@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
@@ -54,6 +54,13 @@ class UnknownEligibilityPolicy(StrEnum):
     ALLOW = "allow"
     REVIEW = "review"
     REJECT = "reject"
+
+
+class RuleIntent(StrEnum):
+    MUST = "must"
+    PREFER = "prefer"
+    AVOID = "avoid"
+    IGNORE = "ignore"
 
 
 class CollectionStatus(StrEnum):
@@ -151,6 +158,54 @@ class Skills(BaseModel):
     preferred: list[str] = Field(default_factory=list)
 
 
+class TargetMarketRule(BaseModel):
+    countries: set[str] = Field(default_factory=set)
+    intent: RuleIntent = RuleIntent.IGNORE
+    unknown_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+
+    @model_validator(mode="after")
+    def configured_intent_requires_countries(self) -> TargetMarketRule:
+        if self.intent is not RuleIntent.IGNORE and not self.countries:
+            raise ValueError("target market rule requires at least one country")
+        return self
+
+
+class WorkModeRule(BaseModel):
+    modes: set[RemoteStatus] = Field(default_factory=set)
+    intent: RuleIntent = RuleIntent.IGNORE
+    unknown_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+
+    @model_validator(mode="after")
+    def configured_intent_requires_modes(self) -> WorkModeRule:
+        if self.intent is not RuleIntent.IGNORE and not self.modes:
+            raise ValueError("work mode rule requires at least one mode")
+        return self
+
+
+class WorkEligibilityRule(BaseModel):
+    countries: set[str] = Field(default_factory=set)
+    intent: RuleIntent = RuleIntent.IGNORE
+    unknown_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+
+    @model_validator(mode="after")
+    def configured_intent_requires_countries(self) -> WorkEligibilityRule:
+        if self.intent is not RuleIntent.IGNORE and not self.countries:
+            raise ValueError("work eligibility rule requires at least one country")
+        return self
+
+
+class EmploymentTypeRule(BaseModel):
+    types: set[EmploymentType] = Field(default_factory=set)
+    intent: RuleIntent = RuleIntent.IGNORE
+    unknown_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+
+    @model_validator(mode="after")
+    def configured_intent_requires_types(self) -> EmploymentTypeRule:
+        if self.intent is not RuleIntent.IGNORE and not self.types:
+            raise ValueError("employment type rule requires at least one type")
+        return self
+
+
 class CandidateProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -162,9 +217,46 @@ class CandidateProfile(BaseModel):
     skills: Skills = Field(default_factory=Skills)
     employment_types: set[EmploymentType] = Field(default_factory=set)
     unknown_employment_type_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+    max_required_experience_years: int | None = Field(default=None, ge=0, le=50)
     excluded_seniority: set[Seniority] = Field(default_factory=set)
     excluded_keywords: list[str] = Field(default_factory=list)
     notes: str | None = None
+
+
+class SearchBrief(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    brief_version: Literal["operator-style-sourcing-brief-v1"] = "operator-style-sourcing-brief-v1"
+    client_id: str
+    target_roles: list[str]
+    target_market: TargetMarketRule = Field(default_factory=TargetMarketRule)
+    work_mode: WorkModeRule = Field(default_factory=WorkModeRule)
+    management_roles: RuleIntent = RuleIntent.AVOID
+    excluded_titles: list[str] = Field(default_factory=list)
+    excluded_seniority: set[Seniority] = Field(default_factory=set)
+    must_have_terms: list[str] = Field(default_factory=list)
+    preferred_terms: list[str] = Field(default_factory=list)
+    avoid_terms: list[str] = Field(default_factory=list)
+    employment_type: EmploymentTypeRule = Field(default_factory=EmploymentTypeRule)
+    max_required_experience_years: int | None = Field(default=None, ge=0, le=50)
+    candidate_residence: str | None = None
+    work_eligibility: WorkEligibilityRule = Field(default_factory=WorkEligibilityRule)
+    notes: str | None = None
+
+    @field_validator("client_id")
+    @classmethod
+    def client_id_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("client identifier is required")
+        return value
+
+    @field_validator("target_roles")
+    @classmethod
+    def target_roles_required(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("at least one target role is required")
+        return value
 
 
 class JobMatch(BaseModel):

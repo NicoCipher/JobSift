@@ -36,6 +36,7 @@ def test_interactive_profile_creation_is_valid_and_conservative(tmp_path) -> Non
             "Engineering Manager",
             "security clearance required",
             "7",
+            "",
             "First validation client",
             "",
         ),
@@ -66,6 +67,7 @@ def test_generated_profile_runs_fixture_to_csv(tmp_path) -> None:
             "Engineering Manager",
             "",
             "7",
+            "",
             "",
             "",
         ),
@@ -112,7 +114,13 @@ def test_blank_or_any_removes_country_constraint(value: str) -> None:
 
 
 def _basic_answers(
-    *, country="US", work=("1",), seniority=("Staff",), employment=("7",), confirmation=""
+    *,
+    country="US",
+    work=("1",),
+    seniority=("Staff",),
+    employment=("7",),
+    experience=("",),
+    confirmation="",
 ):
     return answers(
         "Jane",
@@ -125,6 +133,7 @@ def _basic_answers(
         "Engineering Manager",
         "clearance required",
         *employment,
+        *experience,
         "",
         confirmation,
     )
@@ -158,6 +167,7 @@ def test_blank_required_inputs_and_invalid_seniority_reprompt(tmp_path) -> None:
             "",
             "",
             "7",
+            "",
             "",
             "",
         ),

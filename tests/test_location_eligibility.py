@@ -77,6 +77,7 @@ def test_interactive_profile_stores_nigeria_structurally(tmp_path) -> None:
             "",
             "",
             "7",
+            "",
             "Based in Lagos, Nigeria",
             "",
         ),
@@ -162,7 +163,7 @@ def test_incompatible_explicit_countries_reject_nigeria_candidate(
 ) -> None:
     result = match_job(_job(countries=countries), _nigeria_profile())
     assert result.decision is MatchDecision.REJECT
-    assert any("do not include the candidate" in reason for reason in result.rejection_reasons)
+    assert any("work eligibility countries" in reason for reason in result.rejection_reasons)
 
 
 def test_explicit_nigeria_eligibility_may_continue() -> None:

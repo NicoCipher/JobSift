@@ -121,6 +121,18 @@ def _employment(choice: str) -> tuple[str, set[EmploymentType]]:
     return label, {selected}
 
 
+def _maximum_required_experience(value: str) -> int | None:
+    value = value.strip()
+    if not value or value.casefold() == "any":
+        return None
+    if not value.isdecimal():
+        raise ValueError("enter a whole number from 0 to 50, or leave blank for Any")
+    years = int(value)
+    if years > 50:
+        raise ValueError("enter a whole number from 0 to 50, or leave blank for Any")
+    return years
+
+
 def _confirmation(value: str) -> bool:
     key = value.strip().casefold()
     if key in {"", "y", "yes"}:
@@ -187,6 +199,12 @@ def create_profile_interactively(
     employment_label, employment_types = _ask(
         prompt="Choose [1-7]: ", parser=_employment, input_fn=input_fn, output_fn=output_fn
     )
+    max_required_experience_years = _ask(
+        prompt="Maximum required experience to consider (years, blank for Any): ",
+        parser=_maximum_required_experience,
+        input_fn=input_fn,
+        output_fn=output_fn,
+    )
     notes = input_fn("Additional notes (blank for none): ").strip() or None
 
     profile = CandidateProfile(
@@ -198,6 +216,7 @@ def create_profile_interactively(
         skills=Skills(required=required_skills, preferred=preferred_skills),
         employment_types=employment_types,
         unknown_employment_type_policy=UnknownEligibilityPolicy.REVIEW,
+        max_required_experience_years=max_required_experience_years,
         excluded_seniority=excluded_seniority,
         excluded_keywords=excluded_keywords,
         notes=notes,
@@ -216,6 +235,13 @@ def create_profile_interactively(
         + (", ".join(sorted(level.value.title() for level in excluded_seniority)) or "None")
     )
     output_fn(f"Employment type: {employment_label}")
+    experience_label = (
+        "Any"
+        if max_required_experience_years is None
+        else f"{max_required_experience_years} year"
+        + ("s" if max_required_experience_years != 1 else "")
+    )
+    output_fn(f"Maximum required experience: {experience_label}")
     output_fn(f"Keywords excluded: {', '.join(excluded_keywords) or 'None'}")
     output_fn(f"Notes: {notes or 'None'}")
 

@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 
 from job_scout.collectors.greenhouse import GreenhouseCollector
-from job_scout.domain.models import CandidateProfile, SourceTarget
+from job_scout.domain.models import SourceTarget
 from job_scout.orchestration.pipeline import run_pipeline
-from job_scout.profile import create_profile_interactively
+from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -23,12 +23,12 @@ def main() -> None:
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     profile_create = profile_commands.add_parser("create")
-    profile_create.add_argument("--output-dir", default="config/clients")
+    profile_create.add_argument("--output-dir", default="config/search_briefs")
     args = parser.parse_args()
     if args.command == "profile":
-        create_profile_interactively(output_dir=args.output_dir)
+        create_search_brief_interactively(output_dir=args.output_dir)
         return
-    profile = CandidateProfile.model_validate_json(Path(args.client).read_text(encoding="utf-8"))
+    profile = load_search_brief(Path(args.client))
     summary = run_pipeline(
         collector=GreenhouseCollector(),
         target=SourceTarget(board_id=args.board, company=args.company),
