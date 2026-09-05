@@ -1,0 +1,468 @@
+{
+  "fields": [
+    "jobReqId",
+    "title",
+    "hiringOrganization",
+    "jobDescription",
+    "externalPath",
+    "location",
+    "additionalLocations",
+    "country",
+    "remoteType",
+    "timeType",
+    "startDate",
+    "posted",
+    "postedOn"
+  ],
+  "batches": [
+    {
+      "start": 0,
+      "end": 5,
+      "aggregate": {
+        "detail_attempts": 10,
+        "detail_success": 10,
+        "jobReqId": 10,
+        "title": 10,
+        "hiringOrganization": 10,
+        "jobDescription": 10,
+        "externalPath": 10,
+        "location": 10,
+        "additionalLocations": 3,
+        "country": 10,
+        "remoteType": 4,
+        "timeType": 10,
+        "startDate": 10,
+        "posted": 10,
+        "postedOn": 10
+      },
+      "remote_types": {
+        "Hybrid": 3,
+        "Remote": 1
+      },
+      "timestamp_examples": {
+        "startDate": [
+          "2026-09-02",
+          "2026-08-27",
+          "2026-09-05",
+          "2026-09-05",
+          "2026-09-04",
+          "2026-09-04",
+          "2026-09-05",
+          "2026-09-05",
+          "2026-09-04",
+          "2026-09-03"
+        ],
+        "posted": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "postedOn": [
+          "Posted 3 Days Ago",
+          "Posted 9 Days Ago",
+          "Posted Today",
+          "Posted Today",
+          "Posted Yesterday",
+          "Posted Yesterday",
+          "Posted Today",
+          "Posted Today",
+          "Posted Yesterday",
+          "Posted 2 Days Ago"
+        ]
+      },
+      "boards": [
+        {
+          "host": "bigcommerce.wd12.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "JR102834",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "drivetime.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R16227",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "ensemblehp.wd5.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R050751",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "highmarkhealth.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "J283477",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "talentmanagementsolution.wd3.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R53960",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "start": 5,
+      "end": 10,
+      "aggregate": {
+        "detail_attempts": 10,
+        "detail_success": 10,
+        "jobReqId": 10,
+        "title": 10,
+        "hiringOrganization": 10,
+        "jobDescription": 10,
+        "externalPath": 10,
+        "location": 10,
+        "additionalLocations": 1,
+        "country": 10,
+        "remoteType": 2,
+        "timeType": 10,
+        "startDate": 10,
+        "posted": 10,
+        "postedOn": 10
+      },
+      "remote_types": {
+        "Hybrid": 2
+      },
+      "timestamp_examples": {
+        "startDate": [
+          "2026-09-04",
+          "2026-09-04",
+          "2026-09-05",
+          "2026-09-04",
+          "2026-09-01",
+          "2026-09-01",
+          "2026-09-03",
+          "2026-09-02",
+          "2026-09-04",
+          "2026-09-04"
+        ],
+        "posted": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "postedOn": [
+          "Posted Yesterday",
+          "Posted Yesterday",
+          "Posted Today",
+          "Posted Yesterday",
+          "Posted 4 Days Ago",
+          "Posted 4 Days Ago",
+          "Posted 2 Days Ago",
+          "Posted 3 Days Ago",
+          "Posted Yesterday",
+          "Posted Yesterday"
+        ]
+      },
+      "boards": [
+        {
+          "host": "alteryx.wd108.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R12433",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "autodesk.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "25WD94232",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "availity.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R0008330",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "cambiumlearning.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "REQ-4606",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "chrobinson.wd5.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R49157",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "start": 10,
+      "end": 15,
+      "aggregate": {
+        "detail_attempts": 10,
+        "detail_success": 10,
+        "jobReqId": 10,
+        "title": 10,
+        "hiringOrganization": 10,
+        "jobDescription": 10,
+        "externalPath": 10,
+        "location": 10,
+        "additionalLocations": 4,
+        "country": 10,
+        "remoteType": 2,
+        "timeType": 10,
+        "startDate": 10,
+        "posted": 10,
+        "postedOn": 10
+      },
+      "remote_types": {
+        "In-Office": 1,
+        "Remote": 1
+      },
+      "timestamp_examples": {
+        "startDate": [
+          "2026-09-04",
+          "2026-09-04",
+          "2026-09-04",
+          "2026-09-04",
+          "2026-09-04",
+          "2026-09-02",
+          "2026-09-03",
+          "2026-09-03",
+          "2026-08-28",
+          "2026-08-28"
+        ],
+        "posted": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "postedOn": [
+          "Posted Yesterday",
+          "Posted Yesterday",
+          "Posted Yesterday",
+          "Posted Yesterday",
+          "Posted Yesterday",
+          "Posted 3 Days Ago",
+          "Posted 2 Days Ago",
+          "Posted 2 Days Ago",
+          "Posted 8 Days Ago",
+          "Posted 8 Days Ago"
+        ]
+      },
+      "boards": [
+        {
+          "host": "fico.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "32075",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "lifestance.wd5.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "JR106407",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "pennmutual.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R-100673",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "premierinc.wd1.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "R0008480",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        },
+        {
+          "host": "prescryptive.wd503.myworkdayjobs.com",
+          "list_status": 200,
+          "sampled": 2,
+          "identity": [
+            {
+              "jobReqId": "JR100147",
+              "stable": {
+                "jobReqId": true,
+                "title": true,
+                "location": true,
+                "externalUrl": true
+              },
+              "list_has_jobReqId": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

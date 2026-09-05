@@ -270,9 +270,37 @@ class JobMatch(BaseModel):
     matcher_version: str
 
 
+class WorkdayTargetConfig(BaseModel):
+    """Explicit public Workday CXS board coordinates.
+
+    Workday's public job URLs do not safely identify a board by themselves: the
+    CXS API requires all three values.  Keeping them separate avoids treating a
+    human-facing URL path as an inferred tenant or site configuration.
+    """
+
+    host: str
+    tenant: str
+    site: str
+
+    @field_validator("host", "tenant", "site")
+    @classmethod
+    def non_blank_coordinate(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        if any(character.isspace() for character in value):
+            raise ValueError("must not contain whitespace")
+        return value
+
+    @property
+    def board_id(self) -> str:
+        return f"{self.host}:{self.tenant}:{self.site}"
+
+
 class SourceTarget(BaseModel):
     board_id: str
     company: str
+    workday: WorkdayTargetConfig | None = None
 
 
 class CollectionResult(BaseModel):

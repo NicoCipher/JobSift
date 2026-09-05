@@ -454,6 +454,49 @@ def test_cli_routes_single_source_backwards_compatibly(tmp_path, monkeypatch, ca
     assert json.loads(capsys.readouterr().out)["status"] == "success"
 
 
+def test_cli_routes_workday_with_explicit_coordinates(tmp_path, monkeypatch, capsys):
+    brief = tmp_path / "brief.json"
+    brief.write_text(
+        SearchBrief(client_id="test", target_roles=["Support Engineer"]).model_dump_json()
+    )
+    selected = []
+
+    def pipeline(**kwargs):
+        selected.append((kwargs["collector"].source, kwargs["target"]))
+        from job_scout.orchestration.pipeline import PipelineSummary
+
+        return PipelineSummary()
+
+    monkeypatch.setattr(cli, "run_pipeline", pipeline)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "collect",
+            "--source",
+            "workday",
+            "--client",
+            str(brief),
+            "--company",
+            "Acme",
+            "--workday-host",
+            "acme.wd1.myworkdayjobs.com",
+            "--workday-tenant",
+            "acme",
+            "--workday-site",
+            "External",
+        ],
+    )
+
+    cli.main()
+
+    assert selected[0][0] == "workday"
+    assert selected[0][1].board_id == "acme.wd1.myworkdayjobs.com:acme:External"
+    assert selected[0][1].workday and selected[0][1].workday.site == "External"
+    assert json.loads(capsys.readouterr().out)["status"] == "success"
+
+
 def test_frozen_matcher_dedupe_and_brief_bytes_unchanged():
     # Git object hashes of the accepted e20787a baseline; intentional freeze gate.
     expected = {

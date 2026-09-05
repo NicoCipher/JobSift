@@ -1,0 +1,20 @@
+{
+  "broad_query": {
+    "job_req_ids_absent_from_partition_union": 0,
+    "partition_paths_absent_from_broad": 695,
+    "paths_absent_from_partition_union": 0,
+    "rows_retrieved": 2000,
+    "unique_external_paths": 2000,
+    "unique_job_req_ids": 2000
+  },
+  "broad_total": 2000,
+  "completed_at": "2026-09-05T23:09:07.070779+00:00",
+  "duplicate_job_req_ids_across_partitions": 0,
+  "manifest_sha256": "b3edc8bd82bac3f135654c532623158c3dc70872da15be1cbfa41d47e3d963f4",
+  "overlap_partition_counts": {
+    "1": 2695
+  },
+  "sum_partition_rows": 2695,
+  "unique_external_paths": 2695,
+  "unique_job_req_ids": 2695
+}

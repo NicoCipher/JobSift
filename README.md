@@ -8,7 +8,7 @@ Posting preservation, duplicate confidence, migration and client-specific delive
 suppression are documented in [Delivery groups](docs/delivery_groups.md).
 
 - Strict canonical job and sourcing-brief contracts
-- Greenhouse and Ashby public Job Board API adapters
+- Greenhouse, Ashby, and Workday public job-board adapters
 - deterministic normalization, eligibility and ranking reasons
 - SQLite identity, change tracking and export idempotency
 - exact five-column CSV export
@@ -65,6 +65,22 @@ python -m job_scout collect --source ashby \
 
 See [Ashby contract and validation](docs/ashby.md) for identity precedence, structured
 locations, workplace conflicts, failure handling and the frozen evaluation workflow.
+
+Use `--source workday` with explicit public CXS coordinates. `--board` is not used
+for Workday because host, tenant, and site are separate configuration facts:
+
+```bash
+python -m job_scout collect --source workday \
+  --client config/search_briefs/taiwo_operator_sourcing_v1.json \
+  --company "NVIDIA" \
+  --workday-host nvidia.wd5.myworkdayjobs.com \
+  --workday-tenant nvidia \
+  --workday-site NVIDIAExternalCareerSite \
+  --database jobs.sqlite3 --csv exports/taiwo.csv
+```
+
+See [Workday contract and validation](docs/workday.md) for cap recovery, source
+evidence, partial-result semantics, and the frozen evaluation cohort.
 
 ## Greenhouse eligibility evidence
 

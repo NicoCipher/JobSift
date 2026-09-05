@@ -1,0 +1,41 @@
+{
+  "source": "operator-supplied/workday_historical_urls.csv",
+  "rows": 974,
+  "unique_urls": 923,
+  "distinct_hosts": 464,
+  "route_forms": {
+    "job": 955,
+    "details": 16,
+    "unrecognized": 3
+  },
+  "locale_forms": {
+    "locale": 131,
+    "no_locale": 843
+  },
+  "apply_suffix_rows": 22,
+  "host_matches": 974,
+  "site_matches": 971,
+  "locale_matches": 974,
+  "id_rows_with_candidate": 939,
+  "id_candidate_matches": 937,
+  "unresolved": [
+    {
+      "sheet": "sheet 4 0309",
+      "row": "349",
+      "url": "https://redhat.wd5.myworkdayjobs.com/en-US/jobs/jobs/details/Senior-Software-Engineer_R-053833?%2526%253Fmode=job&%2526iis=Job%252BBoard&%2526iisn=LinkedIn%252BPosting&source=LinkedIn&a=bc33aa3152ec42d4995f4791a106ed09&c=48e76bf7cb5510011a9542195ab40001",
+      "reason": "unrecognized public Workday route"
+    },
+    {
+      "sheet": "sheet 15 0106",
+      "row": "392",
+      "url": "huron.wd1.myworkdayjobs.com/huroncareers/job/Chicago---550-Van-Buren/AI-ML-Engineer--Senior-Associate----Remote_JR-0014607",
+      "reason": "unrecognized public Workday route"
+    },
+    {
+      "sheet": "sheet 18 2206",
+      "row": "298",
+      "url": "https://harriscomputer.wd3.myworkdayjobs.com/en-US/1/userHome",
+      "reason": "unrecognized public Workday route"
+    }
+  ]
+}

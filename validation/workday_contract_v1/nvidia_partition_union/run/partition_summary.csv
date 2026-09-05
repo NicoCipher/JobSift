@@ -1,0 +1,16 @@
+partition_id,partition_label,advertised_facet_count,first_page_total,rows_retrieved,unique_external_paths,duplicate_external_paths,unique_job_req_ids,duplicate_job_req_ids,pagination_anomalies,internally_consistent
+0c40f6bd1d8f10ae43ffaefd46dc7e78,Engineering,1765,1765,1765,1765,0,1765,0,0,True
+0c40f6bd1d8f10ae43ffcac5bbec7e90,Sales,327,327,327,327,0,327,0,0,True
+0c40f6bd1d8f10ae43ffc3fc7d8c7e8a,Operations,149,149,149,149,0,149,0,0,True
+0c40f6bd1d8f10ae43ffc668c6847e8c,Program Manager,109,109,109,109,0,109,0,0,True
+0c40f6bd1d8f10ae43ffc19725ec7e88,Marketing,97,97,97,97,0,97,0,0,True
+0c40f6bd1d8f10ae43ffda1e8d447e94,Univ Employment,80,80,80,80,0,80,0,0,True
+0c40f6bd1d8f10ae43ffc8817cf47e8e,Research,41,41,41,41,0,41,0,0,True
+e8bdc341a93101bd5f4d2b0a1c005e36,Professional Services,39,39,39,39,0,39,0,0,True
+0c40f6bd1d8f10ae43ffbd1459047e84,IT - Information Technology,39,39,39,39,0,39,0,0,True
+0c40f6bd1d8f10ae43ffb5dd06f47e7e,Finance,23,23,23,23,0,23,0,0,True
+0c40f6bd1d8f10ae43ffac5fdfac7e76,Business Development,9,9,9,9,0,9,0,0,True
+0c40f6bd1d8f10ae43ffbac3680c7e82,Human Resources,9,9,9,9,0,9,0,0,True
+0c40f6bd1d8f10ae43ffbf4412147e86,Legal,5,5,5,5,0,5,0,0,True
+0c40f6bd1d8f10ae43ffb3a6aaac7e7c,Facilities,2,2,2,2,0,2,0,0,True
+0c40f6bd1d8f10ae43ffaa1e1d6c7e74,Administration,1,1,1,1,0,1,0,0,True

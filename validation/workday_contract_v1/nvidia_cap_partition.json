@@ -1,0 +1,132 @@
+{
+  "verified_at": "2026-09-05T20:47:35.076434+00:00",
+  "broad_total": 2000,
+  "facet_parameter": "jobFamilyGroup",
+  "facet_count_sum": 2695,
+  "groups": [
+    {
+      "group": "Engineering",
+      "facet_count": 1765,
+      "initial_total": 1765,
+      "retrieved_paths": 1765,
+      "overlaps_with_prior_groups": 0,
+      "pages": 89
+    },
+    {
+      "group": "Sales",
+      "facet_count": 327,
+      "initial_total": 327,
+      "retrieved_paths": 327,
+      "overlaps_with_prior_groups": 0,
+      "pages": 17
+    },
+    {
+      "group": "Operations",
+      "facet_count": 149,
+      "initial_total": 149,
+      "retrieved_paths": 149,
+      "overlaps_with_prior_groups": 0,
+      "pages": 8
+    },
+    {
+      "group": "Program Manager",
+      "facet_count": 109,
+      "initial_total": 109,
+      "retrieved_paths": 109,
+      "overlaps_with_prior_groups": 0,
+      "pages": 6
+    },
+    {
+      "group": "Marketing",
+      "facet_count": 97,
+      "initial_total": 97,
+      "retrieved_paths": 97,
+      "overlaps_with_prior_groups": 0,
+      "pages": 5
+    },
+    {
+      "group": "Univ Employment",
+      "facet_count": 80,
+      "initial_total": 80,
+      "retrieved_paths": 80,
+      "overlaps_with_prior_groups": 0,
+      "pages": 4
+    },
+    {
+      "group": "Research",
+      "facet_count": 41,
+      "initial_total": 41,
+      "retrieved_paths": 41,
+      "overlaps_with_prior_groups": 0,
+      "pages": 3
+    },
+    {
+      "group": "Professional Services",
+      "facet_count": 39,
+      "initial_total": 39,
+      "retrieved_paths": 39,
+      "overlaps_with_prior_groups": 0,
+      "pages": 2
+    },
+    {
+      "group": "IT - Information Technology",
+      "facet_count": 39,
+      "initial_total": 39,
+      "retrieved_paths": 39,
+      "overlaps_with_prior_groups": 0,
+      "pages": 2
+    },
+    {
+      "group": "Finance",
+      "facet_count": 23,
+      "initial_total": 23,
+      "retrieved_paths": 23,
+      "overlaps_with_prior_groups": 0,
+      "pages": 2
+    },
+    {
+      "group": "Human Resources",
+      "facet_count": 9,
+      "initial_total": 9,
+      "retrieved_paths": 9,
+      "overlaps_with_prior_groups": 0,
+      "pages": 1
+    },
+    {
+      "group": "Business Development",
+      "facet_count": 9,
+      "initial_total": 9,
+      "retrieved_paths": 9,
+      "overlaps_with_prior_groups": 0,
+      "pages": 1
+    },
+    {
+      "group": "Legal",
+      "facet_count": 5,
+      "initial_total": 5,
+      "retrieved_paths": 5,
+      "overlaps_with_prior_groups": 0,
+      "pages": 1
+    },
+    {
+      "group": "Facilities",
+      "facet_count": 2,
+      "initial_total": 2,
+      "retrieved_paths": 2,
+      "overlaps_with_prior_groups": 0,
+      "pages": 1
+    },
+    {
+      "group": "Administration",
+      "facet_count": 1,
+      "initial_total": 1,
+      "retrieved_paths": 1,
+      "overlaps_with_prior_groups": 0,
+      "pages": 1
+    }
+  ],
+  "unique_external_paths": 2695,
+  "groups_with_cap": 0,
+  "overlap_paths": 0,
+  "page_failures": []
+}

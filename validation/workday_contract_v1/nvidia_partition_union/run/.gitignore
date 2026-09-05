@@ -1,0 +1,5 @@
+# Resumable local checkpoint state. These files are evidence for the operator's
+# run, but are intentionally not a committed provider-response archive.
+*.jsonl
+errors.jsonl
+progress.json

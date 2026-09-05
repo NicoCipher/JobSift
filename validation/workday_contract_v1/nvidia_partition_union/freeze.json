@@ -1,0 +1,96 @@
+{
+  "validation": "workday-nvidia-partition-union-v1",
+  "frozen_at": "2026-09-05T21:00:05.595322+00:00",
+  "host": "nvidia.wd5.myworkdayjobs.com",
+  "tenant": "nvidia",
+  "site": "NVIDIAExternalCareerSite",
+  "broad_total": 2000,
+  "request_payload_shape": {
+    "appliedFacets": {
+      "jobFamilyGroup": [
+        "<frozen facet id>"
+      ]
+    },
+    "limit": 20,
+    "offset": "0,20,... while offset < first_page_total",
+    "searchText": ""
+  },
+  "partitions": [
+    {
+      "id": "0c40f6bd1d8f10ae43ffaefd46dc7e78",
+      "label": "Engineering",
+      "advertised_count": 1765
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffcac5bbec7e90",
+      "label": "Sales",
+      "advertised_count": 327
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffc3fc7d8c7e8a",
+      "label": "Operations",
+      "advertised_count": 149
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffc668c6847e8c",
+      "label": "Program Manager",
+      "advertised_count": 109
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffc19725ec7e88",
+      "label": "Marketing",
+      "advertised_count": 97
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffda1e8d447e94",
+      "label": "Univ Employment",
+      "advertised_count": 80
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffc8817cf47e8e",
+      "label": "Research",
+      "advertised_count": 41
+    },
+    {
+      "id": "e8bdc341a93101bd5f4d2b0a1c005e36",
+      "label": "Professional Services",
+      "advertised_count": 39
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffbd1459047e84",
+      "label": "IT - Information Technology",
+      "advertised_count": 39
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffb5dd06f47e7e",
+      "label": "Finance",
+      "advertised_count": 23
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffac5fdfac7e76",
+      "label": "Business Development",
+      "advertised_count": 9
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffbac3680c7e82",
+      "label": "Human Resources",
+      "advertised_count": 9
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffbf4412147e86",
+      "label": "Legal",
+      "advertised_count": 5
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffb3a6aaac7e7c",
+      "label": "Facilities",
+      "advertised_count": 2
+    },
+    {
+      "id": "0c40f6bd1d8f10ae43ffaa1e1d6c7e74",
+      "label": "Administration",
+      "advertised_count": 1
+    }
+  ],
+  "sha256": "b3edc8bd82bac3f135654c532623158c3dc70872da15be1cbfa41d47e3d963f4"
+}

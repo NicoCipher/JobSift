@@ -1,0 +1,3 @@
+# Fresh live audit outputs are local evidence. They contain generated SQLite
+# databases and delivery CSVs and are intentionally not committed.
+live/

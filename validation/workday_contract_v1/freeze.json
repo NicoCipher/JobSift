@@ -1,0 +1,17 @@
+{
+  "validation": "workday-contract-v1",
+  "frozen_at": "2026-09-05T20:42:09.561266+00:00",
+  "selection_rule": "unique hosts ordered by historical row count descending, then route/site count descending, then host and casefolded site; conventional /job/ routes only; first historical row breaks exact-site spelling ties",
+  "sources": [
+    {
+      "path": "operator-supplied/workday_historical_urls.csv",
+      "sha256": "a330b29ae2852d95447df9e03aed2c63dac4d3368cdf9276864f1c9897bc4536"
+    },
+    {
+      "path": "operator-supplied/workday_hosts_summary.csv",
+      "sha256": "730c8d72bf2c23d49ceca13b33d72a4572151f5b0fd08fad005c2a54b6e4cd74"
+    }
+  ],
+  "cohort_size": 15,
+  "cohort_csv_sha256": "d279f6b7c4d0f76b2ac84c552bf9c6f15b815396e87b7d1865093881c94bb156"
+}

@@ -1,0 +1,247 @@
+{
+  "samples": 15,
+  "both_ok": 15,
+  "all_fields_stable": true,
+  "records": [
+    {
+      "host": "bigcommerce.wd12.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "drivetime.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "ensemblehp.wd5.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "highmarkhealth.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "talentmanagementsolution.wd3.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "alteryx.wd108.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "autodesk.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "availity.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "cambiumlearning.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "chrobinson.wd5.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "fico.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "lifestance.wd5.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "pennmutual.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "premierinc.wd1.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    },
+    {
+      "host": "prescryptive.wd503.myworkdayjobs.com",
+      "status": [
+        200,
+        200
+      ],
+      "stable": {
+        "jobReqId": true,
+        "title": true,
+        "location": true,
+        "externalUrl": true,
+        "startDate": true,
+        "posted": true,
+        "postedOn": true
+      }
+    }
+  ]
+}

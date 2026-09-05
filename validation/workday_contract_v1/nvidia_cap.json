@@ -1,0 +1,27 @@
+{
+  "verified_at": "2026-09-05T20:51:42.434877+00:00",
+  "board": "nvidia.wd5.myworkdayjobs.com:nvidia:NVIDIAExternalCareerSite",
+  "broad_query": {
+    "total": 2000,
+    "limit": 20
+  },
+  "job_family_group": {
+    "facet_count_sum": 2695,
+    "all_groups_below_cap": true,
+    "group_count": 15
+  },
+  "applied_facet_probes": {
+    "full_time": {
+      "status": 200,
+      "total": 2000,
+      "rows": 20
+    },
+    "remote_location": {
+      "status": 200,
+      "total": 572,
+      "rows": 20
+    }
+  },
+  "non_overlapping_partition_verified": false,
+  "conclusion": "public metadata demonstrates a larger universe and usable facet filters, but absence of an exhaustive path/ID union proof requires partial/capped reporting."
+}
