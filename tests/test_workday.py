@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import uuid
+from copy import deepcopy
+from pathlib import Path
 
 import httpx
 import pytest
@@ -17,6 +19,9 @@ from job_scout.domain.models import (
 
 CONFIG = WorkdayTargetConfig(host="acme.wd1.myworkdayjobs.com", tenant="acme", site="External")
 TARGET = SourceTarget(board_id=CONFIG.board_id, company="Acme", workday=CONFIG)
+LIVE_DETAIL = json.loads(
+    (Path(__file__).parent / "fixtures/workday_detail_bigcommerce.json").read_text()
+)
 
 
 def posting(path: str) -> dict[str, str]:
@@ -82,6 +87,76 @@ def test_normal_pagination_normalizes_cxs_evidence() -> None:
     assert job.remote_status is RemoteStatus.REMOTE
     assert job.posted_at and job.posted_at.isoformat() == "2026-09-05T00:00:00+00:00"
     assert job.updated_at is None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "provider_id", "remote", "employment"),
+    [
+        ({}, "3100", RemoteStatus.REMOTE, "full_time"),
+        (
+            {"location": "Pittsburgh, PA, United States", "remoteType": None},
+            "JR102834",
+            RemoteStatus.UNKNOWN,
+            "full_time",
+        ),
+        (
+            {"location": "Remote - Nationwide", "country": None, "remoteType": "Remote"},
+            "R-100673",
+            RemoteStatus.REMOTE,
+            "full_time",
+        ),
+        (
+            {
+                "location": "Toronto, Canada",
+                "country": {"descriptor": "Canada"},
+                "remoteType": "Hybrid",
+                "timeType": "Part time",
+            },
+            "INT-1",
+            RemoteStatus.HYBRID,
+            "part_time",
+        ),
+        (
+            {
+                "location": "Austin, TX, United States",
+                "additionalLocations": [
+                    {"descriptor": "New York, NY, United States"},
+                    {"descriptor": "Remote, United States"},
+                ],
+                "remoteType": "In-Office",
+            },
+            "MULTI-1",
+            RemoteStatus.ONSITE,
+            "full_time",
+        ),
+    ],
+)
+def test_live_detail_shapes_without_external_path_normalize(
+    overrides, provider_id, remote, employment
+) -> None:
+    body = deepcopy(LIVE_DETAIL)
+    info = body["jobPostingInfo"]
+    info.update(overrides)
+    info["jobReqId"] = provider_id
+    path = "/job/United-States---Remote/Technical-Support-Representative--US-_3100"
+
+    job = WorkdayCollector(delay=0)._normalize(body, TARGET, CONFIG, path)
+
+    assert job.source_job_id == provider_id
+    assert job.source_board_id == CONFIG.board_id
+    assert str(job.job_url) == info["externalUrl"]
+    assert job.apply_url is None and job.updated_at is None
+    assert job.remote_status is remote
+    assert job.employment_type and job.employment_type.value == employment
+    assert job.posted_at and job.posted_at.isoformat() == "2025-11-19T00:00:00+00:00"
+
+
+def test_conflicting_detail_external_path_is_still_quarantined() -> None:
+    body = deepcopy(LIVE_DETAIL)
+    body["jobPostingInfo"]["externalPath"] = "/job/other/R1"
+
+    with pytest.raises(ValueError, match="externalPath"):
+        WorkdayCollector(delay=0)._normalize(body, TARGET, CONFIG, "/job/expected/R1")
 
 
 def test_capped_board_recovers_safe_job_family_group_union(monkeypatch) -> None:

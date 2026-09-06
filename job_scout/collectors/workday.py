@@ -39,7 +39,7 @@ USER_AGENT = "JobSift/0.1 (+https://github.com/NicoCipher/JobSift)"
 _REMOTE_TYPES = {
     "remote": RemoteStatus.REMOTE,
     "hybrid": RemoteStatus.HYBRID,
-    "in-office": RemoteStatus.ONSITE,
+    "in office": RemoteStatus.ONSITE,
 }
 _EMPLOYMENT_TYPES = {
     "full time": EmploymentType.FULL_TIME,
@@ -369,7 +369,10 @@ class WorkdayCollector:
             raise ValueError("jobReqId is missing")
         if not isinstance(title, str) or not title.strip():
             raise ValueError("title is missing")
-        if external_path != expected_path:
+        # CXS search rows carry externalPath. The detail payload observed on
+        # production boards does not; when a future detail response does supply
+        # it, retain the cross-endpoint consistency check.
+        if external_path is not None and external_path != expected_path:
             raise ValueError("detail externalPath does not match list path")
         if not isinstance(external_url, str) or not self._http_url(external_url):
             raise ValueError("externalUrl is missing or invalid")
