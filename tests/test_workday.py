@@ -159,6 +159,90 @@ def test_conflicting_detail_external_path_is_still_quarantined() -> None:
         WorkdayCollector(delay=0)._normalize(body, TARGET, CONFIG, "/job/expected/R1")
 
 
+def test_detail_read_timeout_retries_then_normalizes() -> None:
+    path = "/job/Remote/Support_R1"
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        if request.method == "POST":
+            return httpx.Response(
+                200, json={"total": 1, "facets": [], "jobPostings": [posting(path)]}
+            )
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ReadTimeout("temporary read timeout", request=request)
+        return httpx.Response(200, json=detail(path), request=request)
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)), delay=0
+    ).collect(TARGET)
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert [job.source_job_id for job in result.jobs] == ["R1"]
+    assert attempts == 2
+
+
+def test_exhausted_detail_timeouts_are_partial_and_later_jobs_continue() -> None:
+    failed = "/job/Remote/Support_R1"
+    healthy = "/job/Remote/Support_R2"
+    attempts: dict[str, int] = {failed: 0, healthy: 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json={"total": 2, "facets": [], "jobPostings": [posting(failed), posting(healthy)]},
+            )
+        path = request.url.path.split(CONFIG.site, 1)[-1]
+        attempts[path] += 1
+        if path == failed:
+            raise httpx.ReadTimeout("persistent read timeout", request=request)
+        return httpx.Response(200, json=detail(path), request=request)
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)), delay=0
+    ).collect(TARGET)
+
+    assert result.status is CollectionStatus.PARTIAL
+    assert [job.source_job_id for job in result.jobs] == ["R2"]
+    assert attempts == {failed: 3, healthy: 1}
+    assert any("network ReadTimeout" in error for error in result.errors)
+
+
+def test_permanent_http_failures_keep_existing_semantics() -> None:
+    invalid = WorkdayCollector(
+        httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(404, request=request))
+        ),
+        delay=0,
+    ).collect(TARGET)
+    assert invalid.status is CollectionStatus.INVALID_TARGET
+
+    failed = "/job/Remote/Support_R1"
+    healthy = "/job/Remote/Support_R2"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json={"total": 2, "facets": [], "jobPostings": [posting(failed), posting(healthy)]},
+            )
+        path = request.url.path.split(CONFIG.site, 1)[-1]
+        return (
+            httpx.Response(404, request=request)
+            if path == failed
+            else httpx.Response(200, json=detail(path), request=request)
+        )
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)), delay=0
+    ).collect(TARGET)
+    assert result.status is CollectionStatus.PARTIAL
+    assert [job.source_job_id for job in result.jobs] == ["R2"]
+    assert f"detail {failed}: HTTP 404" in result.errors
+
+
 def test_capped_board_recovers_safe_job_family_group_union(monkeypatch) -> None:
     monkeypatch.setattr(workday, "CAP_TOTAL", 3)
     first = "/job/A/Support_R1"

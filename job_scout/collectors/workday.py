@@ -35,6 +35,7 @@ from job_scout.normalization.location import normalize_location
 
 LIMIT = 20
 CAP_TOTAL = 2000
+RETRIES = 2
 USER_AGENT = "JobSift/0.1 (+https://github.com/NicoCipher/JobSift)"
 _REMOTE_TYPES = {
     "remote": RemoteStatus.REMOTE,
@@ -254,10 +255,13 @@ class WorkdayCollector:
     def _search_page(
         self, config: WorkdayTargetConfig, facets: dict[str, list[str]], offset: int
     ) -> tuple[dict[str, Any] | None, str | None]:
-        response = self.client.post(
+        response, error = self._request(
+            "post",
             f"{self._base(config)}/jobs",
-            json={"appliedFacets": facets, "limit": LIMIT, "offset": offset, "searchText": ""},
+            payload={"appliedFacets": facets, "limit": LIMIT, "offset": offset, "searchText": ""},
         )
+        if response is None:
+            return None, error
         if response.status_code != 200:
             return None, f"HTTP {response.status_code}"
         try:
@@ -265,6 +269,33 @@ class WorkdayCollector:
         except ValueError:
             return None, "response is not JSON"
         return (body, None) if isinstance(body, dict) else (None, "response is not an object")
+
+    def _request(
+        self, method: str, url: str, *, payload: dict[str, Any] | None = None
+    ) -> tuple[httpx.Response | None, str]:
+        """Make one serial CXS request with bounded transient retries.
+
+        HTTPTransport's retries cover only a subset of connection failures. CXS
+        detail reads can also raise ReadTimeout directly from Client.get, so this
+        wrapper makes request-level failures explicit collector evidence.
+        """
+        error = "request did not run"
+        for attempt in range(RETRIES + 1):
+            try:
+                response = (
+                    self.client.post(url, json=payload or {})
+                    if method == "post"
+                    else self.client.get(url)
+                )
+            except httpx.RequestError as exc:
+                error = f"network {type(exc).__name__}: {exc}"
+            else:
+                if response.status_code != 429 and response.status_code < 500:
+                    return response, ""
+                error = f"HTTP {response.status_code}"
+            if attempt < RETRIES:
+                self._pause()
+        return None, error
 
     @staticmethod
     def _valid_external_path(value: object) -> bool:
@@ -321,7 +352,11 @@ class WorkdayCollector:
         errors: list[str] = []
         for path in paths:
             self.last_counts["detail_attempts"] = int(self.last_counts["detail_attempts"]) + 1
-            response = self.client.get(f"{self._base(config)}{quote(path, safe='/')}")
+            response, error = self._request("get", f"{self._base(config)}{quote(path, safe='/')}")
+            if response is None:
+                errors.append(f"detail {path}: {error}")
+                self._pause()
+                continue
             if response.status_code != 200:
                 errors.append(f"detail {path}: HTTP {response.status_code}")
                 self._pause()
@@ -505,6 +540,8 @@ class WorkdayCollector:
 
     @staticmethod
     def _status_for_error(error: str) -> CollectionStatus:
+        if error.startswith("network "):
+            return CollectionStatus.NETWORK_FAILURE
         if "HTTP 404" in error:
             return CollectionStatus.INVALID_TARGET
         if "HTTP 429" in error:
