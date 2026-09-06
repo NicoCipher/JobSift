@@ -10,6 +10,7 @@ import argparse
 import csv
 import hashlib
 import json
+import sqlite3
 import sys
 from collections import Counter
 from datetime import UTC, datetime
@@ -31,6 +32,8 @@ CONTRACT_FREEZE = CONTRACT / "freeze.json"
 BRIEF = ROOT / "config/search_briefs/taiwo_operator_sourcing_v1.json"
 EXPECTED_COHORT_SHA256 = "d279f6b7c4d0f76b2ac84c552bf9c6f15b815396e87b7d1865093881c94bb156"
 EXPECTED_BRIEF_SHA256 = "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6"
+NVIDIA_UNION = CONTRACT / "nvidia_partition_union/run/union_summary.json"
+NVIDIA_FREEZE = CONTRACT / "nvidia_partition_union/freeze.json"
 
 
 def sha(path: Path) -> str:
@@ -76,12 +79,96 @@ class ObservedCollector:
         return self.result
 
 
+def nvidia_cap_recovery_evidence() -> dict[str, object]:
+    """Return the independent NVIDIA cap-recovery result, not a cohort board."""
+    freeze = json.loads(NVIDIA_FREEZE.read_text())
+    union = json.loads(NVIDIA_UNION.read_text())
+    return {
+        "separate_from_production_cohort": True,
+        "target": f"{freeze['host']}:{freeze['tenant']}:{freeze['site']}",
+        "partition_count": len(freeze["partitions"]),
+        "broad_total": union["broad_total"],
+        "unique_job_req_ids": union["unique_job_req_ids"],
+        "broad_job_req_ids_absent_from_union": union["broad_query"][
+            "job_req_ids_absent_from_partition_union"
+        ],
+        "duplicate_job_req_ids_across_partitions": union["duplicate_job_req_ids_across_partitions"],
+        "evidence_manifest_sha256": union["manifest_sha256"],
+    }
+
+
+def production_summary(
+    boards: list[dict[str, object]],
+    decisions: Counter[str],
+    *,
+    completed_at: str | None = None,
+) -> dict[str, object]:
+    """Summarize already-collected production evidence without a live request."""
+    statuses = Counter(str(board["pipeline"]["status"]) for board in boards)
+    discovered = sum(int(board["collector_counts"]["paths_discovered"]) for board in boards)
+    normalized = sum(int(board["collector_counts"]["normalized"]) for board in boards)
+    quarantined = sum(int(board["collector_counts"]["quarantined"]) for board in boards)
+    errors = sum(len(board["errors"]) for board in boards)
+    delivered = sum(int(board["delivered"]) for board in boards)
+    partial = [
+        {
+            "company": board["company"],
+            "board": board["board"],
+            "errors": board["errors"],
+        }
+        for board in boards
+        if board["pipeline"]["status"] == "partial"
+    ]
+    return {
+        "completed_at_utc": completed_at or datetime.now(UTC).isoformat(),
+        "boards": len(boards),
+        "totals": {
+            "discovered": discovered,
+            "normalized": normalized,
+            "quarantined": quarantined,
+            "errors": errors,
+            "delivered": delivered,
+        },
+        "statuses": dict(statuses),
+        "decisions": dict(decisions),
+        "partial_boards": partial,
+        "nvidia_cap_recovery": nvidia_cap_recovery_evidence(),
+    }
+
+
+def regenerate_summary(output: Path) -> dict[str, object]:
+    """Rebuild summary.json from preserved audit artifacts without collection."""
+    boards = json.loads((output / "boards.json").read_text())
+    decisions: Counter[str] = Counter()
+    for board in boards:
+        directory = output / str(board["company"]).strip().casefold()
+        database = directory / "jobs.sqlite3"
+        with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:
+            decisions.update(
+                {
+                    decision: count
+                    for decision, count in connection.execute(
+                        "SELECT decision, COUNT(*) FROM job_matches GROUP BY decision"
+                    )
+                }
+            )
+    summary = production_summary(boards, decisions)
+    write_json(output / "summary.json", summary)
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--commit", required=True)
+    parser.add_argument("--commit")
+    parser.add_argument("--summarize-existing", type=Path)
     parser.add_argument("--delay", type=float, default=0.5)
     args = parser.parse_args()
-    if len(args.commit) != 40:
+    if args.summarize_existing:
+        if args.commit:
+            parser.error("--commit cannot be used with --summarize-existing")
+        print(json.dumps(regenerate_summary(args.summarize_existing), indent=2, sort_keys=True))
+        return
+    if not args.commit or len(args.commit) != 40:
         parser.error("--commit requires the published 40-character commit SHA")
     if args.delay < 0:
         parser.error("--delay must be non-negative")
@@ -117,8 +204,6 @@ def main() -> None:
     brief = load_search_brief(BRIEF)
     boards = []
     leads = []
-    totals: Counter[str] = Counter()
-    statuses: Counter[str] = Counter()
     decisions: Counter[str] = Counter()
     for row in cohort:
         assert MATCHER_VERSION == "deterministic-v5" and DEDUPE_VERSION == "dedupe-v1"
@@ -164,23 +249,9 @@ def main() -> None:
             "delivered": len(delivered),
         }
         boards.append(board)
-        statuses[observer.result.status.value] += 1
-        totals["normalized"] += len(observer.result.jobs)
-        totals["errors"] += len(observer.result.errors)
-        totals["delivered"] += len(delivered)
     write_json(output / "boards.json", boards)
     write_json(output / "delivered_leads.json", leads)
-    write_json(
-        output / "summary.json",
-        {
-            "completed_at_utc": datetime.now(UTC).isoformat(),
-            "totals": dict(totals),
-            "statuses": dict(statuses),
-            "decisions": dict(decisions),
-            "boards": len(boards),
-            "nvidia": next(board for board in boards if board["company"].casefold() == "nvidia"),
-        },
-    )
+    write_json(output / "summary.json", production_summary(boards, decisions))
 
 
 if __name__ == "__main__":
