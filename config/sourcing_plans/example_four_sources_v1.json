@@ -1,0 +1,32 @@
+{
+  "plan_version": "sourcing-plan-v1",
+  "plan_id": "example-four-source-plan",
+  "search_brief": "../search_briefs/taiwo_operator_sourcing_v1.json",
+  "database": "../../jobs.sqlite3",
+  "csv": "../../exports/jobs.csv",
+  "targets": [
+    {
+      "source": "greenhouse",
+      "company": "Example Greenhouse Company (placeholder)",
+      "board": "example-greenhouse-board"
+    },
+    {
+      "source": "ashby",
+      "company": "Example Ashby Company (placeholder)",
+      "board": "example-ashby-board"
+    },
+    {
+      "source": "workday",
+      "company": "Example Workday Company (placeholder)",
+      "host": "example.wd1.myworkdayjobs.com",
+      "tenant": "example",
+      "site": "External"
+    },
+    {
+      "source": "lever",
+      "company": "Example Lever Company (placeholder)",
+      "instance": "global",
+      "site": "example-lever-site"
+    }
+  ]
+}

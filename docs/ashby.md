@@ -72,8 +72,9 @@ boards. It is an ingestion gate, not a demand to reproduce old normalization mis
 After publication, run the same driver with `--phase live --commit <published SHA>`.
 The manifest freezes cohort, commit, code hashes, brief hash, versions and timestamp
 before any request. Raw responses and independent databases/CSVs are saved per board.
-Both phases refuse to overwrite prior results. This is bounded evaluation tooling;
-there is no production multi-source scheduler or automatic multi-board command.
+Both phases refuse to overwrite prior results. This is bounded evaluation tooling.
+The `job-scout source --plan ...` command provides bounded multi-board operator
+runs; scheduling remains intentionally out of scope.
 
 The offline run delivered one ClickHouse federal support role. Compared with the old
 ad-hoc replay, explicit remote source evidence changes that role from review to strong;

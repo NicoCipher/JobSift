@@ -55,3 +55,5 @@ python -m validation.workday_production_v1.evaluate --commit <published-SHA>
 
 It writes a freeze manifest before any request and stores only per-board metrics,
 CSVs and local SQLite audit state; it does not save provider response bodies.
+For bounded multi-board operator runs, use `job-scout source --plan ...`;
+scheduling remains intentionally out of scope.

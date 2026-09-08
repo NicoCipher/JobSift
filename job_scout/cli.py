@@ -11,6 +11,7 @@ from job_scout.collectors.workday import WorkdayCollector
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
+from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -30,6 +31,9 @@ def main() -> None:
     collect.add_argument("--lever-instance", choices=("global", "eu"))
     collect.add_argument("--database", default="jobs.sqlite3")
     collect.add_argument("--csv", default="exports/jobs.csv")
+    source_plan = commands.add_parser("source", help="Run a multi-target sourcing plan")
+    source_plan.add_argument("--plan", required=True, help="Path to sourcing-plan JSON")
+    source_plan.add_argument("--reports-dir", default="runs")
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     profile_create = profile_commands.add_parser("create")
@@ -37,6 +41,19 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "profile":
         create_search_brief_interactively(output_dir=args.output_dir)
+        return
+    if args.command == "source":
+        plan_path = Path(args.plan).resolve()
+        try:
+            plan = load_sourcing_plan(plan_path)
+            report = run_sourcing_plan(
+                plan,
+                base_dir=plan_path.parent,
+                reports_dir=Path(args.reports_dir).resolve(),
+            )
+        except (OSError, ValueError) as exc:
+            parser.error(f"unable to run sourcing plan: {exc}")
+        print(json.dumps(report.model_dump(mode="json"), sort_keys=True))
         return
     if args.source == "workday":
         if not all((args.workday_host, args.workday_tenant, args.workday_site)):
