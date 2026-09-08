@@ -1,0 +1,12 @@
+{
+  "classification": "active",
+  "error": null,
+  "first_page_count": 6,
+  "historical_occurrence_count": 2,
+  "http_status": 200,
+  "manifest_sha256": "4ca3297444a6dc28ebbbe368189b72d71a6771c04d8abd79febc5d22508f2402",
+  "provider_reported_total": null,
+  "request_count": 1,
+  "source": "ashby",
+  "target_identity": "ashby:urun"
+}

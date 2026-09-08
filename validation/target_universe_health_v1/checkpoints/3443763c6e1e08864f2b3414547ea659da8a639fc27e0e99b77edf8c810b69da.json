@@ -1,0 +1,12 @@
+{
+  "classification": "active",
+  "error": null,
+  "first_page_count": null,
+  "historical_occurrence_count": 7,
+  "http_status": 200,
+  "manifest_sha256": "4ca3297444a6dc28ebbbe368189b72d71a6771c04d8abd79febc5d22508f2402",
+  "provider_reported_total": 1878,
+  "request_count": 1,
+  "source": "workday",
+  "target_identity": "workday:highmarkhealth.wd1.myworkdayjobs.com:highmarkhealth:highmark"
+}
