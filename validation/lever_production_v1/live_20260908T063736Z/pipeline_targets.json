@@ -1,0 +1,98 @@
+[
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 8,
+    "site": "crosslaketech",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 4,
+    "site": "pushpress",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 0,
+    "site": "voleon",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 38,
+    "site": "magnetforensics",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 37,
+    "site": "aledade",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 23,
+    "site": "AviveSolutions",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 139,
+    "site": "filevine",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "global",
+    "normalized_jobs": 7,
+    "site": "patchmypc",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "eu",
+    "normalized_jobs": 6,
+    "site": "blackshark",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "eu",
+    "normalized_jobs": 28,
+    "site": "coinspaid",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "eu",
+    "normalized_jobs": 0,
+    "site": "eneba",
+    "status": "success"
+  },
+  {
+    "collector_errors": [],
+    "exported": 0,
+    "instance": "eu",
+    "normalized_jobs": 87,
+    "site": "xm",
+    "status": "success"
+  }
+]

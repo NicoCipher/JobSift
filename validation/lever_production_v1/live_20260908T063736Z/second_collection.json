@@ -1,0 +1,410 @@
+[
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 8
+    },
+    "country_unknown": 0,
+    "eligible_countries": {
+      "United Kingdom": 3,
+      "United States": 5
+    },
+    "employment_types": {
+      "contract": 2,
+      "full_time": 6
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 8
+    },
+    "instance": "global",
+    "missing_department": 8,
+    "missing_description": 0,
+    "normalized_jobs": 8,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 8,
+    "remote_statuses": {
+      "hybrid": 3,
+      "remote": 5
+    },
+    "site": "crosslaketech",
+    "source_board_ids": [
+      "global:crosslaketech"
+    ],
+    "status": "success",
+    "unique_job_ids": 8,
+    "unique_source_job_ids": 8
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 4
+    },
+    "country_unknown": 0,
+    "eligible_countries": {
+      "United States": 4
+    },
+    "employment_types": {
+      "full_time": 4
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 4
+    },
+    "instance": "global",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 4,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 4,
+    "remote_statuses": {
+      "remote": 4
+    },
+    "site": "pushpress",
+    "source_board_ids": [
+      "global:pushpress"
+    ],
+    "status": "success",
+    "unique_job_ids": 4,
+    "unique_source_job_ids": 4
+  },
+  {
+    "apply_url_hosts": {},
+    "country_unknown": 0,
+    "eligible_countries": {},
+    "employment_types": {},
+    "error_examples": [],
+    "hosted_url_hosts": {},
+    "instance": "global",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 0,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 0,
+    "remote_statuses": {},
+    "site": "voleon",
+    "source_board_ids": [],
+    "status": "success",
+    "unique_job_ids": 0,
+    "unique_source_job_ids": 0
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 38
+    },
+    "country_unknown": 5,
+    "eligible_countries": {
+      "Canada": 16,
+      "Germany": 3,
+      "Singapore": 1,
+      "United Kingdom": 2,
+      "United States": 11
+    },
+    "employment_types": {
+      "contract": 1,
+      "full_time": 36,
+      "unknown": 1
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 38
+    },
+    "instance": "global",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 38,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 38,
+    "remote_statuses": {
+      "hybrid": 14,
+      "remote": 24
+    },
+    "site": "magnetforensics",
+    "source_board_ids": [
+      "global:magnetforensics"
+    ],
+    "status": "success",
+    "unique_job_ids": 38,
+    "unique_source_job_ids": 38
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 37
+    },
+    "country_unknown": 0,
+    "eligible_countries": {
+      "United States": 37
+    },
+    "employment_types": {
+      "full_time": 32,
+      "unknown": 5
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 37
+    },
+    "instance": "global",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 37,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 37,
+    "remote_statuses": {
+      "hybrid": 2,
+      "remote": 35
+    },
+    "site": "aledade",
+    "source_board_ids": [
+      "global:aledade"
+    ],
+    "status": "success",
+    "unique_job_ids": 37,
+    "unique_source_job_ids": 37
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 23
+    },
+    "country_unknown": 0,
+    "eligible_countries": {
+      "United States": 23
+    },
+    "employment_types": {
+      "full_time": 23
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 23
+    },
+    "instance": "global",
+    "missing_department": 23,
+    "missing_description": 0,
+    "normalized_jobs": 23,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 23,
+    "remote_statuses": {
+      "hybrid": 5,
+      "remote": 18
+    },
+    "site": "AviveSolutions",
+    "source_board_ids": [
+      "global:AviveSolutions"
+    ],
+    "status": "success",
+    "unique_job_ids": 23,
+    "unique_source_job_ids": 23
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 139
+    },
+    "country_unknown": 12,
+    "eligible_countries": {
+      "United States": 127
+    },
+    "employment_types": {
+      "contract": 4,
+      "full_time": 83,
+      "unknown": 52
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 139
+    },
+    "instance": "global",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 139,
+    "pages": 3,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 139,
+    "remote_statuses": {
+      "hybrid": 23,
+      "onsite": 52,
+      "remote": 64
+    },
+    "site": "filevine",
+    "source_board_ids": [
+      "global:filevine"
+    ],
+    "status": "success",
+    "unique_job_ids": 139,
+    "unique_source_job_ids": 139
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.lever.co": 7
+    },
+    "country_unknown": 0,
+    "eligible_countries": {
+      "Ireland": 1,
+      "United Kingdom": 1,
+      "United States": 5
+    },
+    "employment_types": {
+      "full_time": 7
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.lever.co": 7
+    },
+    "instance": "global",
+    "missing_department": 7,
+    "missing_description": 0,
+    "normalized_jobs": 7,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 7,
+    "remote_statuses": {
+      "remote": 7
+    },
+    "site": "patchmypc",
+    "source_board_ids": [
+      "global:patchmypc"
+    ],
+    "status": "success",
+    "unique_job_ids": 7,
+    "unique_source_job_ids": 7
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.eu.lever.co": 6
+    },
+    "country_unknown": 0,
+    "eligible_countries": {
+      "Austria": 6
+    },
+    "employment_types": {
+      "full_time": 6
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.eu.lever.co": 6
+    },
+    "instance": "eu",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 6,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 6,
+    "remote_statuses": {
+      "hybrid": 3,
+      "remote": 3
+    },
+    "site": "blackshark",
+    "source_board_ids": [
+      "eu:blackshark"
+    ],
+    "status": "success",
+    "unique_job_ids": 6,
+    "unique_source_job_ids": 6
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.eu.lever.co": 28
+    },
+    "country_unknown": 27,
+    "eligible_countries": {
+      "United States": 1
+    },
+    "employment_types": {
+      "full_time": 28
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.eu.lever.co": 28
+    },
+    "instance": "eu",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 28,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 28,
+    "remote_statuses": {
+      "hybrid": 26,
+      "onsite": 1,
+      "remote": 1
+    },
+    "site": "coinspaid",
+    "source_board_ids": [
+      "eu:coinspaid"
+    ],
+    "status": "success",
+    "unique_job_ids": 28,
+    "unique_source_job_ids": 28
+  },
+  {
+    "apply_url_hosts": {},
+    "country_unknown": 0,
+    "eligible_countries": {},
+    "employment_types": {},
+    "error_examples": [],
+    "hosted_url_hosts": {},
+    "instance": "eu",
+    "missing_department": 0,
+    "missing_description": 0,
+    "normalized_jobs": 0,
+    "pages": 1,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 0,
+    "remote_statuses": {},
+    "site": "eneba",
+    "source_board_ids": [],
+    "status": "success",
+    "unique_job_ids": 0,
+    "unique_source_job_ids": 0
+  },
+  {
+    "apply_url_hosts": {
+      "jobs.eu.lever.co": 87
+    },
+    "country_unknown": 84,
+    "eligible_countries": {
+      "Nigeria": 3
+    },
+    "employment_types": {
+      "full_time": 87
+    },
+    "error_examples": [],
+    "hosted_url_hosts": {
+      "jobs.eu.lever.co": 87
+    },
+    "instance": "eu",
+    "missing_department": 0,
+    "missing_description": 1,
+    "normalized_jobs": 87,
+    "pages": 2,
+    "quarantined_postings": 0,
+    "raw_collector_error_count": 0,
+    "received_postings": 87,
+    "remote_statuses": {
+      "hybrid": 63,
+      "onsite": 11,
+      "remote": 13
+    },
+    "site": "xm",
+    "source_board_ids": [
+      "eu:xm"
+    ],
+    "status": "success",
+    "unique_job_ids": 87,
+    "unique_source_job_ids": 87
+  }
+]

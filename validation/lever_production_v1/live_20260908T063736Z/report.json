@@ -1,0 +1,50 @@
+{
+  "completed_at_utc": "2026-09-08T06:39:16.261453+00:00",
+  "first_collection_totals": {
+    "normalized": 377,
+    "quarantined": 0,
+    "statuses": {
+      "success": 12
+    }
+  },
+  "frozen_targets_accounted_for": true,
+  "identity": {
+    "duplicate_job_ids": [],
+    "duplicate_source_ids_within_target": [],
+    "invalid_identity_records": [],
+    "jobs_checked": 377
+  },
+  "pipeline": {
+    "delivery_groups": 0,
+    "first_pass": {
+      "changed": 0,
+      "exported": 0,
+      "matched": 0,
+      "new": 377,
+      "received": 377,
+      "rejected": 377,
+      "unchanged": 0
+    },
+    "match_decisions": {
+      "reject": 377
+    },
+    "second_pass": {
+      "changed": 0,
+      "exported": 0,
+      "matched": 0,
+      "new": 0,
+      "received": 377,
+      "rejected": 377,
+      "unchanged": 377
+    },
+    "second_pass_delivery_suppressed": true,
+    "stored_export_rows": 0
+  },
+  "repeat_stability": {
+    "first_only_provider_postings": 0,
+    "identity_or_url_instability": [],
+    "postings_in_both_runs": 377,
+    "provider_content_changes": [],
+    "second_only_provider_postings": 0
+  }
+}

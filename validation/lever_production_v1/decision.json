@@ -1,0 +1,34 @@
+{
+  "authoritative_live_run": "live_20260908T063736Z",
+  "decision": "LEVER PRODUCTION SOURCE VERIFIED",
+  "evidence_sha256": {
+    "contract_cohort": "bc97b8642689546dcc8138444f380ab33a607bdc12d1663a46394364888dea36",
+    "first_collection": "49b2de277bf2e7b91b0ee589de38dbd0214a8db865349b78c81d5fdf729ccc34",
+    "freeze": "da5d775c284db3be952e1c8d7099a58c117fec065c628e3a90dc47afd676fcd9",
+    "harness": "a5ef1ae5d284fd6d945180b2e66ef2bbb1eb4191ed24d8d50c60d52a6d8d52f7",
+    "pipeline_targets": "6063bc1dc81ed9a508910adc4bc21da6dc01375db0fcd135927d335aa8f62acf",
+    "report": "60f31a922fe378824a60323c85bc24de9ba2612cc6187b2c9bbd43839f9d9d86",
+    "second_collection": "49b2de277bf2e7b91b0ee589de38dbd0214a8db865349b78c81d5fdf729ccc34"
+  },
+  "frozen_contract": {
+    "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+    "validation_commit": "8606a918cdddd89cac4d29dc7ebb73275cb21fd2"
+  },
+  "implementation_commit": "326078b1d6fd893bd883625702354c901218bcd4",
+  "result": {
+    "all_collection_statuses": "success",
+    "frozen_targets": 12,
+    "identity_or_url_instability": 0,
+    "normalized_postings": 377,
+    "pipeline_first_pass_new": 377,
+    "pipeline_second_pass_unchanged": 377,
+    "quarantined_postings": 0,
+    "repeat_content_changes": 0,
+    "total_list_pages": 15
+  },
+  "restricted_environment_attempt": {
+    "classification": "execution-environment failure, not Lever provider evidence",
+    "detail": "A Codex sandbox route returned ConnectError for all 12 targets. The authoritative run used the normal local route and completed successfully for all 12 targets.",
+    "timestamp_utc": "2026-09-08T06:36:37Z"
+  }
+}
