@@ -1,0 +1,32 @@
+{
+  "plan_version": "sourcing-plan-v1",
+  "plan_id": "taiwo-four-source-operator-v1",
+  "search_brief": "../../config/search_briefs/taiwo_operator_sourcing_v1.json",
+  "database": "run/jobs.sqlite3",
+  "csv": "run/jobs.csv",
+  "targets": [
+    {
+      "source": "greenhouse",
+      "company": "GitLab",
+      "board": "gitlab"
+    },
+    {
+      "source": "ashby",
+      "company": "Supabase",
+      "board": "supabase"
+    },
+    {
+      "source": "workday",
+      "company": "Penn Mutual",
+      "host": "pennmutual.wd1.myworkdayjobs.com",
+      "tenant": "pennmutual",
+      "site": "_penn-careers"
+    },
+    {
+      "source": "lever",
+      "company": "Crosslake",
+      "instance": "global",
+      "site": "crosslaketech"
+    }
+  ]
+}

@@ -1,0 +1,320 @@
+{
+  "decision_basis": {
+    "all_targets_successful_on_both_runs": true,
+    "first_run_all_new": true,
+    "no_second_run_exports": true,
+    "second_run_all_unchanged": true
+  },
+  "delivery": {
+    "csv_rows": 3,
+    "csv_sha256": "e74ded8cf44617256c24e9a4e52b36c7afde2aefe94f37e7d3ceaf2addbbccc2",
+    "exports": [
+      {
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8654230002",
+        "destination": "/Users/mac/Documents/JobSift/validation/sourcing_plan_v1/run/jobs.csv",
+        "exported_at": "2026-09-08T15:56:01.244810+00:00",
+        "job_id": "e6147549-6889-5039-abbb-e7b7b63c84df",
+        "source": "greenhouse",
+        "source_board_id": "gitlab",
+        "source_job_id": "8654230002",
+        "title": "Support Engineer (AMER)"
+      },
+      {
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8709925002",
+        "destination": "/Users/mac/Documents/JobSift/validation/sourcing_plan_v1/run/jobs.csv",
+        "exported_at": "2026-09-08T15:56:01.246605+00:00",
+        "job_id": "01e4566e-fe54-5788-837a-1d84ca27ce7a",
+        "source": "greenhouse",
+        "source_board_id": "gitlab",
+        "source_job_id": "8709925002",
+        "title": "Senior Assigned Support Engineer (AMER)"
+      },
+      {
+        "canonical_url": "https://job-boards.greenhouse.io/gitlab/jobs/8707353002",
+        "destination": "/Users/mac/Documents/JobSift/validation/sourcing_plan_v1/run/jobs.csv",
+        "exported_at": "2026-09-08T15:56:01.248340+00:00",
+        "job_id": "3b2112ca-327b-5000-9ec1-2dc1b18a896b",
+        "source": "greenhouse",
+        "source_board_id": "gitlab",
+        "source_job_id": "8707353002",
+        "title": "Support Engineer, U.S. Government Support"
+      }
+    ],
+    "first_run_exported": 3,
+    "second_run_delivery_suppressed": true,
+    "second_run_exported": 0
+  },
+  "disposable_artifacts_not_committed": {
+    "csv_bytes": 28352,
+    "csv_sha256": "e74ded8cf44617256c24e9a4e52b36c7afde2aefe94f37e7d3ceaf2addbbccc2",
+    "database_bytes": 7159808,
+    "database_sha256": "d656a0d45327b72a8b4d65c1881e9615c92a40ad8b56d52b7c08c54d00921b66"
+  },
+  "freeze_sha256": "06f614e7f29a2cd3b5a4e515660a5611ca057ae9898fc467bd3de7146e44cd18",
+  "implementation_commit": "b927e6b64140472baf70162a84e8b55d902e6372",
+  "persistence": {
+    "canonical_urls_total": 312,
+    "delivery_groups_total": 310,
+    "distinct_source_identities": 312,
+    "duplicate_canonical_urls": 0,
+    "duplicate_source_identities": 0,
+    "exports_total": 3,
+    "group_deliveries_total": 3,
+    "jobs_total": 312,
+    "match_decisions": [
+      {
+        "count": 9,
+        "decision": "needs_review"
+      },
+      {
+        "count": 299,
+        "decision": "reject"
+      },
+      {
+        "count": 4,
+        "decision": "strong_match"
+      }
+    ],
+    "matches_total": 312,
+    "per_source": [
+      {
+        "jobs": 60,
+        "source": "ashby",
+        "source_board_id": "supabase"
+      },
+      {
+        "jobs": 228,
+        "source": "greenhouse",
+        "source_board_id": "gitlab"
+      },
+      {
+        "jobs": 8,
+        "source": "lever",
+        "source_board_id": "global:crosslaketech"
+      },
+      {
+        "jobs": 16,
+        "source": "workday",
+        "source_board_id": "pennmutual.wd1.myworkdayjobs.com:pennmutual:_penn-careers"
+      }
+    ],
+    "posting_delivery_groups_total": 312,
+    "source_identity_duplicate_rows": [],
+    "source_identity_integrity": true
+  },
+  "plan_sha256": "7f38d8a3e189bafe11908793da11c4e7f04d9dfd30b550052ebe58e7b596b2ed",
+  "provider_time_differences_from_prior_validation_evidence": [
+    {
+      "current_received": 228,
+      "difference": -1,
+      "prior_received": 229,
+      "target": "greenhouse:gitlab"
+    },
+    {
+      "current_received": 60,
+      "difference": -1,
+      "prior_received": 61,
+      "target": "ashby:supabase"
+    },
+    {
+      "current_received": 16,
+      "difference": 1,
+      "prior_received": 15,
+      "target": "workday:pennmutual.wd1.myworkdayjobs.com:pennmutual:_penn-careers"
+    },
+    {
+      "current_received": 8,
+      "difference": 0,
+      "prior_received": 8,
+      "target": "lever:global:crosslaketech"
+    }
+  ],
+  "reports": {
+    "first": {
+      "failed_targets": 0,
+      "partial_targets": 0,
+      "report_sha256": "338cf3b905ee89e4d54c31c3533815549ce6d6fe89a7f88c389449e9198374d4",
+      "reported_totals": {
+        "changed": 0,
+        "exported": 3,
+        "matched": 4,
+        "new": 312,
+        "received": 312,
+        "rejected": 308,
+        "unchanged": 0
+      },
+      "status": "success",
+      "successful_targets": 4,
+      "target_sums": {
+        "changed": 0,
+        "exported": 3,
+        "matched": 4,
+        "new": 312,
+        "received": 312,
+        "rejected": 308,
+        "unchanged": 0
+      },
+      "targets": [
+        {
+          "changed": 0,
+          "company": "GitLab",
+          "errors": [],
+          "exported": 3,
+          "matched": 4,
+          "new": 228,
+          "received": 228,
+          "rejected": 224,
+          "source": "greenhouse",
+          "status": "success",
+          "target_identity": "greenhouse:gitlab",
+          "unchanged": 0
+        },
+        {
+          "changed": 0,
+          "company": "Supabase",
+          "errors": [],
+          "exported": 0,
+          "matched": 0,
+          "new": 60,
+          "received": 60,
+          "rejected": 60,
+          "source": "ashby",
+          "status": "success",
+          "target_identity": "ashby:supabase",
+          "unchanged": 0
+        },
+        {
+          "changed": 0,
+          "company": "Penn Mutual",
+          "errors": [],
+          "exported": 0,
+          "matched": 0,
+          "new": 16,
+          "received": 16,
+          "rejected": 16,
+          "source": "workday",
+          "status": "success",
+          "target_identity": "workday:pennmutual.wd1.myworkdayjobs.com:pennmutual:_penn-careers",
+          "unchanged": 0
+        },
+        {
+          "changed": 0,
+          "company": "Crosslake",
+          "errors": [],
+          "exported": 0,
+          "matched": 0,
+          "new": 8,
+          "received": 8,
+          "rejected": 8,
+          "source": "lever",
+          "status": "success",
+          "target_identity": "lever:global:crosslaketech",
+          "unchanged": 0
+        }
+      ],
+      "total_targets": 4,
+      "totals_reconcile": true
+    },
+    "second": {
+      "failed_targets": 0,
+      "partial_targets": 0,
+      "report_sha256": "62ffd602886d42335001587c0715ebb6dc6f9972cd02dbb94939a1b86f7742a8",
+      "reported_totals": {
+        "changed": 0,
+        "exported": 0,
+        "matched": 4,
+        "new": 0,
+        "received": 312,
+        "rejected": 308,
+        "unchanged": 312
+      },
+      "status": "success",
+      "successful_targets": 4,
+      "target_sums": {
+        "changed": 0,
+        "exported": 0,
+        "matched": 4,
+        "new": 0,
+        "received": 312,
+        "rejected": 308,
+        "unchanged": 312
+      },
+      "targets": [
+        {
+          "changed": 0,
+          "company": "GitLab",
+          "errors": [],
+          "exported": 0,
+          "matched": 4,
+          "new": 0,
+          "received": 228,
+          "rejected": 224,
+          "source": "greenhouse",
+          "status": "success",
+          "target_identity": "greenhouse:gitlab",
+          "unchanged": 228
+        },
+        {
+          "changed": 0,
+          "company": "Supabase",
+          "errors": [],
+          "exported": 0,
+          "matched": 0,
+          "new": 0,
+          "received": 60,
+          "rejected": 60,
+          "source": "ashby",
+          "status": "success",
+          "target_identity": "ashby:supabase",
+          "unchanged": 60
+        },
+        {
+          "changed": 0,
+          "company": "Penn Mutual",
+          "errors": [],
+          "exported": 0,
+          "matched": 0,
+          "new": 0,
+          "received": 16,
+          "rejected": 16,
+          "source": "workday",
+          "status": "success",
+          "target_identity": "workday:pennmutual.wd1.myworkdayjobs.com:pennmutual:_penn-careers",
+          "unchanged": 16
+        },
+        {
+          "changed": 0,
+          "company": "Crosslake",
+          "errors": [],
+          "exported": 0,
+          "matched": 0,
+          "new": 0,
+          "received": 8,
+          "rejected": 8,
+          "source": "lever",
+          "status": "success",
+          "target_identity": "lever:global:crosslaketech",
+          "unchanged": 8
+        }
+      ],
+      "total_targets": 4,
+      "totals_reconcile": true
+    }
+  },
+  "run_contract": {
+    "authoritative_cli_report_names": [
+      "20260908T155555463685Z.json",
+      "20260908T155651271271Z.json"
+    ],
+    "csv_path": "validation/sourcing_plan_v1/run/jobs.csv",
+    "database_path": "validation/sourcing_plan_v1/run/jobs.sqlite3",
+    "first_report_source_path": "/Users/mac/Documents/JobSift/validation/sourcing_plan_v1/run_reports/taiwo-four-source-operator-v1/20260908T155555463685Z.json",
+    "plan_path": "validation/sourcing_plan_v1/plan.json",
+    "reports_dir": "validation/sourcing_plan_v1/run_reports/taiwo-four-source-operator-v1",
+    "retained_first_report_path": "validation/sourcing_plan_v1/first_run_report.json",
+    "retained_second_report_path": "validation/sourcing_plan_v1/second_run_report.json",
+    "same_plan": true,
+    "second_report_source_path": "/Users/mac/Documents/JobSift/validation/sourcing_plan_v1/run_reports/taiwo-four-source-operator-v1/20260908T155651271271Z.json"
+  },
+  "validation": "sourcing-plan-v1-operator-live-validation"
+}

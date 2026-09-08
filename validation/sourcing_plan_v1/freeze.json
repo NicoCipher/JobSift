@@ -1,0 +1,88 @@
+{
+  "dedupe_version": "dedupe-v1",
+  "execution_contract": {
+    "command": ".venv/bin/python -m job_scout source --plan validation/sourcing_plan_v1/plan.json --reports-dir validation/sourcing_plan_v1/run_reports",
+    "runs": 2,
+    "same_csv_destination": "validation/sourcing_plan_v1/run/jobs.csv",
+    "same_database": "validation/sourcing_plan_v1/run/jobs.sqlite3",
+    "target_order": [
+      "greenhouse:gitlab",
+      "ashby:supabase",
+      "workday:pennmutual.wd1.myworkdayjobs.com:pennmutual:_penn-careers",
+      "lever:global:crosslaketech"
+    ]
+  },
+  "implementation_commit": "b927e6b64140472baf70162a84e8b55d902e6372",
+  "implementation_sha256": {
+    "job_scout/collectors/ashby.py": "9eeab082ecb05ef3f31517dacad514c843592682b266d9f1dbc91c3b63e01580",
+    "job_scout/collectors/greenhouse.py": "bafd872d0cccc6e0dccb57fa3867c11311c9e38a8ec20fb86292464a4fe5ef8b",
+    "job_scout/collectors/lever.py": "affebd9e2328213089a4f1cf4bc957908be9f98b95a02230d0ca22f7cdf4bc69",
+    "job_scout/collectors/workday.py": "877d0a844d840ffdcc67f176982778eca34fcf380dd6f06e2a39ebbef559f495",
+    "job_scout/sourcing_plan.py": "f4d9aca058236443aa2a6e01e0e532cc6f35541be9b86e72a5b1bae28f33999f"
+  },
+  "matcher_version": "deterministic-v5",
+  "plan_path": "validation/sourcing_plan_v1/plan.json",
+  "plan_sha256": "7f38d8a3e189bafe11908793da11c4e7f04d9dfd30b550052ebe58e7b596b2ed",
+  "search_brief_path": "config/search_briefs/taiwo_operator_sourcing_v1.json",
+  "search_brief_sha256": "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6",
+  "targets": [
+    {
+      "company": "GitLab",
+      "coordinates": {
+        "board": "gitlab"
+      },
+      "identity": "greenhouse:gitlab",
+      "prior_evidence": {
+        "artifact": "validation/operator_style_v1/results/board_metrics.csv",
+        "observed_received": 229,
+        "purpose": "previous successful JobSift validation target",
+        "record": "greenhouse,gitlab"
+      },
+      "source": "greenhouse"
+    },
+    {
+      "company": "Supabase",
+      "coordinates": {
+        "board": "supabase"
+      },
+      "identity": "ashby:supabase",
+      "prior_evidence": {
+        "artifact": "validation/ashby_production_v1/cohort.csv",
+        "observed_received": 61,
+        "purpose": "frozen Ashby production cohort target",
+        "record": "Supabase,supabase"
+      },
+      "source": "ashby"
+    },
+    {
+      "company": "Penn Mutual",
+      "coordinates": {
+        "host": "pennmutual.wd1.myworkdayjobs.com",
+        "site": "_penn-careers",
+        "tenant": "pennmutual"
+      },
+      "identity": "workday:pennmutual.wd1.myworkdayjobs.com:pennmutual:_penn-careers",
+      "prior_evidence": {
+        "artifact": "validation/workday_production_v1/smoke_pennmutual_20260906/summary.json",
+        "observed_received": 15,
+        "purpose": "previous successful bounded Workday production smoke target"
+      },
+      "source": "workday"
+    },
+    {
+      "company": "Crosslake",
+      "coordinates": {
+        "instance": "global",
+        "site": "crosslaketech"
+      },
+      "identity": "lever:global:crosslaketech",
+      "prior_evidence": {
+        "artifact": "validation/lever_production_v1/live_20260908T063736Z/first_collection.json",
+        "observed_received": 8,
+        "purpose": "nonempty frozen Lever production cohort target"
+      },
+      "source": "lever"
+    }
+  ],
+  "validation": "sourcing-plan-v1-operator-live-validation"
+}
