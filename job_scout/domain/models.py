@@ -297,10 +297,32 @@ class WorkdayTargetConfig(BaseModel):
         return f"{self.host}:{self.tenant}:{self.site}"
 
 
+class LeverTargetConfig(BaseModel):
+    """Explicit Lever public-postings board coordinates."""
+
+    instance: Literal["global", "eu"]
+    site: str
+
+    @field_validator("site")
+    @classmethod
+    def non_blank_site(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        if any(character.isspace() for character in value):
+            raise ValueError("must not contain whitespace")
+        return value
+
+    @property
+    def board_id(self) -> str:
+        return f"{self.instance}:{self.site}"
+
+
 class SourceTarget(BaseModel):
     board_id: str
     company: str
     workday: WorkdayTargetConfig | None = None
+    lever: LeverTargetConfig | None = None
 
 
 class CollectionResult(BaseModel):

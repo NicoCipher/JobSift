@@ -6,8 +6,9 @@ from pathlib import Path
 
 from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
+from job_scout.collectors.lever import LeverCollector
 from job_scout.collectors.workday import WorkdayCollector
-from job_scout.domain.models import SourceTarget, WorkdayTargetConfig
+from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.storage.sqlite import SQLiteRepository
@@ -18,7 +19,7 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     collect = commands.add_parser("collect")
     collect.add_argument(
-        "--source", choices=("greenhouse", "ashby", "workday"), default="greenhouse"
+        "--source", choices=("greenhouse", "ashby", "workday", "lever"), default="greenhouse"
     )
     collect.add_argument("--client", required=True, help="Path to client JSON config")
     collect.add_argument("--board")
@@ -26,6 +27,7 @@ def main() -> None:
     collect.add_argument("--workday-host")
     collect.add_argument("--workday-tenant")
     collect.add_argument("--workday-site")
+    collect.add_argument("--lever-instance", choices=("global", "eu"))
     collect.add_argument("--database", default="jobs.sqlite3")
     collect.add_argument("--csv", default="exports/jobs.csv")
     profile = commands.add_parser("profile")
@@ -45,6 +47,11 @@ def main() -> None:
             site=args.workday_site,
         )
         target = SourceTarget(board_id=workday.board_id, company=args.company, workday=workday)
+    elif args.source == "lever":
+        if not args.board or not args.lever_instance:
+            parser.error("Lever requires --board and --lever-instance")
+        lever = LeverTargetConfig(instance=args.lever_instance, site=args.board)
+        target = SourceTarget(board_id=lever.board_id, company=args.company, lever=lever)
     else:
         if not args.board:
             parser.error("--board is required for Greenhouse and Ashby")
@@ -55,6 +62,7 @@ def main() -> None:
             "greenhouse": GreenhouseCollector,
             "ashby": AshbyCollector,
             "workday": WorkdayCollector,
+            "lever": LeverCollector,
         }[args.source](),
         target=target,
         profile=profile,
