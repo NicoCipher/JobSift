@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections import Counter
 
 import httpx
@@ -314,3 +315,11 @@ def test_full_batch_resume_does_not_repeat_completed_targets(tmp_path, monkeypat
     assert calls == [item["target_identity"] for item in items]
     assert (tmp_path / "summary.json").exists()
     assert "job_scout" not in run.__dict__
+
+
+def test_full_run_lock_rejects_concurrent_resume(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(run, "FULL_ROOT", tmp_path)
+    monkeypatch.setattr(run, "FULL_LOCK", tmp_path / "run.lock")
+    run.write_json(run.FULL_LOCK, {"pid": os.getpid()})
+    with pytest.raises(RuntimeError, match="already running"), run.full_run_lock():
+        pass

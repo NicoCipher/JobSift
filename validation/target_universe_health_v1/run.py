@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -28,6 +29,7 @@ FULL_CHECKPOINTS = FULL_ROOT / "checkpoints"
 FULL_RESULTS = FULL_ROOT / "results.json"
 FULL_SUMMARY = FULL_ROOT / "summary.json"
 FULL_REPORT = FULL_ROOT / "report.md"
+FULL_LOCK = FULL_ROOT / "run.lock"
 TARGET_UNIVERSE_COMMIT = "67147812f1adce64ce3498d8ded9ae6ce0136940"
 SOURCES = ("greenhouse", "ashby", "workday", "lever")
 CLASSIFICATIONS = (
@@ -72,6 +74,35 @@ def write_json(path: Path, value: Any) -> None:
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(temporary, path)
+
+
+def _lock_is_active(path: Path) -> bool:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        os.kill(value["pid"], 0)
+    except (KeyError, OSError, ValueError, TypeError):
+        return False
+    return True
+
+
+@contextlib.contextmanager
+def full_run_lock() -> Any:
+    """Prevent concurrent resumptions from issuing duplicate public requests."""
+    FULL_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(FULL_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        if _lock_is_active(FULL_LOCK):
+            raise RuntimeError("a full target health batch is already running")
+        FULL_LOCK.unlink(missing_ok=True)
+        descriptor = os.open(FULL_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    try:
+        payload = {"pid": os.getpid(), "started_at": datetime.now(UTC).isoformat()}
+        os.write(descriptor, canonical(payload).encode())
+        yield
+    finally:
+        os.close(descriptor)
+        FULL_LOCK.unlink(missing_ok=True)
 
 
 def select_pilot(records: list[dict[str, Any]], per_source: int = 25) -> list[dict[str, Any]]:
@@ -675,41 +706,46 @@ def run_pilot(delay: float) -> dict[str, Any]:
 
 
 def run_full(delay: float, batch_size: int) -> dict[str, Any]:
-    manifest = load_full_manifest()
-    pending = [
-        target for target in manifest["targets"] if completed(target, manifest, full=True) is None
-    ]
-    batch = pending[:batch_size]
-    source_failure_streak: dict[str, tuple[str, int]] = {}
-    with httpx.Client(
-        timeout=httpx.Timeout(TIMEOUT),
-        headers={"User-Agent": "JobSift/0.1 (+https://github.com/NicoCipher/JobSift)"},
-    ) as client:
-        probe = HealthProbe(client, delay, exact_lever_count=True)
-        for target in batch:
-            value = probe.probe(target)
-            value["manifest_sha256"] = manifest["manifest_sha256"]
-            write_json(checkpoint_path(target, full=True), value)
-            classification = value["classification"]
-            if classification in {
-                "restricted",
-                "rate_limited",
-                "transient_failure",
-                "malformed_response",
-            }:
-                previous, count = source_failure_streak.get(target["source"], (classification, 0))
-                source_failure_streak[target["source"]] = (
-                    classification,
-                    count + 1 if previous == classification else 1,
-                )
-                if source_failure_streak[target["source"]][1] >= SYSTEMIC_FAILURE_THRESHOLD:
-                    write_full_progress(manifest)
-                    raise RuntimeError(
-                        f"stopped {target['source']} after {SYSTEMIC_FAILURE_THRESHOLD} consecutive {classification} outcomes"
+    with full_run_lock():
+        manifest = load_full_manifest()
+        pending = [
+            target
+            for target in manifest["targets"]
+            if completed(target, manifest, full=True) is None
+        ]
+        batch = pending[:batch_size]
+        source_failure_streak: dict[str, tuple[str, int]] = {}
+        with httpx.Client(
+            timeout=httpx.Timeout(TIMEOUT),
+            headers={"User-Agent": "JobSift/0.1 (+https://github.com/NicoCipher/JobSift)"},
+        ) as client:
+            probe = HealthProbe(client, delay, exact_lever_count=True)
+            for target in batch:
+                value = probe.probe(target)
+                value["manifest_sha256"] = manifest["manifest_sha256"]
+                write_json(checkpoint_path(target, full=True), value)
+                classification = value["classification"]
+                if classification in {
+                    "restricted",
+                    "rate_limited",
+                    "transient_failure",
+                    "malformed_response",
+                }:
+                    previous, count = source_failure_streak.get(
+                        target["source"], (classification, 0)
                     )
-            else:
-                source_failure_streak.pop(target["source"], None)
-    values, remaining = write_full_progress(manifest)
+                    source_failure_streak[target["source"]] = (
+                        classification,
+                        count + 1 if previous == classification else 1,
+                    )
+                    if source_failure_streak[target["source"]][1] >= SYSTEMIC_FAILURE_THRESHOLD:
+                        write_full_progress(manifest)
+                        raise RuntimeError(
+                            f"stopped {target['source']} after {SYSTEMIC_FAILURE_THRESHOLD} consecutive {classification} outcomes"
+                        )
+                else:
+                    source_failure_streak.pop(target["source"], None)
+        values, remaining = write_full_progress(manifest)
     return {"completed": len(values), "total": len(manifest["targets"]), "remaining": remaining}
 
 
