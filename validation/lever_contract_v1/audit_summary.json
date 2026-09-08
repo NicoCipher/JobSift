@@ -1,0 +1,11 @@
+{
+  "boards_partial": 0,
+  "boards_success": 12,
+  "boards_total": 12,
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_unique_provider_ids": 378,
+  "detail_samples_successful": 10,
+  "generated_at": "2026-09-06T09:18:14.716384+00:00",
+  "pagination_anomalies": 0,
+  "rows_retrieved": 378
+}

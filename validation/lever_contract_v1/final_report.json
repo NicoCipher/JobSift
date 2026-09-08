@@ -1,0 +1,32 @@
+{
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "decision": "LEVER CONTRACT VALIDATED",
+  "historical_corpus": {
+    "distinct_sites": 276,
+    "historical_rows": 629,
+    "known_incomplete_site_only_urls": 1,
+    "unique_urls": 569
+  },
+  "historical_to_live": {
+    "cohort_historical_rows": 60,
+    "current_ids_not_in_historical_subset": 370,
+    "historical_ids_no_longer_listed": 37,
+    "historical_ids_still_visible": 8
+  },
+  "live_audit": {
+    "boards_partial": 0,
+    "boards_success": 12,
+    "boards_total": 12,
+    "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+    "current_unique_provider_ids": 378,
+    "detail_samples_successful": 10,
+    "generated_at": "2026-09-06T09:18:14.716384+00:00",
+    "pagination_anomalies": 0,
+    "rows_retrieved": 378
+  },
+  "notes": [
+    "Historical absence from the current public list is lifecycle evidence only, not a closure assertion.",
+    "The two 200/empty sites are valid empty boards, not failures.",
+    "No production collector, matcher, dedupe, or source configuration was changed."
+  ]
+}

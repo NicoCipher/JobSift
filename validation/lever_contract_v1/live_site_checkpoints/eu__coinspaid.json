@@ -1,0 +1,97 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "eu",
+        "site": "coinspaid",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "1f230154b291fa1b4b5bea424cfefdde5e5e3f762a0f7a231bcbb6190e29baa6",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.eu.lever.co/v0/postings/coinspaid",
+        "board_status": "success",
+        "current_posting_count": 30,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "CoinsPaid",
+        "host": "jobs.eu.lever.co",
+        "instance": "eu",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 30,
+            "signature": "775dde05876d652296adae3d9b621882684d468f94704d2b05a89a117a46abc7",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 30,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "1b255ea9-1c0a-47b1-ba62-8fbaeb817e2f",
+          "323214cb-ce29-423a-899f-e67d5b957c21",
+          "37006f6b-1f4e-4f8f-9a9f-c2b1746d2650",
+          "3d311307-c6b9-44f8-b238-6392eee5f40f",
+          "40f28542-3501-487c-beb4-c3e3cf8a5223",
+          "4fe7b350-5cec-4fd4-926f-800f99535e01",
+          "526ec79c-4ce9-4912-a0fe-94de8bf057ca",
+          "565ae94f-400f-4026-a739-9ae88b957efc",
+          "5804732d-5bee-49dc-9039-757db1352321",
+          "5e1e07ce-5e0a-4605-b44f-630fbd455947",
+          "7eb54e4e-e044-4928-9d0f-96b2dd8382a5",
+          "8e8376f2-13e1-432b-8733-c75519ecebfb",
+          "92a28e6b-013e-4eac-8837-06eceeec4142",
+          "a26c0b6e-dc42-4cb1-8e67-37c7e6254ce4",
+          "ad66c605-69ea-4ea5-82ca-0816d643da38",
+          "af4195fb-8f59-47fb-a55e-ff4e2e47087c",
+          "afb0ba0c-a9cc-40db-9c6b-aed2f24206a1",
+          "b4089c17-aa95-489e-a6fa-a1291772af1e",
+          "b968b4c9-c8e6-4dbd-a4b0-600eb4af8894",
+          "c329d99c-9a20-4c08-b933-42ea9a6a2b4d",
+          "c676f9ba-bd5c-40d3-8a1a-65bb20e22b39",
+          "d1c79b5f-4e34-474c-8a3b-3c97160b13d9",
+          "da3073dc-7cea-4716-acc4-913e7bb67d00",
+          "dad03495-b419-42d1-ac8f-08b8e0e033e6",
+          "dee95551-270b-4f79-b7ca-6ae16c17b2fb",
+          "e1d81c6f-cf53-4020-85a1-7ac98f35b991",
+          "e888f3b2-9c0c-45af-85a1-45d02a98344f",
+          "f7fafc83-e3eb-47b5-a242-c9107b05e368",
+          "fc827027-91fd-4007-997b-ce842fce3ca2",
+          "fe4eee5c-5deb-4862-a635-3a35a91f8489"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 30,
+        "site": "coinspaid",
+        "unique_provider_ids": 30
+      }
+    }
+  ],
+  "checkpoint_sha256": "d1dc3e95a790375d4e5bee6efae732655675696cbe4f182abb4e98b8b7feb4f9",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.eu.lever.co",
+  "instance": "eu",
+  "site": "coinspaid"
+}

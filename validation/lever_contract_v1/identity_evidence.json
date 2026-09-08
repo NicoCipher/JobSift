@@ -1,0 +1,221 @@
+{
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "cross_site_provider_id_overlap": {
+    "historical_ids_in_multiple_sites": 0,
+    "live_ids_in_multiple_sites": 0
+  },
+  "detail_samples": [
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "crosslaketech",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "pushpress",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "magnetforensics",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "aledade",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "AviveSolutions",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "filevine",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "global",
+      "site": "patchmypc",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "eu",
+      "site": "blackshark",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "eu",
+      "site": "coinspaid",
+      "status_code": 200
+    },
+    {
+      "attempts": 1,
+      "detail_id_matches_list": true,
+      "detail_keys_added": [],
+      "detail_keys_removed": [],
+      "error": null,
+      "instance": "eu",
+      "site": "xm",
+      "status_code": 200
+    }
+  ],
+  "historical_vs_live": [
+    {
+      "current_not_historical": 6,
+      "historical_id_count": 8,
+      "historical_not_current": 6,
+      "historical_still_visible": 2,
+      "instance": "global",
+      "site": "crosslaketech"
+    },
+    {
+      "current_not_historical": 4,
+      "historical_id_count": 4,
+      "historical_not_current": 4,
+      "historical_still_visible": 0,
+      "instance": "global",
+      "site": "pushpress"
+    },
+    {
+      "current_not_historical": 0,
+      "historical_id_count": 7,
+      "historical_not_current": 7,
+      "historical_still_visible": 0,
+      "instance": "global",
+      "site": "voleon"
+    },
+    {
+      "current_not_historical": 38,
+      "historical_id_count": 3,
+      "historical_not_current": 3,
+      "historical_still_visible": 0,
+      "instance": "global",
+      "site": "magnetforensics"
+    },
+    {
+      "current_not_historical": 36,
+      "historical_id_count": 6,
+      "historical_not_current": 5,
+      "historical_still_visible": 1,
+      "instance": "global",
+      "site": "aledade"
+    },
+    {
+      "current_not_historical": 22,
+      "historical_id_count": 3,
+      "historical_not_current": 2,
+      "historical_still_visible": 1,
+      "instance": "global",
+      "site": "AviveSolutions"
+    },
+    {
+      "current_not_historical": 137,
+      "historical_id_count": 5,
+      "historical_not_current": 3,
+      "historical_still_visible": 2,
+      "instance": "global",
+      "site": "filevine"
+    },
+    {
+      "current_not_historical": 6,
+      "historical_id_count": 5,
+      "historical_not_current": 4,
+      "historical_still_visible": 1,
+      "instance": "global",
+      "site": "patchmypc"
+    },
+    {
+      "current_not_historical": 6,
+      "historical_id_count": 1,
+      "historical_not_current": 1,
+      "historical_still_visible": 0,
+      "instance": "eu",
+      "site": "blackshark"
+    },
+    {
+      "current_not_historical": 29,
+      "historical_id_count": 1,
+      "historical_not_current": 0,
+      "historical_still_visible": 1,
+      "instance": "eu",
+      "site": "coinspaid"
+    },
+    {
+      "current_not_historical": 0,
+      "historical_id_count": 1,
+      "historical_not_current": 1,
+      "historical_still_visible": 0,
+      "instance": "eu",
+      "site": "eneba"
+    },
+    {
+      "current_not_historical": 86,
+      "historical_id_count": 1,
+      "historical_not_current": 1,
+      "historical_still_visible": 0,
+      "instance": "eu",
+      "site": "xm"
+    }
+  ],
+  "site_duplicate_provider_ids": {
+    "AviveSolutions": 0,
+    "aledade": 0,
+    "blackshark": 0,
+    "coinspaid": 0,
+    "crosslaketech": 0,
+    "eneba": 0,
+    "filevine": 0,
+    "magnetforensics": 0,
+    "patchmypc": 0,
+    "pushpress": 0,
+    "voleon": 0,
+    "xm": 0
+  }
+}

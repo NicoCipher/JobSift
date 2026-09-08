@@ -1,0 +1,104 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "global",
+        "site": "aledade",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "12e895a61b98b0a9cc64ad63727d656a10ca4069de42c23819ef4fe74414d9a3",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/aledade",
+        "board_status": "success",
+        "current_posting_count": 37,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "adelade",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 37,
+            "signature": "6f3ee0553f36b6f07d64179af881bdc77101d3c77a83192872fcbf2cd69d20fd",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 37,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "0313c3e4-dd9b-47f8-8d70-8f1cab44d305",
+          "0621c0ab-3c43-46f4-909b-381cc3aef963",
+          "070d5213-9ba5-4afd-aea4-9856e20becae",
+          "0d03fecf-bdb7-445f-98aa-e81b64ee72f8",
+          "17522f7a-45a9-4669-aab3-d10bff04ddc2",
+          "1a1eadb3-6641-41bd-8a09-544d6753b36a",
+          "20f27628-c3fb-41a7-9a96-a66705686412",
+          "21787819-6373-4736-8766-d49cc84fd3af",
+          "22d0e271-98b6-4325-8271-50d22dd7de33",
+          "243babbd-9379-4984-ba89-98ddcf090ebf",
+          "28f88b2e-6cef-440f-9439-08ec36c47f85",
+          "2b98b5a3-7224-44fa-98d6-a4a1d8695b61",
+          "39ea4348-1d97-4bf7-9905-b524c255dae2",
+          "428933a9-1cab-4fb0-9c03-e5494d7aed0c",
+          "463e4301-7e3c-4c8c-a0da-28d05c37ebf5",
+          "4c13a1cb-9eaa-4721-8906-43c3f9dc0a5c",
+          "5267a661-1cf7-48e3-9d1f-3400392236b2",
+          "54ea78da-e4f8-4b5c-8181-4cf214e05ef3",
+          "567ac203-2004-4005-9ca1-6df4d4136524",
+          "5da33ae4-d547-4656-ac3c-b461ec2c5220",
+          "660b03e4-e1db-4ac2-bb9e-c74666f52189",
+          "680a708d-0e59-4201-a064-55838d42a5f2",
+          "6aa40355-7c74-4ef5-a592-fa91973936ee",
+          "73f9bb7d-adb9-4c34-9cdb-753c0905147f",
+          "7d8f3fb5-3155-4b34-b9e0-84dc1e24cfa0",
+          "834bee14-249a-4b7b-a276-15c0ae57ff27",
+          "89209d2e-17f8-4dc9-82b8-aa75a7c21cd1",
+          "963a2213-144f-4ac6-8e4d-2ca401251509",
+          "9980a50c-41e8-46ce-917d-f522987f23e6",
+          "b5d3eb04-e85f-4a53-bd18-4c34750889fa",
+          "c727d84a-427d-4bcf-bfa5-63f8743ac829",
+          "c9a8393b-3821-4ad4-85f2-a1196844ceb1",
+          "d416d854-0534-4b58-94b4-4bd394d818f5",
+          "de181f2c-88b5-4b32-ad90-cd528182ae6a",
+          "e9636a60-5455-4a52-afed-eeadb50424cd",
+          "ea183fe1-771d-4843-93a2-4c77edba1598",
+          "fe6d1978-4c7f-44c1-8d1e-4de15f23efa7"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 37,
+        "site": "aledade",
+        "unique_provider_ids": 37
+      }
+    }
+  ],
+  "checkpoint_sha256": "2f7aafa66181a1213c308f94c5273ce85511b3c9c40dab503f415d7fbfd5d991",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "aledade"
+}

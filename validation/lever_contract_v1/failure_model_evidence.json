@@ -1,0 +1,27 @@
+{
+  "detail_404_probe": {
+    "error": "HTTP 404",
+    "status_code": 404
+  },
+  "generated_at": "2026-09-06T09:18:14.710710+00:00",
+  "list_404_probe": {
+    "error": "HTTP 404",
+    "status_code": 404
+  },
+  "not_safely_exercised": [
+    "429",
+    "5xx",
+    "timeout/network",
+    "malformed JSON",
+    "blank provider ID"
+  ],
+  "recommended_mapping": {
+    "404 board": "invalid_target",
+    "404 detail after a list snapshot": "partial",
+    "429": "rate_limited after bounded retry",
+    "5xx": "provider_error after bounded retry",
+    "blank provider id": "per-posting quarantine and partial",
+    "malformed JSON": "parse_failure",
+    "timeout or network": "network_failure after bounded retry"
+  }
+}

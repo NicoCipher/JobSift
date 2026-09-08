@@ -1,0 +1,105 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "global",
+        "site": "magnetforensics",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "9f03d59cd3f54d2f49d79eda0616eb654d36d7f68172910567316996d1d76da0",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/magnetforensics",
+        "board_status": "success",
+        "current_posting_count": 38,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "magnet",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 38,
+            "signature": "dfd0369df23c97891eda417c926a767c6105dbcb34265edfd26fffc8a67d2a61",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 38,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "02df5edf-2380-4983-98e7-5160dc8d5446",
+          "03abb42a-063d-4ddd-92d4-17856346e099",
+          "0c7c5eb2-f0fc-4327-a038-f56de3fcc218",
+          "16741279-4e4b-40dc-9924-aea87df18428",
+          "18f6d866-36cb-43d2-8312-9bc28454db96",
+          "1afc0241-97d4-4473-9fb8-f1dc8c776d91",
+          "1c4a6264-1904-4191-a0a2-96c5dc5c07e8",
+          "308fb1a8-2205-4814-a45d-dcef93d25165",
+          "375a0f97-68b3-46f4-bb95-628636a0e076",
+          "382474e6-0ab5-465a-af5d-60e9445da380",
+          "39181882-5eae-41c6-b494-c3d6791c978b",
+          "465fb92b-a66f-4de8-9cd9-9f0f91da698e",
+          "4e3d1234-f14f-42aa-8677-02f5b38954c9",
+          "6fc0fdc2-e264-4324-bc7b-c0d5fa8a6a05",
+          "77b3dd39-5858-4877-a7ca-d0aa6dd385e2",
+          "7a86a5a7-79a6-41fd-8ac4-e668ae34665f",
+          "7c827d8f-9276-42db-9526-322e10bcf3ab",
+          "88365952-25db-48a5-95c0-cdb9e3efe55e",
+          "8d402b0c-12b6-4114-bfc9-4ef95f4742e1",
+          "92fe391e-8e57-413b-a309-02339101f540",
+          "942a1244-184a-4fa5-9691-b7152a508c62",
+          "a072c259-001a-4353-90f1-d8725d505318",
+          "a8a5602b-d957-409b-9ea1-379a8343221e",
+          "a95575f6-6325-4a4d-b322-3f706ebfe3e3",
+          "b9398342-bc38-4ade-b37d-2d7f660ffa09",
+          "b9e02102-0482-463c-8235-e2509fdea373",
+          "c40a3bb5-ba93-4b15-8919-17a5f9a998a3",
+          "c524a80f-ee6e-435c-9363-0a2786b51f97",
+          "cec5d4e9-5df9-4753-9068-3dedceb2ba54",
+          "d8a7f42b-9ba4-4f4b-be14-5cc84818dce7",
+          "da08e6d4-0e68-41c1-a771-aec02ff35ad9",
+          "e4bd9004-a15b-4bb1-957a-55221a1e30ae",
+          "ecafb45d-3636-47f7-bdad-a0f16749e499",
+          "ecb9ff55-5004-4df9-bb7e-8bdc160fbf7b",
+          "edc38020-6c55-4bda-bafb-3306c665dd41",
+          "f83d7e05-1fb8-4916-9f25-4e3edd7ed6dc",
+          "fc604104-d2d1-446d-8956-7416a9d409e0",
+          "ff79ad6e-5753-4172-80c3-3045b469fe4f"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 38,
+        "site": "magnetforensics",
+        "unique_provider_ids": 38
+      }
+    }
+  ],
+  "checkpoint_sha256": "4b2cc1082bb6c43d042e897c4e79aba112fe5b2370fd508328597ddf46e44d57",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "magnetforensics"
+}

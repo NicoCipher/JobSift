@@ -1,0 +1,325 @@
+{
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "page_limit": 50,
+  "sites": [
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 8,
+          "signature": "a88dc2b1d58e8c1795889146e2bebd17ddd3955894cc860ff27cdd22fa92fe83",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 8,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "crosslaketech"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 4,
+          "signature": "bfea7557e1fa2d43e6a4cc567e25c7a66225577f8fc8050f784e93ff5382c369",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 4,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "pushpress"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "voleon"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 38,
+          "signature": "dfd0369df23c97891eda417c926a767c6105dbcb34265edfd26fffc8a67d2a61",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 38,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "magnetforensics"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 37,
+          "signature": "6f3ee0553f36b6f07d64179af881bdc77101d3c77a83192872fcbf2cd69d20fd",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 37,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "aledade"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 23,
+          "signature": "6bfc8712fc709cb86a5c1b52b578be36c590140ccd142d2ac1253c568cbca30e",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 23,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "AviveSolutions"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 50,
+          "signature": "685a963478dffe9bb87bb22d570fece7c3c53fa03e80252b52babc8c6369587b",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 50,
+          "rows": 50,
+          "signature": "b9d47c19af19a6ecdb2ab592800397aefae5360c2343b4eab4707d94d147fb36",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 100,
+          "rows": 39,
+          "signature": "bd510585bfc6965d484dcf3a9927bcac81aa0968b307be53db175c04c31bb273",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 139,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "filevine"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 7,
+          "signature": "d8ef200d6ffd28b3653228b919d6cb093275e1c3b1c8b811897266df08f52c4f",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 7,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "patchmypc"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 6,
+          "signature": "8a56ac69fbc119c0672e6ae1503afb1f544f4098fe0a52d8dad0d7cf50b7b63e",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 6,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "blackshark"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 30,
+          "signature": "775dde05876d652296adae3d9b621882684d468f94704d2b05a89a117a46abc7",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 30,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "coinspaid"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "eneba"
+    },
+    {
+      "ordering_repeat": {
+        "attempts": 1,
+        "error": null,
+        "stable_first_page": true,
+        "status_code": 200
+      },
+      "pages": [
+        {
+          "attempts": 1,
+          "offset": 0,
+          "rows": 50,
+          "signature": "1a227d9dced4ab2218d37c5785979b1a6075e42b52f37358cb8ef3daa225c637",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 50,
+          "rows": 36,
+          "signature": "0307a45eabd83f5f8c13a3e72a74d3fd7fb0ff97fc39a4800f5c0abe32d975ff",
+          "status_code": 200
+        },
+        {
+          "attempts": 1,
+          "offset": 86,
+          "rows": 0,
+          "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "status_code": 200
+        }
+      ],
+      "pagination_anomalies": [],
+      "site": "xm"
+    }
+  ]
+}

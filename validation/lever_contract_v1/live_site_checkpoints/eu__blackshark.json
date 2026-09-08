@@ -1,0 +1,73 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "eu",
+        "site": "blackshark",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "ad0be9a4bbc0fef08d96201b449e137df5dda72f7ecd9aef0da4833913addc58",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.eu.lever.co/v0/postings/blackshark",
+        "board_status": "success",
+        "current_posting_count": 6,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "black sharkai",
+        "host": "jobs.eu.lever.co",
+        "instance": "eu",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 6,
+            "signature": "8a56ac69fbc119c0672e6ae1503afb1f544f4098fe0a52d8dad0d7cf50b7b63e",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 6,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "17fbf310-ea37-435f-a198-c2fd4e80087d",
+          "56a85834-d986-4105-9cc8-98f9cd482f1a",
+          "5c596b85-5134-4601-be25-1082b308eb81",
+          "6110fedd-5cd8-40e5-ac11-f32b287c1f9b",
+          "d425eda5-52ca-4e5c-a03d-b506b3ef6d3f",
+          "e64c4771-16f2-482b-b67c-6c9074c38612"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 6,
+        "site": "blackshark",
+        "unique_provider_ids": 6
+      }
+    }
+  ],
+  "checkpoint_sha256": "078037acbd7e8cca121351403bd8acf271314be5a8dded0d5aff84e883534a71",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.eu.lever.co",
+  "instance": "eu",
+  "site": "blackshark"
+}

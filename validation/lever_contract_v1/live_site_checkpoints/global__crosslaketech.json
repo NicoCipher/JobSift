@@ -1,0 +1,75 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "global",
+        "site": "crosslaketech",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "c5f432a315b0e954624bc1ffd575c8a775410864df8c8beac57c2da50f7a7cde",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/crosslaketech",
+        "board_status": "success",
+        "current_posting_count": 8,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "Crosslake",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 8,
+            "signature": "a88dc2b1d58e8c1795889146e2bebd17ddd3955894cc860ff27cdd22fa92fe83",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 8,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "37368d94-0b13-442c-8b15-e24d50b189c3",
+          "39811142-f29c-4225-b937-95fa5a623771",
+          "3b094a3e-7fe2-442e-a1b5-af4b6b4836e2",
+          "4ff85bb5-fb8a-45b9-b448-f2872a9397c6",
+          "75af153c-274e-4a4d-982d-e72650926618",
+          "94279c6d-6118-4eb3-8d7b-d3276a01a2eb",
+          "c6299543-26cc-46c2-93c3-ad926cabb252",
+          "ef8cbdbc-fb77-43bf-a229-dc94d27c50c6"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 8,
+        "site": "crosslaketech",
+        "unique_provider_ids": 8
+      }
+    }
+  ],
+  "checkpoint_sha256": "56799bcc80336324e9fa0290718913bd9bc004064512471fbf3586986fea82bc",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "crosslaketech"
+}

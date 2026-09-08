@@ -1,0 +1,90 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "global",
+        "site": "AviveSolutions",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "ad0711c0acdb6a5e82093d2fd06e9fca1e03d65321c09abbc3f6c8af10bc9ccb",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/AviveSolutions",
+        "board_status": "success",
+        "current_posting_count": 23,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "avivesolution",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 23,
+            "signature": "6bfc8712fc709cb86a5c1b52b578be36c590140ccd142d2ac1253c568cbca30e",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 23,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "0076a47f-b5eb-4a66-ba1f-028134e2eed1",
+          "1e34e433-5da4-4944-aba1-fa207a8a6e60",
+          "2523f879-87b9-4135-aa0b-99c2b0d0c2df",
+          "272bb753-74c6-46ec-a32d-5b9732b3ead7",
+          "288d4ab3-e1c6-466b-ba73-c1bcaaf7fde5",
+          "32413476-fd16-46e0-876c-dd7b0999e436",
+          "36743e62-0296-4933-9ec8-43ad6b42ebdc",
+          "3da8f6ea-489a-4c52-82d9-273cac15d299",
+          "3ebc5dbf-9b13-42bb-9dbc-598322016a39",
+          "62149d24-1bac-4b11-a08c-b0c07c823d99",
+          "64c134aa-8830-4f39-b9fc-a44bbdcf0c4f",
+          "67990b68-1f68-45ca-8e82-973e77cd233d",
+          "6d982360-d21c-4389-8a75-9a971d644f1d",
+          "7466c945-ee4b-45a3-b151-a81399b29e1a",
+          "7e9555f3-d38d-4e69-948c-216e884acd6c",
+          "90b79049-e446-42d2-804d-b19a1628095e",
+          "973e3f39-5c3e-4587-ab4e-f9b01a92433e",
+          "a09e7a6b-fb41-4434-8423-f1ea2494230d",
+          "ad905b27-c05d-4cae-912e-b20929eedb2d",
+          "b7e8fc00-2187-4362-b056-22dfae7e4990",
+          "b84f634f-5232-4207-af87-bbf83b0f82c1",
+          "cb92c08d-b0c9-4118-8ad2-6400b317fec1",
+          "fc77c729-7fed-445b-9362-15b4a3f445f0"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 23,
+        "site": "AviveSolutions",
+        "unique_provider_ids": 23
+      }
+    }
+  ],
+  "checkpoint_sha256": "c2b1aa59c1488e254790099e6371418e7027364bddfdb9f33ca5381ea9da3a62",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "AviveSolutions"
+}

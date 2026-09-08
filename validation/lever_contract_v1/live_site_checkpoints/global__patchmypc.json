@@ -1,0 +1,74 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "global",
+        "site": "patchmypc",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "a6d01a8f4c20af3974aff9646553286f0497f7366b90213eda72766aa20e1843",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/patchmypc",
+        "board_status": "success",
+        "current_posting_count": 7,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "patchmypc",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 7,
+            "signature": "d8ef200d6ffd28b3653228b919d6cb093275e1c3b1c8b811897266df08f52c4f",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 7,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "21f4037e-2b38-4f87-8877-fd4096d36e7f",
+          "2d913ce6-d78a-48bd-b943-5182e1e85233",
+          "360a40b7-9c2a-4bf4-bf6f-55aab18a70ff",
+          "3802607c-2da4-480c-bc1e-f976f60842a0",
+          "6734827f-2517-4b36-8a16-4b7a5da15f3c",
+          "a71b827b-c926-4966-9207-dcc4dff7719a",
+          "e2d946b2-c0e5-4f58-81a4-fb6ce844a114"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 7,
+        "site": "patchmypc",
+        "unique_provider_ids": 7
+      }
+    }
+  ],
+  "checkpoint_sha256": "d8c1735656b76d039a1e66220fa20ef453d98431420b3114c23c0498fd8bd664",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "patchmypc"
+}

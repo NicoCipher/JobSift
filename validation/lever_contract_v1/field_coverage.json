@@ -1,0 +1,115 @@
+{
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "fields": {
+    "allLocations": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "applyUrl": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "categories.commitment": {
+      "classification": "CONDITIONAL",
+      "present": 368,
+      "total": 378
+    },
+    "categories.location": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "country": {
+      "classification": "CONDITIONAL",
+      "present": 334,
+      "total": 378
+    },
+    "createdAt": {
+      "classification": "CONDITIONAL",
+      "present": 378,
+      "total": 378
+    },
+    "department": {
+      "classification": "CONDITIONAL",
+      "present": 340,
+      "total": 378
+    },
+    "description": {
+      "classification": "CONDITIONAL",
+      "present": 377,
+      "total": 378
+    },
+    "descriptionBodyPlain": {
+      "classification": "CONDITIONAL",
+      "present": 305,
+      "total": 378
+    },
+    "descriptionPlain": {
+      "classification": "CONDITIONAL",
+      "present": 371,
+      "total": 378
+    },
+    "hostedUrl": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "id": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "salaryRange": {
+      "classification": "CONDITIONAL",
+      "present": 23,
+      "total": 378
+    },
+    "team": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "text": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    },
+    "workplaceType": {
+      "classification": "RELIABLE",
+      "present": 378,
+      "total": 378
+    }
+  },
+  "generated_at": "2026-09-06T09:18:14.715443+00:00",
+  "observed_country_values": {
+    "AT": 6,
+    "CA": 16,
+    "CY": 43,
+    "CZ": 7,
+    "DE": 3,
+    "EE": 2,
+    "GB": 6,
+    "GR": 12,
+    "IE": 1,
+    "KG": 3,
+    "KR": 1,
+    "KZ": 3,
+    "MN": 1,
+    "NG": 3,
+    "SE": 2,
+    "SG": 1,
+    "SK": 5,
+    "TW": 2,
+    "US": 213,
+    "UY": 2,
+    "UZ": 1,
+    "ZA": 1
+  },
+  "observed_workplace_type_values": {
+    "hybrid": 140,
+    "onsite": 64,
+    "remote": 174
+  }
+}

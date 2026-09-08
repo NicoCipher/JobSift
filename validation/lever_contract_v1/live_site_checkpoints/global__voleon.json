@@ -1,0 +1,50 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": null,
+      "outcome": "empty_valid_board",
+      "raw_artifact": {
+        "provider_ids_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/voleon",
+        "board_status": "success",
+        "current_posting_count": 0,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "voleon",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [],
+        "request_failures": [],
+        "rows_retrieved": 0,
+        "site": "voleon",
+        "unique_provider_ids": 0
+      }
+    }
+  ],
+  "checkpoint_sha256": "20078041569f7c5957455115518d80926d5994f404327c883018e5b1abd8a8f7",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "empty_valid_board",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "voleon"
+}

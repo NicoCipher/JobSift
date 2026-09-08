@@ -1,0 +1,133 @@
+{
+  "created_at": "2026-09-06T09:16:57.777543+00:00",
+  "input_sha256": "6fe6435a51509f7fb319f26b6a0b289722cd92eb28e3d5376be7985cc724b4b0",
+  "manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "selection": {
+    "eu": "all valid EU sites",
+    "global": "highest historical rank by rows, unique URLs, then site",
+    "global_count": 8,
+    "historical_vacancies_not_inspected": true
+  },
+  "targets": [
+    {
+      "historical_company_string": "Crosslake",
+      "historical_row_count": 8,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/crosslaketech/37368d94-0b13-442c-8b15-e24d50b189c3",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "crosslaketech",
+      "unique_historical_urls": 8
+    },
+    {
+      "historical_company_string": "pushpress",
+      "historical_row_count": 8,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/pushpress/10c409e4-96a6-4028-a0f7-7fdcd87f3af2",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "pushpress",
+      "unique_historical_urls": 7
+    },
+    {
+      "historical_company_string": "voleon",
+      "historical_row_count": 8,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/voleon/010a7beb-592d-4c34-b651-b07cd2e03eec/apply",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "voleon",
+      "unique_historical_urls": 7
+    },
+    {
+      "historical_company_string": "magnet",
+      "historical_row_count": 8,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/magnetforensics/bbcb0429-991f-4b2e-9b99-24fcbdc0e346",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "magnetforensics",
+      "unique_historical_urls": 5
+    },
+    {
+      "historical_company_string": "adelade",
+      "historical_row_count": 6,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/aledade/1df6548e-2790-4d9f-9265-8ce87baa678f/apply?source=LinkedIn",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "aledade",
+      "unique_historical_urls": 6
+    },
+    {
+      "historical_company_string": "avivesolution",
+      "historical_row_count": 6,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/AviveSolutions/32413476-fd16-46e0-876c-dd7b0999e436/apply",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "AviveSolutions",
+      "unique_historical_urls": 6
+    },
+    {
+      "historical_company_string": "filevine",
+      "historical_row_count": 6,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/filevine/d664b02b-dc9b-434d-87ae-dd5bb7bb5651/apply",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "filevine",
+      "unique_historical_urls": 6
+    },
+    {
+      "historical_company_string": "patchmypc",
+      "historical_row_count": 6,
+      "host": "jobs.lever.co",
+      "instance": "global",
+      "representative_historical_url": "https://jobs.lever.co/patchmypc/6e323de8-48f1-4809-b9ae-3ac14f6611d7/apply?source=LinkedIn",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "patchmypc",
+      "unique_historical_urls": 6
+    },
+    {
+      "historical_company_string": "black sharkai",
+      "historical_row_count": 1,
+      "host": "jobs.eu.lever.co",
+      "instance": "eu",
+      "representative_historical_url": "https://jobs.eu.lever.co/blackshark/6e781a50-97fb-4145-a268-694ff01f8a2b/apply?lever-source=LinkedIn",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "blackshark",
+      "unique_historical_urls": 1
+    },
+    {
+      "historical_company_string": "CoinsPaid",
+      "historical_row_count": 1,
+      "host": "jobs.eu.lever.co",
+      "instance": "eu",
+      "representative_historical_url": "https://jobs.eu.lever.co/coinspaid/565ae94f-400f-4026-a739-9ae88b957efc",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "coinspaid",
+      "unique_historical_urls": 1
+    },
+    {
+      "historical_company_string": "eneba",
+      "historical_row_count": 1,
+      "host": "jobs.eu.lever.co",
+      "instance": "eu",
+      "representative_historical_url": "https://jobs.eu.lever.co/eneba/7e8ef892-36b8-4a2d-970b-d19e136a581c",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "eneba",
+      "unique_historical_urls": 1
+    },
+    {
+      "historical_company_string": "xm",
+      "historical_row_count": 1,
+      "host": "jobs.eu.lever.co",
+      "instance": "eu",
+      "representative_historical_url": "https://jobs.eu.lever.co/xm/5b5734a5-0ea7-4360-b4d1-6939aff2a621/",
+      "selection_rationale": "selected by deterministic historical ranking: all valid EU sites plus the eight highest-ranked global sites, ordered by historical row count, unique historical URLs, and casefolded site",
+      "site": "xm",
+      "unique_historical_urls": 1
+    }
+  ]
+}

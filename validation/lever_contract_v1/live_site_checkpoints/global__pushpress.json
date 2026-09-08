@@ -1,0 +1,71 @@
+{
+  "attempts": [
+    {
+      "attempted_at": "2026-09-06T09:18:14.711254+00:00",
+      "detail_observation": {
+        "attempts": 1,
+        "detail_id_matches_list": true,
+        "detail_keys_added": [],
+        "detail_keys_removed": [],
+        "error": null,
+        "instance": "global",
+        "site": "pushpress",
+        "status_code": 200
+      },
+      "outcome": "success",
+      "raw_artifact": {
+        "provider_ids_sha256": "f84be22dd27c86ed378d601ef3fc7d8047708131c7af1eebb3135231cfa14356",
+        "retained": false
+      },
+      "site_result": {
+        "api_url": "https://api.lever.co/v0/postings/pushpress",
+        "board_status": "success",
+        "current_posting_count": 4,
+        "duplicate_provider_ids": 0,
+        "empty_or_malformed_provider_ids": 0,
+        "historical_company_string": "pushpress",
+        "host": "jobs.lever.co",
+        "instance": "global",
+        "ordering_repeat": {
+          "attempts": 1,
+          "error": null,
+          "stable_first_page": true,
+          "status_code": 200
+        },
+        "pages": [
+          {
+            "attempts": 1,
+            "offset": 0,
+            "rows": 4,
+            "signature": "bfea7557e1fa2d43e6a4cc567e25c7a66225577f8fc8050f784e93ff5382c369",
+            "status_code": 200
+          },
+          {
+            "attempts": 1,
+            "offset": 4,
+            "rows": 0,
+            "signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "status_code": 200
+          }
+        ],
+        "pagination_anomalies": [],
+        "provider_ids": [
+          "1355ad22-4034-4b97-987a-e289768763ea",
+          "2ac0d375-8ec1-4312-88a9-b0f2011a2724",
+          "6e15f01c-ff98-4099-a9a2-4dd0163168de",
+          "f916072c-83b1-4b0b-a35a-580c77335588"
+        ],
+        "request_failures": [],
+        "rows_retrieved": 4,
+        "site": "pushpress",
+        "unique_provider_ids": 4
+      }
+    }
+  ],
+  "checkpoint_sha256": "3cc186119da44bb02c77b2816a1b844315279e1bcdd27ab86fbc056930fef31d",
+  "cohort_manifest_sha256": "e44167fefc5e1983cba8561f160707cbff0b70a47897bc4e7194f66ff59767a8",
+  "current_outcome": "success",
+  "host": "jobs.lever.co",
+  "instance": "global",
+  "site": "pushpress"
+}
