@@ -1,0 +1,15 @@
+{
+  "classification": "active",
+  "current_postings": 19,
+  "error": null,
+  "first_page_count": 19,
+  "historical_occurrence_count": 1,
+  "http_status": 200,
+  "inventory_exact": true,
+  "inventory_note": null,
+  "manifest_sha256": "9e8fe896d2217d0212400ffc78bdb70c414f53a3ccadf868bc2734ea56acb8a4",
+  "provider_reported_total": null,
+  "request_count": 1,
+  "source": "ashby",
+  "target_identity": "ashby:tessera-labs"
+}

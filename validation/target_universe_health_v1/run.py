@@ -529,6 +529,10 @@ def summarize_full(values: list[dict[str, Any]], manifest: dict[str, Any]) -> di
             "classifications": classification_counts(source_values),
             "summed_current_posting_evidence": sum(inventories),
             "median_current_postings_per_active_target": median(active_inventories),
+            "mean_current_postings_per_active_target": round(statistics.mean(active_inventories), 2)
+            if active_inventories
+            else None,
+            "maximum_current_posting_evidence": max(inventories) if inventories else None,
             "inventory_distribution": {
                 bucket: sum(inventory_bucket(amount) == bucket for amount in inventories)
                 for bucket in ("0", "1-9", "10-49", "50-99", "100-499", "500+")

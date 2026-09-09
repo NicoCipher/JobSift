@@ -1,0 +1,287 @@
+{
+  "classification_reconciliation": {
+    "active": 2044,
+    "invalid": 120,
+    "malformed_response": 1,
+    "rate_limited": 0,
+    "restricted": 4,
+    "transient_failure": 0,
+    "unprocessable": 12,
+    "valid_empty": 106
+  },
+  "completed_at": "2026-09-09T05:13:04.560621+00:00",
+  "historical_frequency_vs_health": [
+    {
+      "active_percentage": 89.64,
+      "active_targets": 995,
+      "historical_occurrences": "1",
+      "median_current_inventory": 14.0,
+      "targets": 1110
+    },
+    {
+      "active_percentage": 89.42,
+      "active_targets": 820,
+      "historical_occurrences": "2-4",
+      "median_current_inventory": 15.0,
+      "targets": 917
+    },
+    {
+      "active_percentage": 87.55,
+      "active_targets": 211,
+      "historical_occurrences": "5-9",
+      "median_current_inventory": 15.0,
+      "targets": 241
+    },
+    {
+      "active_percentage": 94.74,
+      "active_targets": 18,
+      "historical_occurrences": "10-24",
+      "median_current_inventory": 34.5,
+      "targets": 19
+    },
+    {
+      "active_percentage": 0,
+      "active_targets": 0,
+      "historical_occurrences": "25+",
+      "median_current_inventory": null,
+      "targets": 0
+    }
+  ],
+  "inventory_interpretation": "Raw source inventory only. It is neither a unique-job count nor Taiwo-match or delivery evidence.",
+  "manifest_sha256": "9e8fe896d2217d0212400ffc78bdb70c414f53a3ccadf868bc2734ea56acb8a4",
+  "overall": {
+    "active_targets": 2044,
+    "inventory_evidence_target_count": 2150,
+    "non_active_targets": 243,
+    "raw_current_posting_evidence": 235622,
+    "targets_contributing_most_current_inventory": [
+      {
+        "current_postings": 12524,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:lowes.wd5.myworkdayjobs.com:lowes:lws_external_cs"
+      },
+      {
+        "current_postings": 4495,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:globalhr.wd5.myworkdayjobs.com:globalhr:rec_rtx_ext_gateway"
+      },
+      {
+        "current_postings": 3756,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:ngc.wd1.myworkdayjobs.com:ngc:northrop_grumman_external_site"
+      },
+      {
+        "current_postings": 3728,
+        "inventory_exact": true,
+        "source": "greenhouse",
+        "target_identity": "greenhouse:prolificacademicltd"
+      },
+      {
+        "current_postings": 3223,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:davita.wd1.myworkdayjobs.com:davita:DKC_External"
+      },
+      {
+        "current_postings": 3223,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:davita.wd1.myworkdayjobs.com:davita:dkc_external"
+      },
+      {
+        "current_postings": 3066,
+        "inventory_exact": true,
+        "source": "ashby",
+        "target_identity": "ashby:bjakcareer"
+      },
+      {
+        "current_postings": 3048,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:thermofisher.wd5.myworkdayjobs.com:thermofisher:thermofishercareers"
+      },
+      {
+        "current_postings": 2659,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:jci.wd5.myworkdayjobs.com:jci:jci"
+      },
+      {
+        "current_postings": 2517,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:abercrombie.wd108.myworkdayjobs.com:abercrombie:anf"
+      },
+      {
+        "current_postings": 2110,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:gevernova.wd5.myworkdayjobs.com:gevernova:vernova_externalsite"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:abbott.wd5.myworkdayjobs.com:abbott:abbottcareers"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:accenture.wd103.myworkdayjobs.com:accenture:accenturecareers"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:cbrlgroup.wd503.myworkdayjobs.com:cbrlgroup:CrackerBarrelExternal"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:cbrlgroup.wd503.myworkdayjobs.com:cbrlgroup:crackerbarrelexternal"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:cw.wd1.myworkdayjobs.com:cw:external"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:dickssportinggoods.wd1.myworkdayjobs.com:dickssportinggoods:DSG"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:dickssportinggoods.wd1.myworkdayjobs.com:dickssportinggoods:dsg"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:genpact.wd108.myworkdayjobs.com:genpact:external_careers"
+      },
+      {
+        "current_postings": 2000,
+        "inventory_exact": false,
+        "source": "workday",
+        "target_identity": "workday:genpt.wd1.myworkdayjobs.com:genpt:Careers"
+      }
+    ]
+  },
+  "per_source": {
+    "ashby": {
+      "classifications": {
+        "active": 607,
+        "invalid": 36,
+        "malformed_response": 0,
+        "rate_limited": 0,
+        "restricted": 0,
+        "transient_failure": 0,
+        "unprocessable": 0,
+        "valid_empty": 35
+      },
+      "inventory_distribution": {
+        "0": 35,
+        "1-9": 304,
+        "10-49": 251,
+        "100-499": 18,
+        "50-99": 31,
+        "500+": 3
+      },
+      "maximum_current_posting_evidence": 3066,
+      "mean_current_postings_per_active_target": 26.37,
+      "median_current_postings_per_active_target": 9,
+      "potentially_capped_workday_targets": 0,
+      "summed_current_posting_evidence": 16005,
+      "targets": 678
+    },
+    "greenhouse": {
+      "classifications": {
+        "active": 665,
+        "invalid": 72,
+        "malformed_response": 0,
+        "rate_limited": 0,
+        "restricted": 0,
+        "transient_failure": 0,
+        "unprocessable": 0,
+        "valid_empty": 37
+      },
+      "inventory_distribution": {
+        "0": 37,
+        "1-9": 267,
+        "10-49": 291,
+        "100-499": 41,
+        "50-99": 62,
+        "500+": 4
+      },
+      "maximum_current_posting_evidence": 3728,
+      "mean_current_postings_per_active_target": 38.34,
+      "median_current_postings_per_active_target": 13,
+      "potentially_capped_workday_targets": 0,
+      "summed_current_posting_evidence": 25494,
+      "targets": 774
+    },
+    "lever": {
+      "classifications": {
+        "active": 236,
+        "invalid": 11,
+        "malformed_response": 0,
+        "rate_limited": 0,
+        "restricted": 0,
+        "transient_failure": 0,
+        "unprocessable": 0,
+        "valid_empty": 28
+      },
+      "inventory_distribution": {
+        "0": 28,
+        "1-9": 114,
+        "10-49": 97,
+        "100-499": 11,
+        "50-99": 12,
+        "500+": 2
+      },
+      "maximum_current_posting_evidence": 816,
+      "mean_current_postings_per_active_target": 29.49,
+      "median_current_postings_per_active_target": 10.0,
+      "potentially_capped_workday_targets": 0,
+      "summed_current_posting_evidence": 6960,
+      "targets": 275
+    },
+    "workday": {
+      "classifications": {
+        "active": 536,
+        "invalid": 1,
+        "malformed_response": 1,
+        "rate_limited": 0,
+        "restricted": 4,
+        "transient_failure": 0,
+        "unprocessable": 12,
+        "valid_empty": 6
+      },
+      "inventory_distribution": {
+        "0": 6,
+        "1-9": 48,
+        "10-49": 167,
+        "100-499": 147,
+        "50-99": 81,
+        "500+": 93
+      },
+      "maximum_current_posting_evidence": 12524,
+      "mean_current_postings_per_active_target": 349.18,
+      "median_current_postings_per_active_target": 82.0,
+      "potentially_capped_workday_targets": 28,
+      "summed_current_posting_evidence": 187163,
+      "targets": 560
+    }
+  },
+  "target_count": 2287
+}

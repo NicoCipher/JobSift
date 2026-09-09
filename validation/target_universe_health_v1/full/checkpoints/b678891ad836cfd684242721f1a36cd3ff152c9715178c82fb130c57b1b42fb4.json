@@ -1,0 +1,15 @@
+{
+  "classification": "active",
+  "current_postings": 14,
+  "error": null,
+  "first_page_count": 14,
+  "historical_occurrence_count": 5,
+  "http_status": 200,
+  "inventory_exact": true,
+  "inventory_note": null,
+  "manifest_sha256": "9e8fe896d2217d0212400ffc78bdb70c414f53a3ccadf868bc2734ea56acb8a4",
+  "provider_reported_total": null,
+  "request_count": 1,
+  "source": "greenhouse",
+  "target_identity": "greenhouse:sidecarhealth"
+}
