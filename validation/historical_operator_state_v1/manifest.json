@@ -1,0 +1,11 @@
+{
+  "historical_operator_state_version": "historical-operator-state-v1",
+  "operator_verified_workbook_sha256": "a7b84e2db189c97dde31ab154a08ade779d06caec868cefacb63e848823f64c3",
+  "target_universe_v1_workbook_sha256": "58ab693d1928ad48443679653dc48d041746526c330015ff7af97f510b7b084d",
+  "row_contract": {
+    "total": 11107,
+    "applied": 9714,
+    "not_applied": 967,
+    "unknown": 426
+  }
+}

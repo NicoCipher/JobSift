@@ -67,6 +67,28 @@ CREATE TABLE IF NOT EXISTS group_deliveries (
   job_id TEXT NOT NULL REFERENCES jobs(id), exported_at TEXT NOT NULL,
   PRIMARY KEY(group_id, client_id, destination)
 );
+CREATE TABLE IF NOT EXISTS historical_imports (
+  id TEXT PRIMARY KEY, client_id TEXT NOT NULL, workbook_sha256 TEXT NOT NULL,
+  imported_at TEXT NOT NULL, importer_version TEXT NOT NULL, row_count INTEGER NOT NULL,
+  UNIQUE(client_id, workbook_sha256)
+);
+CREATE TABLE IF NOT EXISTS historical_job_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, import_id TEXT NOT NULL REFERENCES historical_imports(id),
+  client_id TEXT NOT NULL, original_url TEXT NOT NULL, normalized_url TEXT NOT NULL,
+  source TEXT, source_board_id TEXT, source_job_id TEXT, title TEXT NOT NULL, company TEXT NOT NULL,
+  operator_status TEXT NOT NULL CHECK(operator_status IN ('applied','not_applied','unknown')),
+  source_sheet TEXT NOT NULL, source_row INTEGER NOT NULL, imported_at TEXT NOT NULL,
+  UNIQUE(import_id, source_sheet, source_row, original_url)
+);
+CREATE INDEX IF NOT EXISTS ix_historical_url ON historical_job_links(client_id, normalized_url);
+CREATE INDEX IF NOT EXISTS ix_historical_identity ON historical_job_links(client_id, source, source_board_id, source_job_id);
+CREATE TABLE IF NOT EXISTS historical_blacklist_evidence (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, import_id TEXT NOT NULL REFERENCES historical_imports(id),
+  client_id TEXT NOT NULL, value TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('company','note')),
+  source_sheet TEXT NOT NULL, source_row INTEGER NOT NULL, imported_at TEXT NOT NULL,
+  UNIQUE(import_id, source_sheet, source_row, value)
+);
+CREATE INDEX IF NOT EXISTS ix_historical_blacklist_client ON historical_blacklist_evidence(client_id);
 """
 
 
@@ -211,13 +233,111 @@ class SQLiteRepository:
 
     def select_deliveries(self, jobs: list[Job], client_id: str, destination: str) -> list[Job]:
         representatives: dict[str, Job] = {}
-        for job in sorted(jobs, key=representative_key):
-            group = self.delivery_group_id(job.id)
-            if group not in representatives and not self.is_exported(
-                job.id, client_id, destination
-            ):
-                representatives[group] = job
+        with self.connect() as connection:
+            for job in sorted(jobs, key=representative_key):
+                group = connection.execute(
+                    "SELECT group_id FROM posting_delivery_groups WHERE job_id=?", (job.id,)
+                ).fetchone()[0]
+                exported = connection.execute(
+                    "SELECT 1 FROM group_deliveries WHERE group_id=? AND client_id=? AND destination=?",
+                    (group, client_id, destination),
+                ).fetchone()
+                if (
+                    group not in representatives
+                    and exported is None
+                    and not self._is_historically_surfaced(connection, job, client_id)
+                ):
+                    representatives[group] = job
         return [representatives[group] for group in sorted(representatives)]
+
+    def is_historically_surfaced(self, job: Job, client_id: str) -> bool:
+        with self.connect() as connection:
+            return self._is_historically_surfaced(connection, job, client_id)
+
+    @staticmethod
+    def _is_historically_surfaced(connection: sqlite3.Connection, job: Job, client_id: str) -> bool:
+        identity = connection.execute(
+            "SELECT 1 FROM historical_job_links WHERE client_id=? AND source=? "
+            "AND source_board_id=? AND source_job_id=? LIMIT 1",
+            (client_id, job.source, job.source_board_id, job.source_job_id),
+        ).fetchone()
+        if identity is not None:
+            return True
+        return (
+            connection.execute(
+                "SELECT 1 FROM historical_job_links WHERE client_id=? AND normalized_url=? LIMIT 1",
+                (client_id, str(job.canonical_url)),
+            ).fetchone()
+            is not None
+        )
+
+    def import_historical_records(
+        self,
+        *,
+        client_id: str,
+        workbook_sha256: str,
+        records,
+        blacklist_evidence=(),
+        importer_version: str = "historical-operator-state-v1",
+    ) -> tuple[int, int]:
+        from job_scout.history import HistoricalBlacklistEvidence, HistoricalRecord
+
+        values = list(records)
+        blacklists = list(blacklist_evidence)
+        if not all(isinstance(value, HistoricalRecord) for value in values):
+            raise TypeError("historical records are required")
+        if not all(isinstance(value, HistoricalBlacklistEvidence) for value in blacklists):
+            raise TypeError("historical blacklist evidence is required")
+        import_id = str(uuid5(NAMESPACE_URL, f"{client_id}:{workbook_sha256}"))
+        now = datetime.now(UTC).isoformat()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT 1 FROM historical_imports WHERE id=?", (import_id,)
+            ).fetchone()
+            connection.execute(
+                "INSERT OR IGNORE INTO historical_imports VALUES (?,?,?,?,?,?)",
+                (import_id, client_id, workbook_sha256, now, importer_version, len(values)),
+            )
+            if existing:
+                return 0, len(values)
+            connection.executemany(
+                "INSERT INTO historical_job_links (import_id,client_id,original_url,normalized_url,source,source_board_id,source_job_id,title,company,operator_status,source_sheet,source_row,imported_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        import_id,
+                        client_id,
+                        v.original_url,
+                        v.normalized_url,
+                        v.source,
+                        v.source_board_id,
+                        v.source_job_id,
+                        v.title,
+                        v.company,
+                        v.operator_status,
+                        v.source_sheet,
+                        v.source_row,
+                        now,
+                    )
+                    for v in values
+                ],
+            )
+            connection.executemany(
+                "INSERT INTO historical_blacklist_evidence (import_id,client_id,value,kind,source_sheet,source_row,imported_at) VALUES (?,?,?,?,?,?,?)",
+                [
+                    (
+                        import_id,
+                        client_id,
+                        value.value,
+                        value.kind,
+                        value.source_sheet,
+                        value.source_row,
+                        now,
+                    )
+                    for value in blacklists
+                ],
+            )
+            return len(values), 0
 
     def save_match(self, match: JobMatch) -> None:
         with self.connect() as connection:
