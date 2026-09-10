@@ -1,0 +1,43 @@
+{
+  "collection": {
+    "new": 48373,
+    "quarantined": 0,
+    "received_postings": 48373
+  },
+  "fresh_unique_deliveries": 44,
+  "historical_suppression": {
+    "exact_source_identity": 2,
+    "normalized_url_fallback": 0,
+    "total": 2
+  },
+  "manifest_sha256": "9358f118e1b30f0769c1aca8fc75560e27399fffe50547159feb8f6d25770211",
+  "matching": {
+    "needs_review": 57,
+    "possible_match": 9,
+    "reject": 48268,
+    "strong_match": 39
+  },
+  "practical_dedupe": {
+    "already_delivered_groups": 2,
+    "matched_before_delivery_dedupe": 48,
+    "non_historical_matched": 46,
+    "practical_duplicate_groups_collapsed": 0
+  },
+  "review_fresh_deliveries": 8,
+  "stop_reason": "all_stage_a_targets_completed",
+  "strong_fresh_deliveries": 36,
+  "targets": {
+    "by_source": {
+      "ashby": 607,
+      "greenhouse": 665,
+      "lever": 236
+    },
+    "completed": 1508,
+    "failed": 5,
+    "partial": 0,
+    "remaining": 0,
+    "success": 1503
+  },
+  "threshold": 250,
+  "updated_at": "2026-09-10T07:53:20.709363+00:00"
+}
