@@ -67,6 +67,15 @@ class _Partition:
     advertised_count: int
 
 
+@dataclass(frozen=True)
+class _RequestFailure:
+    """A request/search failure with a machine-readable category."""
+
+    category: str
+    message: str
+    status_code: int | None = None
+
+
 @dataclass
 class _QueryResult:
     paths: list[str]
@@ -74,6 +83,7 @@ class _QueryResult:
     errors: list[str]
     facets: list[dict[str, Any]]
     partition_paths: dict[str, set[str]]
+    initial_failure: _RequestFailure | None
 
     @property
     def complete(self) -> bool:
@@ -116,8 +126,8 @@ class WorkdayCollector:
             return self._failure(target, CollectionStatus.PARSE_FAILURE, type(exc).__name__)
         if broad.total is None:
             status = (
-                self._status_for_error(broad.errors[0])
-                if broad.errors
+                self._status_for_failure(broad.initial_failure)
+                if broad.initial_failure
                 else CollectionStatus.PARSE_FAILURE
             )
             return self._failure(
@@ -208,11 +218,13 @@ class WorkdayCollector:
         first_total: int | None = None
         result_facets: list[dict[str, Any]] = []
         errors: list[str] = []
+        initial_failure: _RequestFailure | None = None
         offset = 0
         while first_total is None or offset < first_total:
-            body, error = self._search_page(config, facets, offset)
-            if error:
-                errors.append(f"{scope} offset {offset}: {error}")
+            body, failure = self._search_page(config, facets, offset)
+            if failure:
+                errors.append(f"{scope} offset {offset}: {failure.message}")
+                initial_failure = failure
                 break
             assert body is not None
             if first_total is None:
@@ -250,36 +262,42 @@ class WorkdayCollector:
             )
         if len(set(paths)) != len(paths) and not errors:
             errors.append(f"{scope}: duplicate externalPath values across pages")
-        return _QueryResult(paths, first_total, errors, result_facets, {})
+        return _QueryResult(paths, first_total, errors, result_facets, {}, initial_failure)
 
     def _search_page(
         self, config: WorkdayTargetConfig, facets: dict[str, list[str]], offset: int
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        response, error = self._request(
+    ) -> tuple[dict[str, Any] | None, _RequestFailure | None]:
+        response, failure = self._request(
             "post",
             f"{self._base(config)}/jobs",
             payload={"appliedFacets": facets, "limit": LIMIT, "offset": offset, "searchText": ""},
         )
         if response is None:
-            return None, error
+            return None, failure
         if response.status_code != 200:
-            return None, f"HTTP {response.status_code}"
+            return None, _RequestFailure(
+                "http_status", f"HTTP {response.status_code}", response.status_code
+            )
         try:
             body = response.json()
         except ValueError:
-            return None, "response is not JSON"
-        return (body, None) if isinstance(body, dict) else (None, "response is not an object")
+            return None, _RequestFailure("parse", "response is not JSON")
+        return (
+            (body, None)
+            if isinstance(body, dict)
+            else (None, _RequestFailure("parse", "response is not an object"))
+        )
 
     def _request(
         self, method: str, url: str, *, payload: dict[str, Any] | None = None
-    ) -> tuple[httpx.Response | None, str]:
+    ) -> tuple[httpx.Response | None, _RequestFailure | None]:
         """Make one serial CXS request with bounded transient retries.
 
         HTTPTransport's retries cover only a subset of connection failures. CXS
         detail reads can also raise ReadTimeout directly from Client.get, so this
         wrapper makes request-level failures explicit collector evidence.
         """
-        error = "request did not run"
+        failure = _RequestFailure("parse", "request did not run")
         for attempt in range(RETRIES + 1):
             try:
                 response = (
@@ -288,14 +306,16 @@ class WorkdayCollector:
                     else self.client.get(url)
                 )
             except httpx.RequestError as exc:
-                error = f"network {type(exc).__name__}: {exc}"
+                failure = _RequestFailure("network", f"network {type(exc).__name__}: {exc}")
             else:
                 if response.status_code != 429 and response.status_code < 500:
-                    return response, ""
-                error = f"HTTP {response.status_code}"
+                    return response, None
+                failure = _RequestFailure(
+                    "http_status", f"HTTP {response.status_code}", response.status_code
+                )
             if attempt < RETRIES:
                 self._pause()
-        return None, error
+        return None, failure
 
     @staticmethod
     def _valid_external_path(value: object) -> bool:
@@ -352,9 +372,10 @@ class WorkdayCollector:
         errors: list[str] = []
         for path in paths:
             self.last_counts["detail_attempts"] = int(self.last_counts["detail_attempts"]) + 1
-            response, error = self._request("get", f"{self._base(config)}{quote(path, safe='/')}")
+            response, failure = self._request("get", f"{self._base(config)}{quote(path, safe='/')}")
             if response is None:
-                errors.append(f"detail {path}: {error}")
+                assert failure is not None
+                errors.append(f"detail {path}: {failure.message}")
                 self._pause()
                 continue
             if response.status_code != 200:
@@ -539,18 +560,18 @@ class WorkdayCollector:
             time.sleep(self.delay)
 
     @staticmethod
-    def _status_for_error(error: str) -> CollectionStatus:
-        if error.startswith("network "):
+    def _status_for_failure(failure: _RequestFailure) -> CollectionStatus:
+        if failure.category == "network":
             return CollectionStatus.NETWORK_FAILURE
-        if "HTTP 404" in error:
+        if failure.status_code == 404:
             return CollectionStatus.INVALID_TARGET
-        if "HTTP 429" in error:
+        if failure.status_code == 429:
             return CollectionStatus.RATE_LIMITED
-        if "HTTP 401" in error:
+        if failure.status_code == 401:
             return CollectionStatus.AUTHENTICATION_FAILURE
-        if "HTTP 403" in error:
+        if failure.status_code == 403:
             return CollectionStatus.FORBIDDEN
-        if "HTTP 5" in error:
+        if failure.status_code is not None and 500 <= failure.status_code < 600:
             return CollectionStatus.PROVIDER_ERROR
         return CollectionStatus.PARSE_FAILURE
 

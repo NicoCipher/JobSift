@@ -243,6 +243,84 @@ def test_permanent_http_failures_keep_existing_semantics() -> None:
     assert f"detail {failed}: HTTP 404" in result.errors
 
 
+@pytest.mark.parametrize("exception_type", [httpx.ConnectError, httpx.ReadTimeout])
+def test_exhausted_broad_network_failures_are_not_parse_failures(
+    exception_type: type[Exception],
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise exception_type("transient transport failure", request=request)
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)), delay=0
+    ).collect(TARGET)
+
+    assert attempts == workday.RETRIES + 1
+    assert result.status is CollectionStatus.NETWORK_FAILURE
+    assert result.errors == [
+        f"broad offset 0: network {exception_type.__name__}: transient transport failure"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_status", "expected_attempts"),
+    [
+        (429, CollectionStatus.RATE_LIMITED, workday.RETRIES + 1),
+        (500, CollectionStatus.PROVIDER_ERROR, workday.RETRIES + 1),
+        (404, CollectionStatus.INVALID_TARGET, 1),
+    ],
+)
+def test_broad_http_failures_keep_terminal_status_semantics(
+    status_code: int, expected_status: CollectionStatus, expected_attempts: int
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(status_code, request=request)
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)), delay=0
+    ).collect(TARGET)
+
+    assert attempts == expected_attempts
+    assert result.status is expected_status
+    assert result.errors == [f"broad offset 0: HTTP {status_code}"]
+
+
+def test_broad_non_json_response_is_a_parse_failure() -> None:
+    result = WorkdayCollector(
+        httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, content=b"not json", request=request)
+            )
+        ),
+        delay=0,
+    ).collect(TARGET)
+
+    assert result.status is CollectionStatus.PARSE_FAILURE
+    assert result.errors == ["broad offset 0: response is not JSON"]
+
+
+@pytest.mark.parametrize("body", [{"jobPostings": []}, {"total": "1", "jobPostings": []}])
+def test_broad_missing_or_invalid_total_is_a_parse_failure(body: dict) -> None:
+    result = WorkdayCollector(
+        httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=body, request=request)
+            )
+        ),
+        delay=0,
+    ).collect(TARGET)
+
+    assert result.status is CollectionStatus.PARSE_FAILURE
+    assert result.errors == ["broad offset 0: response has no non-negative integer total"]
+
+
 def test_capped_board_recovers_safe_job_family_group_union(monkeypatch) -> None:
     monkeypatch.setattr(workday, "CAP_TOTAL", 3)
     first = "/job/A/Support_R1"
