@@ -1,0 +1,1528 @@
+{
+  "brief_revision": "taiwo-operator-sourcing-v2-conservative",
+  "capacity": {
+    "additional_v2_fresh_groups": 12,
+    "business_threshold": 200,
+    "equivalent_v2_fresh_baseline": 56,
+    "existing_workday_v2_incremental": 0,
+    "preferred_threshold": 250,
+    "remaining_to_business_threshold": 144,
+    "remaining_to_preferred_threshold": 194,
+    "v1_fresh_baseline": 44
+  },
+  "historical_imports": [
+    {
+      "client_id": "taiwo_operator_sourcing_v1",
+      "importer_version": "historical-operator-state-v1",
+      "row_count": 11107,
+      "workbook_sha256": "5c75c8ff6f2fa98a3c9a80a8b78fd6b0f466ffd5f686fe371c6c6b8633f9def3"
+    }
+  ],
+  "historical_rows": 11107,
+  "incremental_delivery_projection": {
+    "already_delivered_postings": 0,
+    "eligible_postings": 14,
+    "fresh_groups": 12,
+    "historical_identity": 0,
+    "historical_url": 0,
+    "posting_evidence": [
+      {
+        "group_id": "9c7d3116-ebf7-5aa8-aa86-45c4eeb483e9",
+        "job_id": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "25f62a5c-14a7-5e16-871f-df241fe06f97",
+        "job_id": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "1f691a83-ef28-5782-a624-5c6b06735b0b",
+        "job_id": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "b253a3b6-2a58-5b1d-8b22-9c3aed2be1e2",
+        "job_id": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "ff79079c-7fc7-5b2b-b0b2-b2f6273fce89",
+        "job_id": "77d646b3-4761-5ce2-9b71-67718650125f",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "7a482e29-6317-5810-8344-4d3baed919f4",
+        "job_id": "8d57405d-796f-555d-90c7-bf7f7773236b",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "7a482e29-6317-5810-8344-4d3baed919f4",
+        "job_id": "9f1bf15b-fb34-5a70-aa3d-de5f453ee0fa",
+        "outcome": "practical_duplicate_postings_collapsed"
+      },
+      {
+        "group_id": "78a34cfa-fd23-5cb8-8aee-796606b2232c",
+        "job_id": "a045be58-5b62-56ac-8e72-7e70c9217155",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "cdcaf07b-5635-5d25-adc9-ac5db016d355",
+        "job_id": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "6ef24429-116c-5bcb-a346-78cb1f127ece",
+        "job_id": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "f1b0a0e6-1dc8-56d0-89ab-b1003d96a268",
+        "job_id": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "c079feb0-1694-5113-82ea-36d1757f7fe2",
+        "job_id": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "2b3bc404-0b43-5512-922f-d7e3e4e9b2cc",
+        "job_id": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "1f691a83-ef28-5782-a624-5c6b06735b0b",
+        "job_id": "f0a503b8-0d8e-577d-a138-3ba99c18b8ee",
+        "outcome": "practical_duplicate_postings_collapsed"
+      }
+    ],
+    "practical_duplicate_postings_collapsed": 2,
+    "selected_groups": {
+      "1f691a83-ef28-5782-a624-5c6b06735b0b": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+      "25f62a5c-14a7-5e16-871f-df241fe06f97": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+      "2b3bc404-0b43-5512-922f-d7e3e4e9b2cc": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+      "6ef24429-116c-5bcb-a346-78cb1f127ece": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+      "78a34cfa-fd23-5cb8-8aee-796606b2232c": "a045be58-5b62-56ac-8e72-7e70c9217155",
+      "7a482e29-6317-5810-8344-4d3baed919f4": "8d57405d-796f-555d-90c7-bf7f7773236b",
+      "9c7d3116-ebf7-5aa8-aa86-45c4eeb483e9": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+      "b253a3b6-2a58-5b1d-8b22-9c3aed2be1e2": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+      "c079feb0-1694-5113-82ea-36d1757f7fe2": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+      "cdcaf07b-5635-5d25-adc9-ac5db016d355": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+      "f1b0a0e6-1dc8-56d0-89ab-b1003d96a268": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+      "ff79079c-7fc7-5b2b-b0b2-b2f6273fce89": "77d646b3-4761-5ce2-9b71-67718650125f"
+    }
+  },
+  "incremental_eligible_by_source": {
+    "ashby": 8,
+    "greenhouse": 5,
+    "lever": 1
+  },
+  "incremental_eligible_evidence": [
+    {
+      "canonical_url": "https://boards.greenhouse.io/veterinaryemergencygroupst/jobs/6023866004?gh_jid=6023866004",
+      "company": "veterinaryemergencygroupst",
+      "content_fingerprint": "2e653ce62449f35e78091b42f82ebad6bc4900431700a25c1e80a268faf6e388",
+      "job_id": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+      "source": "greenhouse",
+      "source_board_id": "veterinaryemergencygroupst",
+      "source_job_id": "6023866004",
+      "title": "IT Field Support Specialist - West",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+        "matched_reasons": [
+          "target role matched: IT Field Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    },
+    {
+      "canonical_url": "https://job-boards.greenhouse.io/epickids/jobs/7976175003",
+      "company": "epickids",
+      "content_fingerprint": "e97e481327a6e3d81f5675e2f4ece0d04f6f006c87d2aea41fad4c3d01da6c8c",
+      "job_id": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+      "source": "greenhouse",
+      "source_board_id": "epickids",
+      "source_job_id": "7976175003",
+      "title": "IT Systems Administrator",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+        "matched_reasons": [
+          "target role matched: IT Systems Administrator",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting",
+          "preferred skill matched: Networking",
+          "preferred skill matched: Security"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 6
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/ElevenLabs/750a8325-7ce1-45ea-b0b1-61dab78a456e",
+      "company": "elevenlabs",
+      "content_fingerprint": "ed573798e854e5bda3202d53c038c4934ea77b00f643417dbf83d3f0e243b6c7",
+      "job_id": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+      "source": "ashby",
+      "source_board_id": "ElevenLabs",
+      "source_job_id": "750a8325-7ce1-45ea-b0b1-61dab78a456e",
+      "title": "IT Support",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+        "matched_reasons": [
+          "target role matched: IT Support",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Networking"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    },
+    {
+      "canonical_url": "https://jobs.lever.co/skio/931bec8e-34bd-493d-b49f-2bcfb976ac18",
+      "company": "skio",
+      "content_fingerprint": "462656c9c04415d37f5e6c5a9c1b8c6fc0e99b1b0b6f0ca72e3b5bf6407b30ca",
+      "job_id": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+      "source": "lever",
+      "source_board_id": "global:skio",
+      "source_job_id": "931bec8e-34bd-493d-b49f-2bcfb976ac18",
+      "title": "Technical Support Specialist",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    },
+    {
+      "canonical_url": "https://boards.greenhouse.io/veterinaryemergencygroupst/jobs/6152566004?gh_jid=6152566004",
+      "company": "veterinaryemergencygroupst",
+      "content_fingerprint": "13c407b5fecbcb5e90b8bb5131a47f213ec552f00d5b8628ba613ecb9a845c69",
+      "job_id": "77d646b3-4761-5ce2-9b71-67718650125f",
+      "source": "greenhouse",
+      "source_board_id": "veterinaryemergencygroupst",
+      "source_job_id": "6152566004",
+      "title": "IT Field Support Specialist - West",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "77d646b3-4761-5ce2-9b71-67718650125f",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "77d646b3-4761-5ce2-9b71-67718650125f",
+        "matched_reasons": [
+          "target role matched: IT Field Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/Interrahealth/a51e5ab0-1686-4e27-83f5-d4812e0cc048",
+      "company": "Interrahealth",
+      "content_fingerprint": "d2056848cd2f5f53270a3bf2c3234bc98035e1e00f0aad3cf07c294721df76c7",
+      "job_id": "8d57405d-796f-555d-90c7-bf7f7773236b",
+      "source": "ashby",
+      "source_board_id": "Interrahealth",
+      "source_job_id": "a51e5ab0-1686-4e27-83f5-d4812e0cc048",
+      "title": "Technical Support Specialist, L2",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "8d57405d-796f-555d-90c7-bf7f7773236b",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "possible_match",
+        "job_id": "8d57405d-796f-555d-90c7-bf7f7773236b",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 3
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/interrahealth/a51e5ab0-1686-4e27-83f5-d4812e0cc048",
+      "company": "interrahealth",
+      "content_fingerprint": "9d2903a71640f63453d4ca0ec85695d0b51ef58152cd6c83fee7b5d342e1622f",
+      "job_id": "9f1bf15b-fb34-5a70-aa3d-de5f453ee0fa",
+      "source": "ashby",
+      "source_board_id": "interrahealth",
+      "source_job_id": "a51e5ab0-1686-4e27-83f5-d4812e0cc048",
+      "title": "Technical Support Specialist, L2",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "9f1bf15b-fb34-5a70-aa3d-de5f453ee0fa",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "possible_match",
+        "job_id": "9f1bf15b-fb34-5a70-aa3d-de5f453ee0fa",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 3
+      }
+    },
+    {
+      "canonical_url": "https://job-boards.greenhouse.io/archer56/jobs/7650040003",
+      "company": "archer",
+      "content_fingerprint": "6728e59c3725afedd370013e0ba09cbe806f71f9d29baed26bb67257e2c9d196",
+      "job_id": "a045be58-5b62-56ac-8e72-7e70c9217155",
+      "source": "greenhouse",
+      "source_board_id": "archer56",
+      "source_job_id": "7650040003",
+      "title": "Sr IT Desktop Support Specialist",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "a045be58-5b62-56ac-8e72-7e70c9217155",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "possible_match",
+        "job_id": "a045be58-5b62-56ac-8e72-7e70c9217155",
+        "matched_reasons": [
+          "target role matched: Desktop Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 3
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/careerswift.ai/e3c55f29-b6e6-4d77-a9ba-2883648fc670",
+      "company": "careerswift",
+      "content_fingerprint": "70b054052218a42f2c7dc62f1826ef0a48d80e31872dae053c48ca9abd4cb09f",
+      "job_id": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+      "source": "ashby",
+      "source_board_id": "careerswift.ai",
+      "source_job_id": "e3c55f29-b6e6-4d77-a9ba-2883648fc670",
+      "title": "Technical Support Specialist",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/careerswift.ai/7bbcf379-8106-4926-8943-ae1d8cf34f71",
+      "company": "careerswift",
+      "content_fingerprint": "42c400cd10a59082d3b66a85a9199445d9dae04131b1f1dc1310be4e23c19998",
+      "job_id": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+      "source": "ashby",
+      "source_board_id": "careerswift.ai",
+      "source_job_id": "7bbcf379-8106-4926-8943-ae1d8cf34f71",
+      "title": "Technical Support Specialist (Junior / Middle)",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting",
+          "preferred skill matched: Security"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 5
+      }
+    },
+    {
+      "canonical_url": "https://job-boards.greenhouse.io/sureify/jobs/5231980008",
+      "company": "sureify",
+      "content_fingerprint": "9625bbba2cdc2bbbbf867014af6fe43b8d48200b836e2fdb6ba87a9cfb53a23b",
+      "job_id": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+      "source": "greenhouse",
+      "source_board_id": "sureify",
+      "source_job_id": "5231980008",
+      "title": "Technical Support Analyst",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+        "matched_reasons": [
+          "target role matched: Technical Support Analyst",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/vultr/130eac96-6ec0-47fb-b57b-357f9ed799a9",
+      "company": "vultr",
+      "content_fingerprint": "ec182c9d4b0255e0c3efb1aefef5f911dda92dde5905effc0b521a01786287df",
+      "job_id": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+      "source": "ashby",
+      "source_board_id": "vultr",
+      "source_job_id": "130eac96-6ec0-47fb-b57b-357f9ed799a9",
+      "title": "Technical Support Specialist",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting",
+          "preferred skill matched: Networking",
+          "preferred skill matched: Linux",
+          "preferred skill matched: Security"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 6
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/payabli/9452adcb-c85c-4a72-8c14-b187b7a9342b",
+      "company": "payabli",
+      "content_fingerprint": "9ae425840aaecd88517d67b1887318437d1538bd6fd042d9614706a44edd1eb9",
+      "job_id": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+      "source": "ashby",
+      "source_board_id": "payabli",
+      "source_job_id": "9452adcb-c85c-4a72-8c14-b187b7a9342b",
+      "title": "Technical Support Specialist",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+        "matched_reasons": [
+          "target role matched: Technical Support Specialist",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Troubleshooting",
+          "preferred skill matched: Security"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 5
+      }
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/elevenlabs/750a8325-7ce1-45ea-b0b1-61dab78a456e",
+      "company": "ElevenLabs",
+      "content_fingerprint": "4ba2c059b9d6543e22bbf578c1bd6c79807322a880150d5d04d77d859fd1c99d",
+      "job_id": "f0a503b8-0d8e-577d-a138-3ba99c18b8ee",
+      "source": "ashby",
+      "source_board_id": "elevenlabs",
+      "source_job_id": "750a8325-7ce1-45ea-b0b1-61dab78a456e",
+      "title": "IT Support",
+      "v1": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "reject",
+        "job_id": "f0a503b8-0d8e-577d-a138-3ba99c18b8ee",
+        "matched_reasons": [],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [
+          "title does not match a configured target role"
+        ],
+        "score": null
+      },
+      "v2": {
+        "client_id": "taiwo_operator_sourcing_v1",
+        "decision": "strong_match",
+        "job_id": "f0a503b8-0d8e-577d-a138-3ba99c18b8ee",
+        "matched_reasons": [
+          "target role matched: IT Support",
+          "target market matched: United States",
+          "work mode matched: remote",
+          "preferred skill matched: Networking"
+        ],
+        "matcher_version": "deterministic-v5",
+        "rejection_reasons": [],
+        "score": 4
+      }
+    }
+  ],
+  "inherited_cumulative_markers": [
+    {
+      "group_id": "0034e6ab-2c79-5176-a7e4-34114aeef638",
+      "job_id": "075627a2-503a-5a6d-8754-14f476d9cc68"
+    },
+    {
+      "group_id": "0124e2b1-bfbd-59d5-9293-0eb0ba02a572",
+      "job_id": "d831911e-d80e-5186-9393-f3dd9c2614b0"
+    },
+    {
+      "group_id": "01257705-b16d-50cf-a6a2-775534e10a44",
+      "job_id": "7dd34398-0c4c-51bd-abef-2b26b64dbb69"
+    },
+    {
+      "group_id": "087173c9-2db6-531a-aab7-5e1adf4ff14f",
+      "job_id": "488fa465-4725-50da-b251-f0d876371486"
+    },
+    {
+      "group_id": "0a148e97-4561-5489-82ed-91a5c77cf5d9",
+      "job_id": "65d570c2-af4e-50aa-8f5e-ed427720fc70"
+    },
+    {
+      "group_id": "0aa0afd9-d72c-51a2-a703-2bf3391f4d55",
+      "job_id": "e6147549-6889-5039-abbb-e7b7b63c84df"
+    },
+    {
+      "group_id": "1467cc67-29ca-502b-9767-e00a9e76d81c",
+      "job_id": "9c6b1c07-d564-56e9-9bc7-1dac6831cd83"
+    },
+    {
+      "group_id": "1c26237b-25de-5748-a73b-6774d52e5d1d",
+      "job_id": "0158f17e-cbd2-5988-a608-6c5bde0469ef"
+    },
+    {
+      "group_id": "1c6d616e-eaf1-5b4f-a580-bbcb80869f5e",
+      "job_id": "8472972a-e896-5cdf-b3a7-5bd1c427e6f9"
+    },
+    {
+      "group_id": "1d347301-06c2-5e0f-be6e-deb15a60656e",
+      "job_id": "9d350e85-ae04-5b47-a7df-9c7333e107bc"
+    },
+    {
+      "group_id": "2069c77c-a594-5294-9f8e-688b03495f3b",
+      "job_id": "01e4566e-fe54-5788-837a-1d84ca27ce7a"
+    },
+    {
+      "group_id": "2971320b-3d95-5505-bf91-60909d25d3e0",
+      "job_id": "585d01d2-8b9c-5b87-ba97-a9f6dbf1e33c"
+    },
+    {
+      "group_id": "2d3e3e57-d1ba-5bb8-8bcc-e1d8cd4cc68b",
+      "job_id": "f888c8f6-df0e-555d-8d9d-7c3fa802ec92"
+    },
+    {
+      "group_id": "2ea2bc7f-3d82-522e-b4ea-01a0220bf0be",
+      "job_id": "31482bc4-3774-5e0a-b041-14cf1fbd69d5"
+    },
+    {
+      "group_id": "31d8397f-2a87-5f5f-aa66-1afc450caba6",
+      "job_id": "0c89d5e5-b522-5427-8f77-2ed17c93ed38"
+    },
+    {
+      "group_id": "3d1f4472-0163-5fe2-9b15-92248638c738",
+      "job_id": "bebf00a6-4b3b-5dd1-b307-e7a21ad31294"
+    },
+    {
+      "group_id": "3de49157-8299-51a8-a6e1-f5f10d8ccc69",
+      "job_id": "fa880626-4112-5b0b-9b8e-c0b04ca14905"
+    },
+    {
+      "group_id": "3e291ba3-4bcd-5077-949f-47f5edfb29d4",
+      "job_id": "dbf111a4-13c6-5e5b-b765-50345c15e1f9"
+    },
+    {
+      "group_id": "47486bc9-73e3-5248-b421-3f516509750f",
+      "job_id": "ca423da7-d2d3-59a9-9bc5-e8b38d1017ae"
+    },
+    {
+      "group_id": "4f4d2b7f-ed6a-547a-b9f1-8dfcc5056c21",
+      "job_id": "0780dfdf-cd40-5915-8fdc-89eb95db14ee"
+    },
+    {
+      "group_id": "576a9ba7-0157-543b-8520-456d0a541fa0",
+      "job_id": "3ac47e7e-d7e0-5159-92bf-10ce23a26a33"
+    },
+    {
+      "group_id": "5fa706d2-d477-5843-b2a5-fceaac489b05",
+      "job_id": "8f21b00d-3aba-5144-8b20-e273eba186cf"
+    },
+    {
+      "group_id": "601b402e-ef9b-5686-9105-3dfcaf3d45f9",
+      "job_id": "3e567320-7541-5f1b-b064-3f2cbf609e7a"
+    },
+    {
+      "group_id": "6d1ae1dc-38e4-5e63-ba13-382b147a4b60",
+      "job_id": "3b2112ca-327b-5000-9ec1-2dc1b18a896b"
+    },
+    {
+      "group_id": "73864066-bc9e-5e52-9611-a16f158ae059",
+      "job_id": "d5ff3f3a-82b3-5ddd-ad7a-25a1d1f2a477"
+    },
+    {
+      "group_id": "7411173d-d55e-5b2a-9b63-6f446f14f5e3",
+      "job_id": "983db76a-3f32-5a5e-9f2b-416611b2d97e"
+    },
+    {
+      "group_id": "771f9158-fa33-55d8-a90a-8de6a1cfec05",
+      "job_id": "251feaaa-91b5-5fe6-8666-f73adf261a05"
+    },
+    {
+      "group_id": "7e2086fc-71a7-5106-a6ce-9a5d6d620929",
+      "job_id": "0f3329f5-fff1-512d-b4bf-af86a9c52e3d"
+    },
+    {
+      "group_id": "8418ce52-dc51-5dc0-9ab3-8c85c229d767",
+      "job_id": "239a5a42-b42e-5995-8aeb-053f4b60461c"
+    },
+    {
+      "group_id": "8b0179b2-141e-5e0d-864c-dffab732b96d",
+      "job_id": "4ed82f55-fed0-53cc-92c4-061bc17da417"
+    },
+    {
+      "group_id": "8badc1ed-6cd0-535a-a803-b2a01fc15bc0",
+      "job_id": "dce352dc-980c-5d74-b5e2-2e848629941e"
+    },
+    {
+      "group_id": "8dfd3fc9-630d-536e-8429-d9a0f8357a3b",
+      "job_id": "1d4f5930-e77e-5b29-94c8-452f2c6c0e7f"
+    },
+    {
+      "group_id": "953e6672-480f-5c86-8941-f26d2cd995f9",
+      "job_id": "c0c8ee94-f702-5612-baa7-5c709f73f2ca"
+    },
+    {
+      "group_id": "a36e3044-3c64-5d82-928b-10fc244c50ed",
+      "job_id": "393a52d3-daa3-58f0-9a1f-b9fed45591b4"
+    },
+    {
+      "group_id": "a7a3ed3f-b3ad-57e9-9d2c-448addaf217a",
+      "job_id": "0c0e3f6e-f2a8-5879-9075-4ed101535d13"
+    },
+    {
+      "group_id": "a803de6d-b5bf-5dd9-ad8f-3a830e80bb99",
+      "job_id": "aae40b5c-cbe9-5005-b470-612acc32e8cf"
+    },
+    {
+      "group_id": "ad8981d7-b201-5b3d-9253-c7889fc67b98",
+      "job_id": "1e7f67d8-777a-502b-9311-62373ada5978"
+    },
+    {
+      "group_id": "ae9309ee-4c85-56ae-be28-3fdacfeb3913",
+      "job_id": "29d6e2b4-7165-5805-a4db-3d508b393085"
+    },
+    {
+      "group_id": "b1990ab8-cff4-59e4-aea4-0c06bff577cf",
+      "job_id": "32537228-4960-59d7-92c4-3d3cc394e1f6"
+    },
+    {
+      "group_id": "bbfc3368-d913-504d-bbb0-f02932313023",
+      "job_id": "7a9ebb96-88a8-5cb1-9763-2c16df7bc8ef"
+    },
+    {
+      "group_id": "c4a488f7-5088-59fd-ae7d-cdcd6c4c682e",
+      "job_id": "3700a86d-f142-5c6a-b951-21a2ae92404d"
+    },
+    {
+      "group_id": "e2d3ae2f-8802-51ec-b90b-25d42f584972",
+      "job_id": "2c90d504-8be8-550a-ac54-8a065d8fb29b"
+    },
+    {
+      "group_id": "f8a8f299-8b54-5b47-b1ec-e5e1d6737364",
+      "job_id": "4d29d446-8a07-59af-8976-a0dfd4b193fd"
+    },
+    {
+      "group_id": "febb2686-91c1-5b97-8391-29b09c6c9bd5",
+      "job_id": "8a037f74-19db-521b-b8bc-4a9dc843659c"
+    }
+  ],
+  "manifest_sha256": "a179fd0305fcafb0930cc326be3b507b19535b75337da6d658dfaaa7937360ab",
+  "matching": {
+    "v1": {
+      "delivery_eligible": 48,
+      "downstream_rejects": 164,
+      "needs_review": 57,
+      "possible_match": 9,
+      "reject": 48605,
+      "strong_match": 39,
+      "title_gate_passes": 269,
+      "title_gate_rejects": 48441,
+      "total": 48710
+    },
+    "v2": {
+      "delivery_eligible": 62,
+      "downstream_rejects": 200,
+      "needs_review": 62,
+      "possible_match": 12,
+      "reject": 48586,
+      "strong_match": 50,
+      "title_gate_passes": 324,
+      "title_gate_rejects": 48386,
+      "total": 48710
+    }
+  },
+  "matching_by_source": {
+    "v1": {
+      "ashby": {
+        "delivery_eligible": 25,
+        "downstream_rejects": 56,
+        "needs_review": 12,
+        "possible_match": 5,
+        "reject": 16010,
+        "strong_match": 20,
+        "title_gate_passes": 93,
+        "title_gate_rejects": 15954,
+        "total": 16047
+      },
+      "greenhouse": {
+        "delivery_eligible": 18,
+        "downstream_rejects": 84,
+        "needs_review": 39,
+        "possible_match": 1,
+        "reject": 25347,
+        "strong_match": 17,
+        "title_gate_passes": 141,
+        "title_gate_rejects": 25263,
+        "total": 25404
+      },
+      "lever": {
+        "delivery_eligible": 5,
+        "downstream_rejects": 23,
+        "needs_review": 6,
+        "possible_match": 3,
+        "reject": 6911,
+        "strong_match": 2,
+        "title_gate_passes": 34,
+        "title_gate_rejects": 6888,
+        "total": 6922
+      },
+      "workday": {
+        "delivery_eligible": 0,
+        "downstream_rejects": 1,
+        "reject": 337,
+        "title_gate_passes": 1,
+        "title_gate_rejects": 336,
+        "total": 337
+      }
+    },
+    "v2": {
+      "ashby": {
+        "delivery_eligible": 33,
+        "downstream_rejects": 73,
+        "needs_review": 12,
+        "possible_match": 7,
+        "reject": 16002,
+        "strong_match": 26,
+        "title_gate_passes": 118,
+        "title_gate_rejects": 15929,
+        "total": 16047
+      },
+      "greenhouse": {
+        "delivery_eligible": 23,
+        "downstream_rejects": 99,
+        "needs_review": 44,
+        "possible_match": 2,
+        "reject": 25337,
+        "strong_match": 21,
+        "title_gate_passes": 166,
+        "title_gate_rejects": 25238,
+        "total": 25404
+      },
+      "lever": {
+        "delivery_eligible": 6,
+        "downstream_rejects": 27,
+        "needs_review": 6,
+        "possible_match": 3,
+        "reject": 6910,
+        "strong_match": 3,
+        "title_gate_passes": 39,
+        "title_gate_rejects": 6883,
+        "total": 6922
+      },
+      "workday": {
+        "delivery_eligible": 0,
+        "downstream_rejects": 1,
+        "reject": 337,
+        "title_gate_passes": 1,
+        "title_gate_rejects": 336,
+        "total": 337
+      }
+    }
+  },
+  "matching_evidence_sha256": {
+    "v1": "5a374d77fb44d2ef0d43a4b3a3a19a7372223308540333d58147b2908902201f",
+    "v2": "7a9de3032be34a08b74c20e5265b089814912e789b1d844dcfd78bf2a7a7d078"
+  },
+  "matching_hash_order": "Stage A job ID, then Stage B Workday job ID; canonical JobMatch sans evaluated_at",
+  "operator_client_id": "taiwo_operator_sourcing_v1",
+  "scope": "one acquired snapshot; equivalent baseline, not new actual deliveries or five-day capacity",
+  "source_counts": {
+    "ashby": 16047,
+    "greenhouse": 25404,
+    "lever": 6922,
+    "workday": 337
+  },
+  "v1_brief_sha256": "7502c14a0dfc8ecdfaca9b2d1ba70a2c02aaec67aaf28bb495a5a7ba76d361f6",
+  "v1_control_matches_persisted_decisions_and_rejections": true,
+  "v1_delivery_projection": {
+    "already_delivered_postings": 46,
+    "eligible_postings": 48,
+    "fresh_groups": 0,
+    "historical_identity": 2,
+    "historical_url": 0,
+    "posting_evidence": [
+      {
+        "group_id": "1c26237b-25de-5748-a73b-6774d52e5d1d",
+        "job_id": "0158f17e-cbd2-5988-a608-6c5bde0469ef",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0034e6ab-2c79-5176-a7e4-34114aeef638",
+        "job_id": "019cb055-721e-5d0d-9436-7f0a3c6e7293",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "2069c77c-a594-5294-9f8e-688b03495f3b",
+        "job_id": "01e4566e-fe54-5788-837a-1d84ca27ce7a",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0034e6ab-2c79-5176-a7e4-34114aeef638",
+        "job_id": "075627a2-503a-5a6d-8754-14f476d9cc68",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "4f4d2b7f-ed6a-547a-b9f1-8dfcc5056c21",
+        "job_id": "0780dfdf-cd40-5915-8fdc-89eb95db14ee",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "a7a3ed3f-b3ad-57e9-9d2c-448addaf217a",
+        "job_id": "0c0e3f6e-f2a8-5879-9075-4ed101535d13",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "31d8397f-2a87-5f5f-aa66-1afc450caba6",
+        "job_id": "0c89d5e5-b522-5427-8f77-2ed17c93ed38",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "7e2086fc-71a7-5106-a6ce-9a5d6d620929",
+        "job_id": "0f3329f5-fff1-512d-b4bf-af86a9c52e3d",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8dfd3fc9-630d-536e-8429-d9a0f8357a3b",
+        "job_id": "1d4f5930-e77e-5b29-94c8-452f2c6c0e7f",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "ad8981d7-b201-5b3d-9253-c7889fc67b98",
+        "job_id": "1e7f67d8-777a-502b-9311-62373ada5978",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8418ce52-dc51-5dc0-9ab3-8c85c229d767",
+        "job_id": "239a5a42-b42e-5995-8aeb-053f4b60461c",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "771f9158-fa33-55d8-a90a-8de6a1cfec05",
+        "job_id": "251feaaa-91b5-5fe6-8666-f73adf261a05",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "ae9309ee-4c85-56ae-be28-3fdacfeb3913",
+        "job_id": "29d6e2b4-7165-5805-a4db-3d508b393085",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "e2d3ae2f-8802-51ec-b90b-25d42f584972",
+        "job_id": "2c90d504-8be8-550a-ac54-8a065d8fb29b",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "2ea2bc7f-3d82-522e-b4ea-01a0220bf0be",
+        "job_id": "31482bc4-3774-5e0a-b041-14cf1fbd69d5",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "b1990ab8-cff4-59e4-aea4-0c06bff577cf",
+        "job_id": "32537228-4960-59d7-92c4-3d3cc394e1f6",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "c4a488f7-5088-59fd-ae7d-cdcd6c4c682e",
+        "job_id": "3700a86d-f142-5c6a-b951-21a2ae92404d",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "a36e3044-3c64-5d82-928b-10fc244c50ed",
+        "job_id": "393a52d3-daa3-58f0-9a1f-b9fed45591b4",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "576a9ba7-0157-543b-8520-456d0a541fa0",
+        "job_id": "3ac47e7e-d7e0-5159-92bf-10ce23a26a33",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "6d1ae1dc-38e4-5e63-ba13-382b147a4b60",
+        "job_id": "3b2112ca-327b-5000-9ec1-2dc1b18a896b",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "601b402e-ef9b-5686-9105-3dfcaf3d45f9",
+        "job_id": "3e567320-7541-5f1b-b064-3f2cbf609e7a",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "087173c9-2db6-531a-aab7-5e1adf4ff14f",
+        "job_id": "488fa465-4725-50da-b251-f0d876371486",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "f8a8f299-8b54-5b47-b1ec-e5e1d6737364",
+        "job_id": "4d29d446-8a07-59af-8976-a0dfd4b193fd",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8b0179b2-141e-5e0d-864c-dffab732b96d",
+        "job_id": "4ed82f55-fed0-53cc-92c4-061bc17da417",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8b0179b2-141e-5e0d-864c-dffab732b96d",
+        "job_id": "539ca6cc-cedb-50da-874d-ac2b2d08865b",
+        "outcome": "historical_identity"
+      },
+      {
+        "group_id": "2971320b-3d95-5505-bf91-60909d25d3e0",
+        "job_id": "585d01d2-8b9c-5b87-ba97-a9f6dbf1e33c",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0a148e97-4561-5489-82ed-91a5c77cf5d9",
+        "job_id": "65d570c2-af4e-50aa-8f5e-ed427720fc70",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "bbfc3368-d913-504d-bbb0-f02932313023",
+        "job_id": "7a9ebb96-88a8-5cb1-9763-2c16df7bc8ef",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "01257705-b16d-50cf-a6a2-775534e10a44",
+        "job_id": "7dd34398-0c4c-51bd-abef-2b26b64dbb69",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1c6d616e-eaf1-5b4f-a580-bbcb80869f5e",
+        "job_id": "8472972a-e896-5cdf-b3a7-5bd1c427e6f9",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "febb2686-91c1-5b97-8391-29b09c6c9bd5",
+        "job_id": "8a037f74-19db-521b-b8bc-4a9dc843659c",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3d1f4472-0163-5fe2-9b15-92248638c738",
+        "job_id": "8b165801-6297-5389-8a93-427c1e93a3b0",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "5fa706d2-d477-5843-b2a5-fceaac489b05",
+        "job_id": "8f21b00d-3aba-5144-8b20-e273eba186cf",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "e5a22920-86e2-5f81-b1ea-80e510a4318b",
+        "job_id": "94e9065b-cdc6-54c3-9bf0-ede995d747a8",
+        "outcome": "historical_identity"
+      },
+      {
+        "group_id": "7411173d-d55e-5b2a-9b63-6f446f14f5e3",
+        "job_id": "983db76a-3f32-5a5e-9f2b-416611b2d97e",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1467cc67-29ca-502b-9767-e00a9e76d81c",
+        "job_id": "9c6b1c07-d564-56e9-9bc7-1dac6831cd83",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1d347301-06c2-5e0f-be6e-deb15a60656e",
+        "job_id": "9d350e85-ae04-5b47-a7df-9c7333e107bc",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "a803de6d-b5bf-5dd9-ad8f-3a830e80bb99",
+        "job_id": "aae40b5c-cbe9-5005-b470-612acc32e8cf",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3d1f4472-0163-5fe2-9b15-92248638c738",
+        "job_id": "bebf00a6-4b3b-5dd1-b307-e7a21ad31294",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "953e6672-480f-5c86-8941-f26d2cd995f9",
+        "job_id": "c0c8ee94-f702-5612-baa7-5c709f73f2ca",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "47486bc9-73e3-5248-b421-3f516509750f",
+        "job_id": "ca423da7-d2d3-59a9-9bc5-e8b38d1017ae",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "73864066-bc9e-5e52-9611-a16f158ae059",
+        "job_id": "d5ff3f3a-82b3-5ddd-ad7a-25a1d1f2a477",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0124e2b1-bfbd-59d5-9293-0eb0ba02a572",
+        "job_id": "d831911e-d80e-5186-9393-f3dd9c2614b0",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3e291ba3-4bcd-5077-949f-47f5edfb29d4",
+        "job_id": "dbf111a4-13c6-5e5b-b765-50345c15e1f9",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8badc1ed-6cd0-535a-a803-b2a01fc15bc0",
+        "job_id": "dce352dc-980c-5d74-b5e2-2e848629941e",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0aa0afd9-d72c-51a2-a703-2bf3391f4d55",
+        "job_id": "e6147549-6889-5039-abbb-e7b7b63c84df",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "2d3e3e57-d1ba-5bb8-8bcc-e1d8cd4cc68b",
+        "job_id": "f888c8f6-df0e-555d-8d9d-7c3fa802ec92",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3de49157-8299-51a8-a6e1-f5f10d8ccc69",
+        "job_id": "fa880626-4112-5b0b-9b8e-c0b04ca14905",
+        "outcome": "already_delivered_postings"
+      }
+    ],
+    "practical_duplicate_postings_collapsed": 0,
+    "selected_groups": {}
+  },
+  "v1_stage_a_delivery_accounting": {
+    "fresh_unique_deliveries": 44,
+    "historical_suppression": {
+      "exact_source_identity": 2,
+      "normalized_url_fallback": 0,
+      "total": 2
+    },
+    "practical_dedupe": {
+      "already_delivered_groups": 2,
+      "matched_before_delivery_dedupe": 48,
+      "non_historical_matched": 46,
+      "practical_duplicate_groups_collapsed": 0
+    }
+  },
+  "v2_brief_sha256": "dc38ad92725e4e866c440be497422ce63e2c6b36289811fc967e29a297609646",
+  "v2_delivery_projection": {
+    "already_delivered_postings": 46,
+    "eligible_postings": 62,
+    "fresh_groups": 12,
+    "historical_identity": 2,
+    "historical_url": 0,
+    "posting_evidence": [
+      {
+        "group_id": "1c26237b-25de-5748-a73b-6774d52e5d1d",
+        "job_id": "0158f17e-cbd2-5988-a608-6c5bde0469ef",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0034e6ab-2c79-5176-a7e4-34114aeef638",
+        "job_id": "019cb055-721e-5d0d-9436-7f0a3c6e7293",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "2069c77c-a594-5294-9f8e-688b03495f3b",
+        "job_id": "01e4566e-fe54-5788-837a-1d84ca27ce7a",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "9c7d3116-ebf7-5aa8-aa86-45c4eeb483e9",
+        "job_id": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "0034e6ab-2c79-5176-a7e4-34114aeef638",
+        "job_id": "075627a2-503a-5a6d-8754-14f476d9cc68",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "4f4d2b7f-ed6a-547a-b9f1-8dfcc5056c21",
+        "job_id": "0780dfdf-cd40-5915-8fdc-89eb95db14ee",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "a7a3ed3f-b3ad-57e9-9d2c-448addaf217a",
+        "job_id": "0c0e3f6e-f2a8-5879-9075-4ed101535d13",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "31d8397f-2a87-5f5f-aa66-1afc450caba6",
+        "job_id": "0c89d5e5-b522-5427-8f77-2ed17c93ed38",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "25f62a5c-14a7-5e16-871f-df241fe06f97",
+        "job_id": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "7e2086fc-71a7-5106-a6ce-9a5d6d620929",
+        "job_id": "0f3329f5-fff1-512d-b4bf-af86a9c52e3d",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8dfd3fc9-630d-536e-8429-d9a0f8357a3b",
+        "job_id": "1d4f5930-e77e-5b29-94c8-452f2c6c0e7f",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "ad8981d7-b201-5b3d-9253-c7889fc67b98",
+        "job_id": "1e7f67d8-777a-502b-9311-62373ada5978",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8418ce52-dc51-5dc0-9ab3-8c85c229d767",
+        "job_id": "239a5a42-b42e-5995-8aeb-053f4b60461c",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "771f9158-fa33-55d8-a90a-8de6a1cfec05",
+        "job_id": "251feaaa-91b5-5fe6-8666-f73adf261a05",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "ae9309ee-4c85-56ae-be28-3fdacfeb3913",
+        "job_id": "29d6e2b4-7165-5805-a4db-3d508b393085",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "e2d3ae2f-8802-51ec-b90b-25d42f584972",
+        "job_id": "2c90d504-8be8-550a-ac54-8a065d8fb29b",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "2ea2bc7f-3d82-522e-b4ea-01a0220bf0be",
+        "job_id": "31482bc4-3774-5e0a-b041-14cf1fbd69d5",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "b1990ab8-cff4-59e4-aea4-0c06bff577cf",
+        "job_id": "32537228-4960-59d7-92c4-3d3cc394e1f6",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "c4a488f7-5088-59fd-ae7d-cdcd6c4c682e",
+        "job_id": "3700a86d-f142-5c6a-b951-21a2ae92404d",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "a36e3044-3c64-5d82-928b-10fc244c50ed",
+        "job_id": "393a52d3-daa3-58f0-9a1f-b9fed45591b4",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "576a9ba7-0157-543b-8520-456d0a541fa0",
+        "job_id": "3ac47e7e-d7e0-5159-92bf-10ce23a26a33",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "6d1ae1dc-38e4-5e63-ba13-382b147a4b60",
+        "job_id": "3b2112ca-327b-5000-9ec1-2dc1b18a896b",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "601b402e-ef9b-5686-9105-3dfcaf3d45f9",
+        "job_id": "3e567320-7541-5f1b-b064-3f2cbf609e7a",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1f691a83-ef28-5782-a624-5c6b06735b0b",
+        "job_id": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "087173c9-2db6-531a-aab7-5e1adf4ff14f",
+        "job_id": "488fa465-4725-50da-b251-f0d876371486",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "b253a3b6-2a58-5b1d-8b22-9c3aed2be1e2",
+        "job_id": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "f8a8f299-8b54-5b47-b1ec-e5e1d6737364",
+        "job_id": "4d29d446-8a07-59af-8976-a0dfd4b193fd",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8b0179b2-141e-5e0d-864c-dffab732b96d",
+        "job_id": "4ed82f55-fed0-53cc-92c4-061bc17da417",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8b0179b2-141e-5e0d-864c-dffab732b96d",
+        "job_id": "539ca6cc-cedb-50da-874d-ac2b2d08865b",
+        "outcome": "historical_identity"
+      },
+      {
+        "group_id": "2971320b-3d95-5505-bf91-60909d25d3e0",
+        "job_id": "585d01d2-8b9c-5b87-ba97-a9f6dbf1e33c",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0a148e97-4561-5489-82ed-91a5c77cf5d9",
+        "job_id": "65d570c2-af4e-50aa-8f5e-ed427720fc70",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "ff79079c-7fc7-5b2b-b0b2-b2f6273fce89",
+        "job_id": "77d646b3-4761-5ce2-9b71-67718650125f",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "bbfc3368-d913-504d-bbb0-f02932313023",
+        "job_id": "7a9ebb96-88a8-5cb1-9763-2c16df7bc8ef",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "01257705-b16d-50cf-a6a2-775534e10a44",
+        "job_id": "7dd34398-0c4c-51bd-abef-2b26b64dbb69",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1c6d616e-eaf1-5b4f-a580-bbcb80869f5e",
+        "job_id": "8472972a-e896-5cdf-b3a7-5bd1c427e6f9",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "febb2686-91c1-5b97-8391-29b09c6c9bd5",
+        "job_id": "8a037f74-19db-521b-b8bc-4a9dc843659c",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3d1f4472-0163-5fe2-9b15-92248638c738",
+        "job_id": "8b165801-6297-5389-8a93-427c1e93a3b0",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "7a482e29-6317-5810-8344-4d3baed919f4",
+        "job_id": "8d57405d-796f-555d-90c7-bf7f7773236b",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "5fa706d2-d477-5843-b2a5-fceaac489b05",
+        "job_id": "8f21b00d-3aba-5144-8b20-e273eba186cf",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "e5a22920-86e2-5f81-b1ea-80e510a4318b",
+        "job_id": "94e9065b-cdc6-54c3-9bf0-ede995d747a8",
+        "outcome": "historical_identity"
+      },
+      {
+        "group_id": "7411173d-d55e-5b2a-9b63-6f446f14f5e3",
+        "job_id": "983db76a-3f32-5a5e-9f2b-416611b2d97e",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1467cc67-29ca-502b-9767-e00a9e76d81c",
+        "job_id": "9c6b1c07-d564-56e9-9bc7-1dac6831cd83",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1d347301-06c2-5e0f-be6e-deb15a60656e",
+        "job_id": "9d350e85-ae04-5b47-a7df-9c7333e107bc",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "7a482e29-6317-5810-8344-4d3baed919f4",
+        "job_id": "9f1bf15b-fb34-5a70-aa3d-de5f453ee0fa",
+        "outcome": "practical_duplicate_postings_collapsed"
+      },
+      {
+        "group_id": "78a34cfa-fd23-5cb8-8aee-796606b2232c",
+        "job_id": "a045be58-5b62-56ac-8e72-7e70c9217155",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "cdcaf07b-5635-5d25-adc9-ac5db016d355",
+        "job_id": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "6ef24429-116c-5bcb-a346-78cb1f127ece",
+        "job_id": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "f1b0a0e6-1dc8-56d0-89ab-b1003d96a268",
+        "job_id": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "a803de6d-b5bf-5dd9-ad8f-3a830e80bb99",
+        "job_id": "aae40b5c-cbe9-5005-b470-612acc32e8cf",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "c079feb0-1694-5113-82ea-36d1757f7fe2",
+        "job_id": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "3d1f4472-0163-5fe2-9b15-92248638c738",
+        "job_id": "bebf00a6-4b3b-5dd1-b307-e7a21ad31294",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "953e6672-480f-5c86-8941-f26d2cd995f9",
+        "job_id": "c0c8ee94-f702-5612-baa7-5c709f73f2ca",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "2b3bc404-0b43-5512-922f-d7e3e4e9b2cc",
+        "job_id": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+        "outcome": "fresh_groups"
+      },
+      {
+        "group_id": "47486bc9-73e3-5248-b421-3f516509750f",
+        "job_id": "ca423da7-d2d3-59a9-9bc5-e8b38d1017ae",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "73864066-bc9e-5e52-9611-a16f158ae059",
+        "job_id": "d5ff3f3a-82b3-5ddd-ad7a-25a1d1f2a477",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0124e2b1-bfbd-59d5-9293-0eb0ba02a572",
+        "job_id": "d831911e-d80e-5186-9393-f3dd9c2614b0",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3e291ba3-4bcd-5077-949f-47f5edfb29d4",
+        "job_id": "dbf111a4-13c6-5e5b-b765-50345c15e1f9",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "8badc1ed-6cd0-535a-a803-b2a01fc15bc0",
+        "job_id": "dce352dc-980c-5d74-b5e2-2e848629941e",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "0aa0afd9-d72c-51a2-a703-2bf3391f4d55",
+        "job_id": "e6147549-6889-5039-abbb-e7b7b63c84df",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "1f691a83-ef28-5782-a624-5c6b06735b0b",
+        "job_id": "f0a503b8-0d8e-577d-a138-3ba99c18b8ee",
+        "outcome": "practical_duplicate_postings_collapsed"
+      },
+      {
+        "group_id": "2d3e3e57-d1ba-5bb8-8bcc-e1d8cd4cc68b",
+        "job_id": "f888c8f6-df0e-555d-8d9d-7c3fa802ec92",
+        "outcome": "already_delivered_postings"
+      },
+      {
+        "group_id": "3de49157-8299-51a8-a6e1-f5f10d8ccc69",
+        "job_id": "fa880626-4112-5b0b-9b8e-c0b04ca14905",
+        "outcome": "already_delivered_postings"
+      }
+    ],
+    "practical_duplicate_postings_collapsed": 2,
+    "selected_groups": {
+      "1f691a83-ef28-5782-a624-5c6b06735b0b": "43bdcb34-8083-5432-a9c2-4595ce331ea4",
+      "25f62a5c-14a7-5e16-871f-df241fe06f97": "0dbaf712-eacb-5559-a7ac-f21434f79196",
+      "2b3bc404-0b43-5512-922f-d7e3e4e9b2cc": "c63e6883-3661-57fe-a4e3-5296639a8bbe",
+      "6ef24429-116c-5bcb-a346-78cb1f127ece": "a370ed82-f9e0-53b6-b2ef-9a8f9457b60f",
+      "78a34cfa-fd23-5cb8-8aee-796606b2232c": "a045be58-5b62-56ac-8e72-7e70c9217155",
+      "7a482e29-6317-5810-8344-4d3baed919f4": "8d57405d-796f-555d-90c7-bf7f7773236b",
+      "9c7d3116-ebf7-5aa8-aa86-45c4eeb483e9": "02614736-c3bf-5d42-88f7-d57c62aa6e37",
+      "b253a3b6-2a58-5b1d-8b22-9c3aed2be1e2": "4a76337e-f611-54ea-b38c-c0857476d7f2",
+      "c079feb0-1694-5113-82ea-36d1757f7fe2": "b706de61-7f33-52dd-a8ca-e4b775b2a14c",
+      "cdcaf07b-5635-5d25-adc9-ac5db016d355": "a07ec6b5-dbfc-5f1a-a8a1-2e5083efef0e",
+      "f1b0a0e6-1dc8-56d0-89ab-b1003d96a268": "a92b09ac-eea7-5084-94dc-19ca551e8858",
+      "ff79079c-7fc7-5b2b-b0b2-b2f6273fce89": "77d646b3-4761-5ce2-9b71-67718650125f"
+    }
+  },
+  "workday_acquisition_dispositions": {
+    "explicit_review_before_future_acquisition": 1,
+    "not_yet_attempted": 521,
+    "reuse_successful_acquisition": 14
+  }
+}

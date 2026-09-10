@@ -1,0 +1,63 @@
+{
+  "brief_version": "operator-style-sourcing-brief-v1",
+  "candidate_residence": "Lagos, Nigeria",
+  "client_id": "taiwo_operator_sourcing_v1",
+  "employment_type": {
+    "intent": "ignore",
+    "types": [],
+    "unknown_policy": "review"
+  },
+  "excluded_seniority": [],
+  "excluded_titles": [
+    "Customer Support Manager",
+    "Sales Support"
+  ],
+  "management_roles": "avoid",
+  "max_required_experience_years": null,
+  "must_have_terms": [],
+  "notes": "Operator-style sourcing brief v1. Candidate residence is informational and does not enforce work eligibility.",
+  "avoid_terms": [],
+  "preferred_terms": [
+    "Troubleshooting",
+    "Networking",
+    "Windows",
+    "Linux",
+    "Active Directory",
+    "Security"
+  ],
+  "target_market": {
+    "countries": [
+      "United States"
+    ],
+    "intent": "must",
+    "unknown_policy": "review"
+  },
+  "target_roles": [
+    "IT Support Specialist",
+    "Technical Support Engineer",
+    "Support Engineer",
+    "Help Desk Technician",
+    "Service Desk Analyst",
+    "Desktop Support Technician",
+    "Junior Systems Administrator",
+    "Technical Support Specialist",
+    "IT Support",
+    "IT Field Support Specialist",
+    "Technical Support Analyst",
+    "IT Systems Administrator",
+    "Desktop Support Specialist",
+    "Analyst Service Desk"
+  ],
+  "work_eligibility": {
+    "countries": [],
+    "intent": "ignore",
+    "unknown_policy": "review"
+  },
+  "work_mode": {
+    "intent": "must",
+    "modes": [
+      "remote"
+    ],
+    "unknown_policy": "review"
+  }
+}
