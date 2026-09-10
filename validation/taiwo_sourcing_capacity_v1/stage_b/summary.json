@@ -1,0 +1,53 @@
+{
+  "capacity": {
+    "business_threshold": 200,
+    "business_threshold_reached": false,
+    "combined_fresh": 44,
+    "preferred_threshold": 250,
+    "preferred_threshold_reached": false,
+    "remaining_to_business_threshold": 156,
+    "remaining_to_preferred_threshold": 206,
+    "stage_a_baseline": 44,
+    "stage_b_incremental_fresh": 0
+  },
+  "collection": {
+    "client_request_calls": 0,
+    "coverage_modes": {},
+    "detail_attempts": 0,
+    "errors": 0,
+    "frozen_estimated_requests": 0,
+    "normalized_jobs": 0,
+    "partition_count": 0,
+    "paths_discovered": 0,
+    "provider_reported_broad_total_sum": 0,
+    "quarantined": 0,
+    "transport_retry_attempts": "unknown"
+  },
+  "delivery": {
+    "already_delivered_groups": 0,
+    "matched_before_delivery_dedupe": 0,
+    "non_historical_matched": 0,
+    "practical_duplicate_groups_collapsed": 0,
+    "stage_b_incremental_fresh": 0,
+    "stage_b_incremental_review": 0,
+    "stage_b_incremental_strong": 0
+  },
+  "historical_suppression": {
+    "exact_source_identity": 0,
+    "normalized_url_fallback": 0,
+    "total": 0
+  },
+  "manifest_sha256": "054238a3b5e61db43688416b84fcaee01b2dfe685a5e710db07fe61ccbf9396c",
+  "matching": {},
+  "targets": {
+    "completed": 0,
+    "failed": 0,
+    "partial": 0,
+    "pending_deferred_capped": 28,
+    "pending_deferred_high_cost": 65,
+    "remaining": 536,
+    "success": 0
+  },
+  "terminal_stop_reason": null,
+  "updated_at": "2026-09-10T08:55:24.786628+00:00"
+}
