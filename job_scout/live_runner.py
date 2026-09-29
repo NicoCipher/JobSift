@@ -239,7 +239,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         return _batch_payload(store, unresolved, action=action)
 
     local_day = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
-    idempotency_key = f"{plan.plan_id}:{local_day}"
+    idempotency_key = local_day
     today = _batch_by_idempotency(
         repository,
         client_id=brief.client_id,
