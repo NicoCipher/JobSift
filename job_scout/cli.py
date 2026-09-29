@@ -11,9 +11,11 @@ from job_scout.collectors.lever import LeverCollector
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
+from job_scout.orchestration.daily_batch import finalize_daily_batch
 from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
+from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -48,7 +50,51 @@ def main() -> None:
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     profile_create = profile_commands.add_parser("create")
     profile_create.add_argument("--output-dir", default="config/search_briefs")
+    batch = commands.add_parser("batch", help="Review or release an already prepared daily batch")
+    batch_commands = batch.add_subparsers(dest="batch_command", required=True)
+    for name in ("review", "release"):
+        command = batch_commands.add_parser(name)
+        command.add_argument("--database", default="jobs.sqlite3")
+        command.add_argument("--batch-id", required=True)
+        if name == "release":
+            command.add_argument(
+                "--confirm-batch-id",
+                required=True,
+                help="Repeat the reviewed batch ID to authorize delivery",
+            )
     args = parser.parse_args()
+    if args.command == "batch":
+        from job_scout.domain.daily_batch import BatchConflict
+
+        try:
+            repository = SQLiteRepository(args.database)
+            store = DailyBatchStore(repository)
+            result = store.get(args.batch_id)
+            if args.batch_command == "release":
+                if args.confirm_batch_id != result.batch_id:
+                    parser.error("confirmation must match the reviewed batch ID")
+                result = finalize_daily_batch(repository=repository, batch_id=result.batch_id)
+            print(
+                json.dumps(
+                    {
+                        "batch_id": result.batch_id,
+                        "client_id": result.request.client_id,
+                        "destination": result.request.destination,
+                        "status": result.status,
+                        "requested_quota": result.request.requested_quota,
+                        "selected_count": result.selected_count,
+                        "shortfall": result.shortfall,
+                        "completeness": result.request.completeness,
+                        "source_failures": result.request.source_failures,
+                        "error": result.error,
+                        "rows": store.export_rows(result.batch_id),
+                    },
+                    sort_keys=True,
+                )
+            )
+        except (BatchConflict, OSError, ValueError) as exc:
+            parser.error(f"unable to {args.batch_command} batch: {exc}")
+        return
     if args.command == "profile":
         create_search_brief_interactively(output_dir=args.output_dir)
         return
