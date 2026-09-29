@@ -1,9 +1,12 @@
 import csv
+import json
+import sys
 from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
+from job_scout.cli import main
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
 from job_scout.history import HistoricalBlacklistEvidence, HistoricalRecord
@@ -116,6 +119,69 @@ def test_quota(repo, tmp_path, quota, supply, selected, shortfall):
     delivered = finalize(repo, result)
     assert delivered.status == "delivered"
     assert len(rows(tmp_path / "out.csv")) == selected
+
+
+def test_operator_reviews_frozen_batch_before_explicit_release(repo, tmp_path, monkeypatch, capsys):
+    job = posting(1)
+    seed(repo, [job])
+    destination = tmp_path / "out.csv"
+    prepared = prepare(repo, request(repo, destination, [job], quota=2))
+
+    def command(*args):
+        monkeypatch.setattr(sys, "argv", ["job-scout", "batch", *args])
+        main()
+        return json.loads(capsys.readouterr().out)
+
+    reviewed = command("review", "--database", str(repo.path), "--batch-id", prepared.batch_id)
+    assert reviewed["status"] == "prepared"
+    assert (reviewed["selected_count"], reviewed["shortfall"]) == (1, 1)
+    assert reviewed["rows"][0]["Job Link"] == str(job.canonical_url)
+    assert not destination.exists()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "batch",
+            "release",
+            "--database",
+            str(repo.path),
+            "--batch-id",
+            prepared.batch_id,
+            "--confirm-batch-id",
+            "wrong",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        main()
+    capsys.readouterr()
+    assert not destination.exists()
+
+    released = command(
+        "release",
+        "--database",
+        str(repo.path),
+        "--batch-id",
+        prepared.batch_id,
+        "--confirm-batch-id",
+        prepared.batch_id,
+    )
+    assert released["status"] == "delivered"
+    assert len(rows(destination)) == 1
+    assert (
+        command(
+            "release",
+            "--database",
+            str(repo.path),
+            "--batch-id",
+            prepared.batch_id,
+            "--confirm-batch-id",
+            prepared.batch_id,
+        )["status"]
+        == "delivered"
+    )
+    assert len(rows(destination)) == 1
 
 
 @pytest.mark.parametrize("quota", [0, -1, True, 1.5, "3"])
