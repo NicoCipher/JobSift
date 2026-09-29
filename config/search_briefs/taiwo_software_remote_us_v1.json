@@ -24,11 +24,7 @@
   "max_required_experience_years": null,
   "must_have_terms": [],
   "notes": "Production brief for US-company software roles. Require explicit United States target-market evidence and explicit remote work. Work authorization and sponsorship eligibility are intentionally ignored.",
-  "avoid_terms": [
-    "hybrid",
-    "on-site",
-    "onsite"
-  ],
+  "avoid_terms": [],
   "preferred_terms": [
     "software",
     "backend",
