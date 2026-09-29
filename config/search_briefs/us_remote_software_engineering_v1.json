@@ -1,0 +1,41 @@
+{
+  "brief_version": "operator-style-sourcing-brief-v1",
+  "client_id": "us_remote_software_engineering_v1",
+  "target_roles": [
+    "Software Engineer",
+    "Software Developer",
+    "Backend Engineer",
+    "Frontend Engineer",
+    "Full Stack Engineer",
+    "Application Developer"
+  ],
+  "target_market": {
+    "countries": ["United States"],
+    "intent": "must",
+    "unknown_policy": "review"
+  },
+  "work_mode": {
+    "modes": ["remote"],
+    "intent": "must",
+    "unknown_policy": "review"
+  },
+  "management_roles": "avoid",
+  "excluded_titles": [],
+  "excluded_seniority": [],
+  "must_have_terms": [],
+  "preferred_terms": [],
+  "avoid_terms": [],
+  "employment_type": {
+    "types": [],
+    "intent": "ignore",
+    "unknown_policy": "review"
+  },
+  "max_required_experience_years": null,
+  "candidate_residence": null,
+  "work_eligibility": {
+    "countries": [],
+    "intent": "ignore",
+    "unknown_policy": "review"
+  },
+  "notes": "US company roles only. Confirm employer provenance separately from the US job market. Fully remote only; never include hybrid or on-site. Do not filter on applicant residence, citizenship, sponsorship, or work authorization. Quota is 100 fresh direct links per day, with an explicit shortfall when supply is lower."
+}
