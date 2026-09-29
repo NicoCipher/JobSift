@@ -138,6 +138,19 @@ def test_operator_reviews_frozen_batch_before_explicit_release(repo, tmp_path, m
     assert reviewed["rows"][0]["Job Link"] == str(job.canonical_url)
     assert not destination.exists()
 
+    # Reviewing an existing snapshot must not run repository initialization.
+    original_init = SQLiteRepository.__init__
+
+    def reject_init(self, path):
+        raise AssertionError("review initialized the repository")
+
+    monkeypatch.setattr(SQLiteRepository, "__init__", reject_init)
+    assert (
+        command("review", "--database", str(repo.path), "--batch-id", prepared.batch_id)["status"]
+        == "prepared"
+    )
+    monkeypatch.setattr(SQLiteRepository, "__init__", original_init)
+
     monkeypatch.setattr(
         sys,
         "argv",
@@ -182,6 +195,51 @@ def test_operator_reviews_frozen_batch_before_explicit_release(repo, tmp_path, m
         == "delivered"
     )
     assert len(rows(destination)) == 1
+
+
+def test_operator_release_failure_exits_nonzero_with_failure_details(
+    repo, tmp_path, monkeypatch, capsys
+):
+    job = posting(1)
+    seed(repo, [job])
+    prepared = prepare(repo, request(repo, tmp_path / "out.csv", [job]))
+    # The frozen selection is no longer eligible at publication time.
+    seed(repo, [job], ["reject"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "batch",
+            "release",
+            "--database",
+            str(repo.path),
+            "--batch-id",
+            prepared.batch_id,
+            "--confirm-batch-id",
+            prepared.batch_id,
+        ],
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    assert exit_info.value.code == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "failed"
+    assert output["error"]
+    assert not (tmp_path / "out.csv").exists()
+
+
+def test_review_missing_database_does_not_create_it(tmp_path, monkeypatch):
+    missing = tmp_path / "missing.sqlite3"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["job-scout", "batch", "review", "--database", str(missing), "--batch-id", "unknown"],
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    assert exit_info.value.code == 2
+    assert not missing.exists()
 
 
 @pytest.mark.parametrize("quota", [0, -1, True, 1.5, "3"])
