@@ -22,12 +22,21 @@ When both `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are present,
 `SQLiteRepository` opens a local Turso Sync replica at the configured
 `JOBSIFT_DATABASE` path.
 
-For each repository transaction it:
+Each GitHub Actions run starts with a fresh local database path. Turso Sync
+bootstraps that local replica from the remote database when it is first opened.
+The workflow concurrency lock guarantees there is only one production writer.
 
-1. pulls the current remote state;
+For each repository transaction JobSift then:
+
+1. opens the synced local replica;
 2. executes the existing SQLite transaction locally;
 3. commits locally;
 4. pushes the committed transaction to Turso.
+
+JobSift deliberately does not long-poll Turso before every small repository
+operation. A fresh Actions run already bootstraps remote state, and the
+single-writer lock prevents another production run from changing it underneath
+the current run.
 
 This is important for Sheets recovery. The batch delivery journal is pushed to
 Turso before external Sheet I/O. If a run dies after a Sheet append, the next run
