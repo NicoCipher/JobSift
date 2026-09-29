@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 from collections import Counter
 from pathlib import Path
 
@@ -67,13 +68,16 @@ def main() -> None:
         from job_scout.domain.daily_batch import BatchConflict
 
         try:
-            repository = SQLiteRepository(args.database)
-            store = DailyBatchStore(repository)
-            result = store.get(args.batch_id)
-            if args.batch_command == "release":
+            if args.batch_command == "review":
+                result, rows = DailyBatchStore.review_readonly(args.database, args.batch_id)
+            else:
+                repository = SQLiteRepository(args.database)
+                store = DailyBatchStore(repository)
+                result = store.get(args.batch_id)
                 if args.confirm_batch_id != result.batch_id:
                     parser.error("confirmation must match the reviewed batch ID")
                 result = finalize_daily_batch(repository=repository, batch_id=result.batch_id)
+                rows = store.export_rows(result.batch_id)
             print(
                 json.dumps(
                     {
@@ -87,12 +91,14 @@ def main() -> None:
                         "completeness": result.request.completeness,
                         "source_failures": result.request.source_failures,
                         "error": result.error,
-                        "rows": store.export_rows(result.batch_id),
+                        "rows": rows,
                     },
                     sort_keys=True,
                 )
             )
-        except (BatchConflict, OSError, ValueError) as exc:
+            if args.batch_command == "release" and result.status != "delivered":
+                parser.exit(1)
+        except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
             parser.error(f"unable to {args.batch_command} batch: {exc}")
         return
     if args.command == "profile":
