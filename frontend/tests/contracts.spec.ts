@@ -8,6 +8,8 @@ import {
 } from "../lib/display";
 import { FixtureJobSiftApi } from "../lib/api/fixture-api";
 import { LiveJobSiftApi } from "../lib/api/live-api";
+import { GET as proxyRead } from "../app/api/operator/[...path]/route";
+import { NextRequest } from "next/server";
 import type { ApiError } from "../lib/contracts/service";
 const query = {
   client_id: "example-client",
@@ -189,6 +191,29 @@ test("live adapter reads postings and snapshot detail independently of group rep
     expect(urls[0]).toContain("representation=postings");
     expect(urls[0]).not.toContain("destination_id=");
     expect(urls[1]).toContain("/jobs/postings/job-1?snapshot_id=snapshot-1");
+  } finally {
+    globalThis.fetch = original;
+    if (previousBase === undefined) delete process.env.JOBSIFT_SERVICE_URL;
+    else process.env.JOBSIFT_SERVICE_URL = previousBase;
+  }
+});
+
+test("same-origin route forwards encoded opaque identifiers and blocks traversal", async () => {
+  const original = globalThis.fetch;
+  const previousBase = process.env.JOBSIFT_SERVICE_URL;
+  process.env.JOBSIFT_SERVICE_URL = "http://127.0.0.1:8000";
+  let forwarded = "";
+  globalThis.fetch = async input => {
+    forwarded = String(input);
+    return Response.json({ data: { posting_id: "legacy.job 1" } });
+  };
+  const request = new NextRequest("http://127.0.0.1:3000/api/operator/clients/client.one/jobs/postings/legacy.job%201");
+  try {
+    const response = await proxyRead(request, { params: Promise.resolve({ path: ["clients", "client.one", "jobs", "postings", "legacy.job 1"] }) });
+    expect(response.status).toBe(200);
+    expect(forwarded).toContain("/clients/client.one/jobs/postings/legacy.job%201");
+    const bad = await proxyRead(request, { params: Promise.resolve({ path: ["clients", "..", "jobs"] }) });
+    expect(bad.status).toBe(400);
   } finally {
     globalThis.fetch = original;
     if (previousBase === undefined) delete process.env.JOBSIFT_SERVICE_URL;
