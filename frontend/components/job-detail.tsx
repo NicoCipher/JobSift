@@ -9,6 +9,7 @@ import {
   safeExternalUrl,
 } from "@/lib/display";
 import { MatchStatus } from "./status";
+import { liveMode } from "@/lib/api/client";
 export function JobDetail({
   job,
   onClose,
@@ -36,7 +37,7 @@ export function JobDetail({
       }}
     >
       <div className="close-row">
-        <span className="metadata">Job detail · fictional evidence</span>
+        <span className="metadata">Job detail · {liveMode ? "service evidence" : "fictional evidence"}</span>
         <button onClick={onClose}>Close detail</button>
       </div>
       <h2 ref={heading} tabIndex={-1} id="detail-title">
@@ -124,10 +125,10 @@ export function JobDetail({
               {applicationLabel(destination)}
               <span className="sr-only">
                 {" "}
-                (opens external example site in a new tab)
+                (opens external site in a new tab)
               </span>
             </a>
-            <p className="metadata">{new URL(url).hostname} · fictional link</p>
+            <p className="metadata">{new URL(url).hostname}{liveMode ? "" : " · fictional link"}</p>
           </>
         ) : (
           <p>Application URL unavailable</p>

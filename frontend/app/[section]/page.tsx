@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api/client";
+import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
 import { PresentationSettings } from "@/components/preferences";
 const titles: Record<string, string> = {
@@ -30,6 +31,9 @@ export default async function SectionPage({
 }) {
   const { section } = await params;
   if (!titles[section]) notFound();
+  if (liveMode && section !== "settings") {
+    return <div className="section-content"><h1>{titles[section]}</h1><p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p><Link href="/jobs">Open Jobs</Link></div>;
+  }
   const session = await api.getSession();
   const clientId = session.data.client_scopes[0].client_id;
   let content: React.ReactNode;

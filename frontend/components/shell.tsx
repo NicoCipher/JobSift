@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import type { Client, Session } from "@/lib/contracts/service";
+import { liveMode } from "@/lib/api/client";
 const navigation = [
   ["Dashboard", "/dashboard"],
   ["Jobs", "/jobs"],
@@ -33,7 +34,7 @@ export function Shell({
     <nav
       aria-label={mobile ? "Mobile primary navigation" : "Primary navigation"}
     >
-      {navigation.map(([name, path]) => (
+      {(liveMode ? navigation.filter(([, path]) => ["/jobs", "/settings"].includes(path)) : navigation).map(([name, path]) => (
         <Link
           key={path}
           href={path}
@@ -64,7 +65,7 @@ export function Shell({
         </Link>
         <span className="client-scope">Client: {client.display_name}</span>
         <span className="operator">
-          {session.display_name} · fixture session
+          {session.display_name} · {liveMode ? "trusted local session" : "fixture session"}
         </span>
       </header>
       <div className="shell">
@@ -73,13 +74,13 @@ export function Shell({
           <p className="sidebar-note metadata">
             Read-only workbench
             <br />
-            Fictional evidence
+            {liveMode ? "Registered service evidence" : "Fictional evidence"}
           </p>
         </aside>
         <main id="main" tabIndex={-1}>
           <div className="evidence-label">
-            <span className="fixture-tag">Development fixtures</span>
-            <span>Fictional records · no live sourcing or writes</span>
+            <span className="fixture-tag">{liveMode ? "Local service" : "Development fixtures"}</span>
+            <span>{liveMode ? "Registered evidence · no sourcing or writes" : "Fictional records · no live sourcing or writes"}</span>
           </div>
           {children}
         </main>
@@ -94,7 +95,7 @@ export function Shell({
           <strong>JobSift</strong>
           <button onClick={close}>Close menu</button>
         </div>
-        <p className="secondary">{client.display_name} · fixture</p>
+        <p className="secondary">{client.display_name} · {liveMode ? "local service" : "fixture"}</p>
         {links(true)}
       </dialog>
     </>

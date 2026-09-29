@@ -1,8 +1,14 @@
 import { api } from "@/lib/api/client";
 import { JobsWorkspace } from "@/components/jobs-workspace";
+import { PostingsWorkspace } from "@/components/postings-workspace";
+import { liveMode } from "@/lib/api/client";
 export const metadata = { title: "Jobs" };
-export default async function JobsPage() {
+export const dynamic = "force-dynamic";
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const session = await api.getSession();
   const client = await api.getClient(session.data.client_scopes[0].client_id);
-  return <JobsWorkspace client={client.data} />;
+  const { view } = await searchParams;
+  return liveMode && view !== "groups"
+    ? <PostingsWorkspace client={client.data} />
+    : <JobsWorkspace client={client.data} />;
 }
