@@ -326,6 +326,21 @@ def test_sheet_header_and_drift_fail_closed(repo):
     assert gateway.append_calls == 1
 
 
+def test_sheet_internal_blank_row_rejected_before_append(repo):
+    job = posting(1)
+    seed(repo, [job])
+    destination = sheet_destination("example123", "Sheet1")
+    batch = prepare(repo, request(repo, destination, [job]))
+    gateway = FakeSheets()
+    gateway.values.extend([[], ["existing", "company", "https://example.com/existing"]])
+    failed = batches.finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert failed.status == "failed"
+    assert gateway.append_calls == 0
+    assert len(gateway.values) == 3
+
+
 @pytest.mark.parametrize("quota", [0, -1, True, 1.5, "3"])
 def test_invalid_quota(repo, tmp_path, quota):
     with pytest.raises(ValidationError):
