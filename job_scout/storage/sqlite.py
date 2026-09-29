@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 from job_scout.dedupe.resolver import delivery_keys, representative_key
 from job_scout.domain.models import Job, JobLifecycle, JobMatch
 
+
 class CompatibleRow:
     """Tuple-like row with sqlite3.Row-style named access across SQLite drivers."""
 
@@ -186,11 +187,6 @@ class SQLiteRepository:
             if self.remote_url:
                 connection.push()
         except self._turso_error as error:
-            if connection is not None:
-                try:
-                    connection.rollback()
-                except Exception:
-                    pass
             raise sqlite3.DatabaseError(str(error)) from error
         finally:
             if connection is not None:
