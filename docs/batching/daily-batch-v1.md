@@ -38,11 +38,13 @@ The CLI does expose already prepared batches. `job-scout batch review --database
 jobs.sqlite3 --batch-id ID` shows frozen rows, destination, counts, completeness,
 and failures through a read-only SQLite connection without initializing the repository.
 `job-scout batch release --database jobs.sqlite3
---batch-id ID --confirm-batch-id ID` explicitly publishes that CSV batch. The
+--batch-id ID --confirm-batch-id ID` explicitly publishes that batch. The
 release response includes the stored status and any error, and exits nonzero if
 delivery failed; repeating a delivered
 batch does not append rows. These commands do not source jobs or create a batch.
-Google Sheets delivery needs a separate verified publication and retry protocol.
+Google Sheets uses the separate verified publication and retry protocol in
+[Google Sheets batch delivery](google-sheets-delivery.md);
+it uses the same prepared-batch review and explicit release commands.
 
 Completeness is explicitly `complete`, `partial`, or `unknown` (default).
 `source_failures` is preserved verbatim as supplied. A shortfall describes the
