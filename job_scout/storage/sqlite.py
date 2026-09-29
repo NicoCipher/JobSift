@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -95,6 +96,24 @@ CREATE INDEX IF NOT EXISTS ix_historical_blacklist_client ON historical_blacklis
 class SQLiteRepository:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
+        self.remote_url = os.getenv("TURSO_DATABASE_URL", "").strip()
+        self.auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+        if bool(self.remote_url) != bool(self.auth_token):
+            raise ValueError(
+                "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be configured together"
+            )
+        self._turso_sync = None
+        self._turso_error = ()
+        if self.remote_url:
+            try:
+                import turso
+                import turso.sync
+            except ImportError as error:
+                raise RuntimeError(
+                    "install job-scout[cloud] for Turso-backed persistence"
+                ) from error
+            self._turso_sync = turso.sync
+            self._turso_error = (turso.Error,)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
             connection.execute("BEGIN IMMEDIATE")
@@ -122,14 +141,33 @@ class SQLiteRepository:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
+        connection = None
         try:
+            if self.remote_url:
+                connection = self._turso_sync.connect(
+                    self.path,
+                    remote_url=self.remote_url,
+                    auth_token=self.auth_token,
+                )
+                connection.pull()
+            else:
+                connection = sqlite3.connect(self.path)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
             yield connection
             connection.commit()
+            if self.remote_url:
+                connection.push()
+        except self._turso_error as error:
+            if connection is not None:
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+            raise sqlite3.DatabaseError(str(error)) from error
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
 
     def upsert_job(self, job: Job) -> JobLifecycle:
         now = datetime.now(UTC).isoformat()
