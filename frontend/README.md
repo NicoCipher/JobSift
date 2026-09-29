@@ -13,7 +13,10 @@ NEXT_PUBLIC_JOBSIFT_LIVE=1 JOBSIFT_SERVICE_URL=http://127.0.0.1:8000 npm run dev
 Both processes must bind to loopback. The browser calls a same-origin, GET-only
 route; the service URL remains on the server. The route accepts only local
 `127.0.0.1` HTTP endpoints. The session, client, group list and group detail
-come from the service. The existing fixture mode remains the default for UI
+come from the service. In local service mode, `/jobs` shows individual postings,
+including postings without a recorded group representative; `/jobs?view=groups`
+shows only service-backed delivery groups. These are distinct resource views and
+no group is synthesized for a posting. The existing fixture mode remains the default for UI
 development and its browser tests. In live mode, only Jobs and presentation
 Settings are exposed; other views are marked unavailable until their service
 contracts are integrated. No mutation, sourcing command, or production login is

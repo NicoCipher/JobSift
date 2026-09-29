@@ -170,6 +170,32 @@ test("live adapter preserves the service snapshot and does not fabricate group e
   }
 });
 
+test("live adapter reads postings and snapshot detail independently of group representation", async () => {
+  const original = globalThis.fetch;
+  const previousBase = process.env.JOBSIFT_SERVICE_URL;
+  process.env.JOBSIFT_SERVICE_URL = "http://127.0.0.1:8000";
+  const posting = { posting_id: "job-1", title: "Support Engineer" };
+  const envelope = { data: [posting], meta: { snapshot_id: "snapshot-1" }, page: { snapshot_id: "snapshot-1" } };
+  const urls: string[] = [];
+  globalThis.fetch = async input => {
+    urls.push(String(input));
+    return Response.json(urls.length === 1 ? envelope : { data: posting, meta: { snapshot_id: "snapshot-1" } });
+  };
+  try {
+    const api = new LiveJobSiftApi();
+    const list = await api.listPostings({ ...query, destination_id: "", q: "support" });
+    expect(list.data[0].posting_id).toBe("job-1");
+    await api.getPosting(query.client_id, "job-1", list.page.snapshot_id);
+    expect(urls[0]).toContain("representation=postings");
+    expect(urls[0]).not.toContain("destination_id=");
+    expect(urls[1]).toContain("/jobs/postings/job-1?snapshot_id=snapshot-1");
+  } finally {
+    globalThis.fetch = original;
+    if (previousBase === undefined) delete process.env.JOBSIFT_SERVICE_URL;
+    else process.env.JOBSIFT_SERVICE_URL = previousBase;
+  }
+});
+
 test("history pagination and metadata describe the same client snapshot", async () => {
   const history = await new FixtureJobSiftApi().getHistory(query.client_id);
   expect(history.page.limit).toBe(40);

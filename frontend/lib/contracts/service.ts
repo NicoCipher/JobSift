@@ -113,6 +113,21 @@ export type PostingSummary = {
   application_destination: ApplicationDestination;
   match: MatchEvidence | null;
 };
+export type PostingDetail = PostingSummary & {
+  description_text: string | null;
+  delivery_group_id: string | null;
+  delivery_state: DeliveryState;
+  outcome_summary: OutcomeSummary;
+  provenance: {
+    evidence_ref: string | null;
+    brief_revision_id: string | null;
+    run_id: string | null;
+    source_target: Record<string, string>;
+    first_seen_at: string | null;
+    last_seen_at: string | null;
+  };
+  capabilities: Capabilities;
+};
 export type DeliveryState = {
   destination_id: string | null;
   previously_delivered: Fact<boolean>;

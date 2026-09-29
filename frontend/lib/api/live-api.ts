@@ -1,4 +1,4 @@
-import type { ApiResponse, BriefRevision, Client, Diagnostics, HistoryEntry, JobGroupDetail, JobGroupSummary, ListResponse, RunDetail, Session } from "../contracts/service";
+import type { ApiResponse, BriefRevision, Client, Diagnostics, HistoryEntry, JobGroupDetail, JobGroupSummary, ListResponse, PostingDetail, RunDetail, Session } from "../contracts/service";
 import type { JobSiftApi, JobsQuery } from "./interface";
 
 const root = "/api/operator";
@@ -27,6 +27,19 @@ export class LiveJobSiftApi implements JobSiftApi {
     query.decision?.forEach((value) => params.append("decision", value));
     query.source?.forEach((value) => params.append("source", value));
     return read<ListResponse<JobGroupSummary>>(`${clientPath(query.client_id)}/jobs`, params);
+  }
+  listPostings(query: JobsQuery) {
+    const params = new URLSearchParams({ representation: "postings", limit: String(query.limit ?? 40) });
+    if (query.destination_id) params.set("destination_id", query.destination_id);
+    if (query.q) params.set("q", query.q);
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.snapshot_id) params.set("snapshot_id", query.snapshot_id);
+    query.decision?.forEach((value) => params.append("decision", value));
+    query.source?.forEach((value) => params.append("source", value));
+    return read<ListResponse<PostingDetail>>(`${clientPath(query.client_id)}/jobs`, params);
+  }
+  getPosting(id: string, postingId: string, snapshotId: string) {
+    return read<ApiResponse<PostingDetail>>(`${clientPath(id)}/jobs/postings/${encodeURIComponent(postingId)}`, new URLSearchParams({ snapshot_id: snapshotId }));
   }
   async getJob(id: string, groupId: string, snapshotId: string) {
     const params = new URLSearchParams({ snapshot_id: snapshotId });

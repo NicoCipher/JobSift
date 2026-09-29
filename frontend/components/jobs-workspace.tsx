@@ -193,7 +193,7 @@ export function JobsWorkspace({
     window.history.pushState(
       null,
       "",
-      `/jobs${params.size ? `?${params}` : ""}`,
+      `/jobs${liveMode ? `?view=groups${params.size ? `&${params}` : ""}` : params.size ? `?${params}` : ""}`,
     );
     void load(next);
   };
@@ -225,6 +225,7 @@ export function JobsWorkspace({
     <a
       className="job-link"
       href={`/jobs?${new URLSearchParams({
+        ...(liveMode ? { view: "groups" } : {}),
         ...(query.q ? { q: query.q } : {}),
         ...(query.decision
           ? {
