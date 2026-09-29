@@ -161,6 +161,21 @@ class DailyBatchStore:
         with self.repository.connect() as c:
             return self._load(c, batch_id)
 
+    def export_rows(self, batch_id: str) -> list[dict[str, str]]:
+        """Return the frozen rows for operator review, never mutable current postings."""
+        with self.repository.connect() as c:
+            result = self._load(c, batch_id)
+            rows = [
+                json.loads(row[0])
+                for row in c.execute(
+                    "SELECT export_row_json FROM daily_batch_items WHERE batch_id=? ORDER BY ordinal",
+                    (batch_id,),
+                )
+            ]
+            if len(rows) != result.selected_count:
+                raise BatchConflict("batch items do not match the selected count")
+            return rows
+
     def prepare(self, request, assemble):
         with self.repository.connect() as c:
             c.execute("BEGIN IMMEDIATE")
