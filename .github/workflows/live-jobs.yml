@@ -1,0 +1,92 @@
+name: Live JobSift
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Release the currently prepared batch to Google Sheets
+        required: true
+        default: false
+        type: boolean
+      quota:
+        description: Maximum links to prepare when there is no unresolved batch
+        required: true
+        default: "5"
+        type: choice
+        options:
+          - "5"
+          - "10"
+          - "25"
+          - "50"
+          - "100"
+  schedule:
+    - cron: "0 7 * * *"
+
+concurrency:
+  group: jobsift-live-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JOBSIFT_PLAN: config/sourcing_plans/taiwo_software_remote_us_pilot_v1.json
+      JOBSIFT_DATABASE: ${{ runner.temp }}/jobsift.sqlite3
+      JOBSIFT_CSV: ${{ runner.temp }}/latest-sourcing.csv
+      JOBSIFT_REPORTS_DIR: ${{ runner.temp }}/runs
+      JOBSIFT_TIMEZONE: Africa/Lagos
+      JOBSIFT_ALLOW_PARTIAL: "false"
+      JOBSIFT_RUN_ONCE: "true"
+      JOBSIFT_SHEET_ID: ${{ vars.JOBSIFT_SHEET_ID }}
+      JOBSIFT_SHEET_TAB: ${{ vars.JOBSIFT_SHEET_TAB }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate runtime configuration
+        shell: bash
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+          test -n "$JOBSIFT_SHEET_ID" || { echo "Missing JOBSIFT_SHEET_ID repository variable"; exit 1; }
+          test -n "$JOBSIFT_SHEET_TAB" || { echo "Missing JOBSIFT_SHEET_TAB repository variable"; exit 1; }
+
+      - name: Configure run mode
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "JOBSIFT_AUTO_RELEASE=${{ inputs.release }}" >> "$GITHUB_ENV"
+            echo "JOBSIFT_BATCH_QUOTA=${{ inputs.quota }}" >> "$GITHUB_ENV"
+          else
+            echo "JOBSIFT_AUTO_RELEASE=false" >> "$GITHUB_ENV"
+            echo "JOBSIFT_BATCH_QUOTA=5" >> "$GITHUB_ENV"
+          fi
+
+      - name: Write Google service account credentials
+        shell: bash
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+
+      - name: Run JobSift
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/google-service-account.json
+        run: python -m job_scout.live_runner
