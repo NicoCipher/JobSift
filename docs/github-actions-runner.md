@@ -12,6 +12,8 @@ SQLite-compatible state. No always-on server or persistent Render disk is requir
 - An unresolved prepared or failed batch blocks replacement sourcing.
 - To publish the exact frozen batch, manually run the workflow with
   `release=true`.
+- Release mode is strictly release-only: if there is no unresolved frozen batch,
+  it exits with `nothing_to_release` and does not source or publish new jobs.
 - GitHub Actions concurrency allows only one production run at a time.
 - The stable Taiwo client ID and Turso database preserve historical/delivery
   suppression across ephemeral GitHub runners.
