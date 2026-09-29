@@ -1,0 +1,24 @@
+{
+  "plan_version": "sourcing-plan-v1",
+  "plan_id": "taiwo-software-remote-us-pilot-v1",
+  "search_brief": "../search_briefs/taiwo_software_remote_us_v1.json",
+  "database": "../../runtime/jobs.sqlite3",
+  "csv": "../../exports/taiwo_software_remote_us.csv",
+  "targets": [
+    {
+      "source": "greenhouse",
+      "company": "GitLab",
+      "board": "gitlab"
+    },
+    {
+      "source": "greenhouse",
+      "company": "Reddit",
+      "board": "reddit"
+    },
+    {
+      "source": "ashby",
+      "company": "Render",
+      "board": "render"
+    }
+  ]
+}
