@@ -166,8 +166,10 @@ def test_operator_reviews_frozen_batch_before_explicit_release(repo, tmp_path, m
             "wrong",
         ],
     )
+    monkeypatch.setattr(SQLiteRepository, "__init__", reject_init)
     with pytest.raises(SystemExit):
         main()
+    monkeypatch.setattr(SQLiteRepository, "__init__", original_init)
     capsys.readouterr()
     assert not destination.exists()
 
