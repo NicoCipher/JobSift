@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from job_scout.cli import main
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
+from job_scout.export.batch_sheets import SHEET_COLUMNS, sheet_destination
 from job_scout.history import HistoricalBlacklistEvidence, HistoricalRecord
 from job_scout.orchestration import daily_batch as batches
 from job_scout.storage.daily_batches import DailyBatchStore
@@ -242,6 +243,87 @@ def test_review_missing_database_does_not_create_it(tmp_path, monkeypatch):
         main()
     assert exit_info.value.code == 2
     assert not missing.exists()
+
+
+class FakeSheets:
+    def __init__(self):
+        self.values = [SHEET_COLUMNS.copy()]
+        self.uncertain = False
+        self.fail_before = False
+        self.append_calls = 0
+
+    def read_rows(self, spreadsheet_id, tab):
+        assert (spreadsheet_id, tab) == ("example123", "Sheet1")
+        return [row.copy() for row in self.values]
+
+    def append_rows(self, spreadsheet_id, tab, rows):
+        assert (spreadsheet_id, tab) == ("example123", "Sheet1")
+        self.append_calls += 1
+        if self.fail_before:
+            self.fail_before = False
+            raise OSError("append never reached Sheets")
+        self.values.extend([row.copy() for row in rows])
+        if self.uncertain:
+            self.uncertain = False
+            raise OSError("response lost after commit")
+
+
+def test_sheet_release_recovers_uncertain_append_and_preserves_status(repo):
+    jobs = [posting(1), posting(2)]
+    seed(repo, jobs)
+    destination = sheet_destination("example123", "Sheet1")
+    batch = prepare(repo, request(repo, destination, jobs))
+    assert batch.request.destination == destination
+    gateway = FakeSheets()
+    gateway.uncertain = True
+    failed = batches.finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert failed.status == "failed"
+    assert gateway.append_calls == 1
+    assert len(gateway.values) == 3
+    gateway.values[1][5] = "Applied"
+    recovered = batches.finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert recovered.status == "delivered"
+    assert gateway.append_calls == 1
+    assert gateway.values[1][5] == "Applied"
+    assert {row[6] for row in gateway.values[1:]} == {batch.batch_id}
+    assert {row[8] for row in gateway.values[1:]} == {job.id for job in jobs}
+    assert (
+        prepare(repo, request(repo, destination, jobs, idempotency_key="next-day")).selected_count
+        == 0
+    )
+
+
+def test_sheet_header_and_drift_fail_closed(repo):
+    job = posting(1)
+    seed(repo, [job])
+    destination = sheet_destination("example123", "Sheet1")
+    batch = prepare(repo, request(repo, destination, [job]))
+    gateway = FakeSheets()
+    gateway.values[0][2] = "Wrong"
+    failed = batches.finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert failed.status == "failed"
+    assert gateway.append_calls == 0
+    gateway.values[0][2] = "Job Link"
+    gateway.fail_before = True
+    assert (
+        batches.finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        ).status
+        == "failed"
+    )
+    # An external edit after journaling cannot be silently overwritten.
+    gateway.values.append(["manual", "", "https://example.com/manual"])
+    retry = batches.finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert retry.status == "failed"
+    assert gateway.append_calls == 1
 
 
 @pytest.mark.parametrize("quota", [0, -1, True, 1.5, "3"])
