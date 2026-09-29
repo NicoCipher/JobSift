@@ -69,9 +69,11 @@ export function PostingsWorkspace({ client }: { client: Client }) {
         ...(s ? { source: [s] } : {}),
       }, params.get("posting"));
     };
-    restore();
+    // Strict Mode replays the mount effect before this frame. Canceling its
+    // first frame avoids allocating a second service snapshot in development.
+    const initialFrame = requestAnimationFrame(() => restore());
     window.addEventListener("popstate", restore);
-    return () => { requests.current++; window.removeEventListener("popstate", restore); };
+    return () => { cancelAnimationFrame(initialFrame); requests.current++; window.removeEventListener("popstate", restore); };
   }, [client.client_id, load]);
 
   const apply = (clear = false) => {
@@ -110,6 +112,15 @@ export function PostingsWorkspace({ client }: { client: Client }) {
     url.searchParams.delete("posting"); url.searchParams.delete("snapshot_id");
     window.history.replaceState(window.history.state, "", url);
   };
+  const postingHref = (id: string) => {
+    const params = new URLSearchParams();
+    if (query.q) params.set("q", query.q);
+    if (query.decision) params.set("decision", query.decision.length === decisions.length ? "all" : query.decision[0]);
+    if (query.source?.[0]) params.set("source", query.source[0]);
+    if (result) params.set("snapshot_id", result.page.snapshot_id);
+    params.set("posting", id);
+    return `/jobs?${params}`;
+  };
   const p = detail?.data;
   const application = p && safeExternalUrl(p.application_destination.application_url);
 
@@ -130,8 +141,8 @@ export function PostingsWorkspace({ client }: { client: Client }) {
     <div className={`workbench ${p ? "is-open" : ""}`}>
       <div className="list-region" aria-busy={busy} role="region" aria-label="Postings list">
         {!result ? <p>{error ? "No postings loaded." : "Loading postings…"}</p> : result.data.length === 0 ? <div className="empty"><h2>No postings match these filters</h2><button onClick={() => apply(true)}>Clear filters</button></div> : <>
-          <table className="jobs-table"><caption className="sr-only">Individual postings from registered service evidence</caption><thead><tr><th>Role</th><th>Company</th><th>Location / mode</th><th>Match</th><th>Source</th><th>First seen</th><th>Outcome</th></tr></thead><tbody>{result.data.map(row => <tr key={row.posting_id} className={p?.posting_id === row.posting_id ? "inspected" : ""}><td><a className="job-link" href={`/jobs?posting=${encodeURIComponent(row.posting_id)}&snapshot_id=${encodeURIComponent(result.page.snapshot_id)}`} onClick={e => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; e.preventDefault(); void inspect(row.posting_id); }}>{row.title}</a></td><td>{row.company}</td><td>{row.location_text ?? "Unknown"} · {row.remote_status}</td><td><MatchStatus decision={row.match?.decision} /></td><td>{row.source}</td><td>{dateText(row.first_seen_at)}</td><td>{outcomeText(row.outcome_summary)}</td></tr>)}</tbody></table>
-          <div className="mobile-jobs">{result.data.map(row => <article className="mobile-job" key={row.posting_id}><a className="job-link" href={`/jobs?posting=${encodeURIComponent(row.posting_id)}&snapshot_id=${encodeURIComponent(result.page.snapshot_id)}`} onClick={e => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; e.preventDefault(); void inspect(row.posting_id); }}>{row.title}</a><div className="mobile-meta">{row.company} · <MatchStatus decision={row.match?.decision} /></div><p className="metadata">{row.location_text ?? "Unknown"} · {row.source}</p></article>)}</div>
+          <table className="jobs-table"><caption className="sr-only">Individual postings from registered service evidence</caption><thead><tr><th>Role</th><th>Company</th><th>Location / mode</th><th>Match</th><th>Source</th><th>First seen</th><th>Outcome</th></tr></thead><tbody>{result.data.map(row => <tr key={row.posting_id} className={p?.posting_id === row.posting_id ? "inspected" : ""}><td><a className="job-link" href={postingHref(row.posting_id)} onClick={e => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; e.preventDefault(); void inspect(row.posting_id); }}>{row.title}</a></td><td>{row.company}</td><td>{row.location_text ?? "Unknown"} · {row.remote_status}</td><td><MatchStatus decision={row.match?.decision} /></td><td>{row.source}</td><td>{dateText(row.first_seen_at)}</td><td>{outcomeText(row.outcome_summary)}</td></tr>)}</tbody></table>
+          <div className="mobile-jobs">{result.data.map(row => <article className="mobile-job" key={row.posting_id}><a className="job-link" href={postingHref(row.posting_id)} onClick={e => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; e.preventDefault(); void inspect(row.posting_id); }}>{row.title}</a><div className="mobile-meta">{row.company} · <MatchStatus decision={row.match?.decision} /></div><p className="metadata">{row.location_text ?? "Unknown"} · {row.source}</p></article>)}</div>
         </>}
         {result && <div className="pagination"><span>{result.data.length} shown · {result.page.known_total.availability === "reported" ? `${metricText(result.page.known_total)} postings in this scope` : "Total not reported"}</span><div className="pager-actions"><button disabled={!result.page.previous_cursor || busy} onClick={() => void load({ ...query, cursor: result.page.previous_cursor! })}>Previous</button><button disabled={!result.page.next_cursor || busy} onClick={() => void load({ ...query, cursor: result.page.next_cursor! })}>Next</button></div></div>}
       </div>

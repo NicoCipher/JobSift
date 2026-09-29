@@ -139,9 +139,10 @@ export function JobsWorkspace({
         params.get("job"),
       );
     };
-    restore();
+    const initialFrame = requestAnimationFrame(() => restore());
     window.addEventListener("popstate", restore);
     return () => {
+      cancelAnimationFrame(initialFrame);
       requests.current++;
       window.removeEventListener("popstate", restore);
     };

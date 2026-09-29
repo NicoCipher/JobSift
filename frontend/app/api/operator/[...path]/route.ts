@@ -8,10 +8,10 @@ async function read(request: NextRequest, context: { params: Promise<{ path: str
     return NextResponse.json({ error: { code: "EVIDENCE_UNAVAILABLE", message: "Local operator service is not configured." } }, { status: 503 });
   }
   const { path } = await context.params;
-  if (!path.length || path.some((part) => !/^[a-zA-Z0-9_-]+$/.test(part))) {
+  if (!path.length || path.some((part) => !part || part === "." || part === ".." || /[\\/\u0000-\u001f\u007f]/.test(part))) {
     return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Invalid resource path." } }, { status: 400 });
   }
-  const upstream = new URL(`/api/v1/${path.join("/")}`, base);
+  const upstream = new URL(`/api/v1/${path.map(encodeURIComponent).join("/")}`, base);
   upstream.search = request.nextUrl.search;
   try {
     const response = await fetch(upstream, {
