@@ -8,6 +8,12 @@ from job_scout.dedupe.resolver import representative_key
 from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest, DailyBatchResult
 from job_scout.domain.models import MatchDecision
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
+from job_scout.export.batch_sheets import (
+    BatchSheetPublisher,
+    GoogleSheetsGateway,
+    SheetsGateway,
+    parse_sheet_destination,
+)
 from job_scout.export.csv_exporter import export_row
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
@@ -74,18 +80,31 @@ def prepare_daily_batch(
     repository: SQLiteRepository,
     request: DailyBatchRequest,
 ) -> DailyBatchResult:
-    # Canonical destination is the same path identity used by run_pipeline.
-    request = DailyBatchRequest.model_validate(
-        {**request.model_dump(), "destination": str(Path(request.destination).resolve())}
-    )
+    # CSV paths resolve as in run_pipeline; Sheets destinations have stable URI identity.
+    destination = request.destination
+    if destination.startswith("gsheet:"):
+        parse_sheet_destination(destination)
+    elif "://" in destination:
+        raise ValueError("unsupported batch destination")
+    else:
+        destination = str(Path(destination).resolve())
+    request = DailyBatchRequest.model_validate({**request.model_dump(), "destination": destination})
     return DailyBatchStore(repository).prepare(request, _assemble)
 
 
-def finalize_daily_batch(*, repository: SQLiteRepository, batch_id: str) -> DailyBatchResult:
+def finalize_daily_batch(
+    *, repository: SQLiteRepository, batch_id: str, sheets_gateway: SheetsGateway | None = None
+) -> DailyBatchResult:
     store = DailyBatchStore(repository)
     result = store.get(batch_id)
     if result.status == "delivered":
         return result
+    if result.request.destination.startswith("gsheet:"):
+        try:
+            publisher = BatchSheetPublisher(result, sheets_gateway or GoogleSheetsGateway())
+            return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
+        except OSError as error:
+            return store.fail(batch_id, error)
     path = Path(result.request.destination)
     try:
         with destination_lock(path):
