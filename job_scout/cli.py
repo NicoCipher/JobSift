@@ -67,6 +67,8 @@ def main() -> None:
     if args.command == "batch":
         from job_scout.domain.daily_batch import BatchConflict
 
+        if args.batch_command == "release" and args.confirm_batch_id != args.batch_id:
+            parser.error("confirmation must match the reviewed batch ID")
         try:
             if args.batch_command == "review":
                 result, rows = DailyBatchStore.review_readonly(args.database, args.batch_id)
@@ -74,8 +76,6 @@ def main() -> None:
                 repository = SQLiteRepository(args.database)
                 store = DailyBatchStore(repository)
                 result = store.get(args.batch_id)
-                if args.confirm_batch_id != result.batch_id:
-                    parser.error("confirmation must match the reviewed batch ID")
                 result = finalize_daily_batch(repository=repository, batch_id=result.batch_id)
                 rows = store.export_rows(result.batch_id)
             print(
