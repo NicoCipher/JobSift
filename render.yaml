@@ -1,0 +1,36 @@
+services:
+  - type: worker
+    name: jobsift-live-runner
+    runtime: python
+    plan: 0.5c-512mb
+    buildCommand: pip install -e '.[sheets]'
+    startCommand: python -m job_scout.live_runner
+    envVars:
+      - key: JOBSIFT_PLAN
+        value: config/sourcing_plans/taiwo_software_remote_us_pilot_v1.json
+      - key: JOBSIFT_DATABASE
+        value: /var/data/jobs.sqlite3
+      - key: JOBSIFT_CSV
+        value: /var/data/latest-sourcing.csv
+      - key: JOBSIFT_REPORTS_DIR
+        value: /var/data/runs
+      - key: JOBSIFT_BATCH_QUOTA
+        value: "5"
+      - key: JOBSIFT_INTERVAL_SECONDS
+        value: "86400"
+      - key: JOBSIFT_TIMEZONE
+        value: Africa/Lagos
+      - key: JOBSIFT_AUTO_RELEASE
+        value: "false"
+      - key: JOBSIFT_ALLOW_PARTIAL
+        value: "false"
+      - key: JOBSIFT_SHEET_ID
+        sync: false
+      - key: JOBSIFT_SHEET_TAB
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/google-service-account.json
+    disk:
+      name: jobsift-data
+      mountPath: /var/data
+      sizeGB: 1
