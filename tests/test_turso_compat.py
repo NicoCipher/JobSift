@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import sqlite3
+from job_scout.storage.sqlite import compatible_row_factory
 
 
 def test_pyturso_supports_jobsift_sqlite_contract(tmp_path):
@@ -9,7 +9,7 @@ def test_pyturso_supports_jobsift_sqlite_contract(tmp_path):
     database = tmp_path / "compat.sqlite3"
     connection = turso.connect(str(database))
     try:
-        connection.row_factory = sqlite3.Row
+        connection.row_factory = compatible_row_factory
         connection.execute("PRAGMA foreign_keys = ON")
         connection.executescript(
             """
