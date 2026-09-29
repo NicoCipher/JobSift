@@ -123,3 +123,44 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
 
     assert result["action"] == "awaiting_release"
     assert result["batch_id"] == "batch-1"
+
+def test_release_mode_never_sources_without_prepared_batch(tmp_path, monkeypatch):
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id="sheet123",
+        sheet_tab="Sheet1",
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=True,
+        allow_partial=False,
+        run_once=True,
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_runtime_plan",
+        lambda _: (SimpleNamespace(plan_id="pilot"), tmp_path / "brief.json"),
+    )
+    monkeypatch.setattr(
+        live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
+    )
+    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: object())
+    monkeypatch.setattr(
+        live_runner, "DailyBatchStore", lambda _: SimpleNamespace()
+    )
+    monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+
+    def should_not_source(*args, **kwargs):
+        raise AssertionError("release mode must not source a replacement batch")
+
+    monkeypatch.setattr(live_runner, "run_sourcing_plan", should_not_source)
+
+    result = live_runner.run_once(config)
+
+    assert result["action"] == "nothing_to_release"
+    assert result["plan_id"] == "pilot"
+
