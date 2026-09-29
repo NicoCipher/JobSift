@@ -177,7 +177,6 @@ class SQLiteRepository:
                     remote_url=self.remote_url,
                     auth_token=self.auth_token,
                 )
-                connection.pull()
             else:
                 connection = sqlite3.connect(self.path)
             connection.row_factory = compatible_row_factory
