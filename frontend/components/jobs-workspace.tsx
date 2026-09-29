@@ -11,6 +11,7 @@ import type {
 } from "@/lib/contracts/service";
 import type { JobSiftApi, JobsQuery } from "@/lib/api/interface";
 import { api } from "@/lib/api/client";
+import { liveMode } from "@/lib/api/client";
 import {
   dateText,
   decisionLabel,
@@ -44,7 +45,7 @@ export function JobsWorkspace({
   const [source, setSource] = useState("");
   const [query, setQuery] = useState<JobsQuery>({
     client_id: client.client_id,
-    destination_id: client.destinations[0].destination_id,
+    destination_id: client.destinations[0]?.destination_id ?? "",
   });
   const originScroll = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -125,7 +126,7 @@ export function JobsWorkspace({
       void load(
         (event?.state?.jobsQuery as JobsQuery | undefined) ?? {
           client_id: client.client_id,
-          destination_id: client.destinations[0].destination_id,
+          destination_id: client.destinations[0]?.destination_id ?? "",
           q,
           ...(params.get("snapshot_id") ? { snapshot_id: params.get("snapshot_id")! } : {}),
           ...(d === "all"
@@ -176,7 +177,7 @@ export function JobsWorkspace({
     }
     const next: JobsQuery = {
       client_id: client.client_id,
-      destination_id: client.destinations[0].destination_id,
+      destination_id: client.destinations[0]?.destination_id ?? "",
       q,
       ...(d === "all"
         ? { decision: decisions }
@@ -253,8 +254,8 @@ export function JobsWorkspace({
       <header className="page-head">
         <h1>Jobs</h1>
         <div className="scope-line">
-          {client.display_name} · {client.destinations[0].display_name} ·
-          Fictional snapshot · Times in UTC
+          {client.display_name} · {client.destinations[0]?.display_name ?? "All destinations"} ·
+          {liveMode ? "Service snapshot" : "Fictional snapshot"} · Times in UTC
         </div>
       </header>
       <div className="toolbar">
@@ -363,6 +364,7 @@ export function JobsWorkspace({
                 <option value="greenhouse">Greenhouse</option>
                 <option value="ashby">Ashby</option>
                 <option value="lever">Lever</option>
+                <option value="workday">Workday</option>
               </select>
             </label>
             <button type="submit">Apply filters</button>
@@ -371,9 +373,9 @@ export function JobsWorkspace({
       )}
       <div className="notice">
         {result
-          ? `${result.meta.completeness === "partial" ? "Partial" : result.meta.completeness} fixture coverage · ${result.meta.source_failures.length} recorded source failure(s).`
-          : "Loading fixture coverage…"}{" "}
-        <Link href="/runs">Inspect run</Link>
+          ? `${result.meta.completeness === "partial" ? "Partial" : result.meta.completeness} ${liveMode ? "reported" : "fixture"} coverage · ${result.meta.source_failures.length} recorded source failure(s).`
+          : `Loading ${liveMode ? "service" : "fixture"} coverage…`}{" "}
+        {!liveMode && <Link href="/runs">Inspect run</Link>}
       </div>
       {error && (
         <div role="alert" className="error">
@@ -428,7 +430,7 @@ export function JobsWorkspace({
             <div className="empty">
               <h2>No groups match these filters</h2>
               <p>
-                Search covers fictional role, company and location evidence.
+                Search covers {liveMode ? "reported" : "fictional"} role, company and location evidence.
               </p>
               <button onClick={() => apply(true)}>Clear filters</button>
             </div>
@@ -436,7 +438,7 @@ export function JobsWorkspace({
             <>
               <table className="jobs-table">
                 <caption className="sr-only">
-                  Fictional job groups, strongest match first. Additional
+                  {liveMode ? "Reported" : "Fictional"} job groups, strongest match first. Additional
                   source, outcome and time evidence is available in each detail.
                 </caption>
                 <thead>

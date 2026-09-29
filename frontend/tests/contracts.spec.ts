@@ -7,6 +7,7 @@ import {
   safeExternalUrl,
 } from "../lib/display";
 import { FixtureJobSiftApi } from "../lib/api/fixture-api";
+import { LiveJobSiftApi } from "../lib/api/live-api";
 import type { ApiError } from "../lib/contracts/service";
 const query = {
   client_id: "example-client",
@@ -134,6 +135,38 @@ test("job detail links retain the list evidence snapshot", async () => {
   for (const job of list.data) {
     const url = new URL(job.detail_url, "https://example.invalid");
     expect(url.searchParams.get("snapshot_id")).toBe(list.page.snapshot_id);
+  }
+});
+
+test("live adapter preserves the service snapshot and does not fabricate group evidence", async () => {
+  const fixture = new FixtureJobSiftApi();
+  const list = await fixture.listJobs(query);
+  const group = await fixture.getJob(query.client_id, list.data[0].delivery_group_id, list.page.snapshot_id);
+  const original = globalThis.fetch;
+  const previousBase = process.env.JOBSIFT_SERVICE_URL;
+  process.env.JOBSIFT_SERVICE_URL = "http://127.0.0.1:8000";
+  const requested: string[] = [];
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return Response.json(requested.length === 1 ? list : {
+      ...group,
+      data: { ...group.data, provenance: { ...group.data.provenance, source_target: { source: "greenhouse" } } },
+    });
+  };
+  try {
+    const api = new LiveJobSiftApi();
+    const result = await api.listJobs({ ...query, decision: ["strong_match"], source: ["greenhouse"] });
+    expect(result.page.snapshot_id).toBe(list.page.snapshot_id);
+    expect(result.data[0].delivery_group_id).toBe(list.data[0].delivery_group_id);
+    const detail = await api.getJob(query.client_id, result.data[0].delivery_group_id, result.page.snapshot_id);
+    expect(detail.data.provenance.source_target).toBe("source: greenhouse");
+    expect(requested[0]).toContain("representation=groups");
+    expect(requested[0]).toContain("decision=strong_match");
+    expect(requested[1]).toContain(`snapshot_id=${list.page.snapshot_id}`);
+  } finally {
+    globalThis.fetch = original;
+    if (previousBase === undefined) delete process.env.JOBSIFT_SERVICE_URL;
+    else process.env.JOBSIFT_SERVICE_URL = previousBase;
   }
 });
 

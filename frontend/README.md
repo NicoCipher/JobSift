@@ -1,6 +1,28 @@
 # JobSift operator frontend — JOB-31
 
-A read-only Next.js App Router slice using explicitly fictional development evidence. The primary work surface is `/jobs`; `/` redirects there. Nothing connects to the Python CLI, SQLite, sourcing, auth, or a live API.
+## Local service connection
+
+The Jobs view can read registered evidence from the Python operator service. Start
+the service with a private `JOBSIFT_SERVICE_CONFIG` as described in
+`docs/api/operator-service-runtime-v1.md`, then start the frontend with:
+
+```sh
+NEXT_PUBLIC_JOBSIFT_LIVE=1 JOBSIFT_SERVICE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Both processes must bind to loopback. The browser calls a same-origin, GET-only
+route; the service URL remains on the server. The route accepts only local
+`127.0.0.1` HTTP endpoints. The session, client, group list and group detail
+come from the service. The existing fixture mode remains the default for UI
+development and its browser tests. In live mode, only Jobs and presentation
+Settings are exposed; other views are marked unavailable until their service
+contracts are integrated. No mutation, sourcing command, or production login is
+enabled. An unregistered destination or unavailable group representation
+returns the service error rather than substituting fictional rows. The service
+requires a provisioned database and explicit private catalogue before the live
+view can show jobs.
+
+A read-only Next.js App Router slice. The default mode uses explicitly fictional development evidence. The primary work surface is `/jobs`; `/` redirects there. The optional local service connection reads registered evidence through the Python operator service. It does not enable sourcing, writes, or production authentication.
 
 ## Run and verify
 
@@ -27,7 +49,7 @@ Runtime: Next.js 16.3.4, React / React DOM 19.3.0. Tooling: TypeScript 6.0.3, ES
 ## Boundaries
 
 - `lib/contracts/service.ts`: typed subset of the [service contract](../docs/api/operator-service-contract-v1.md), including explicit missing facts, units, scope, snapshots, capabilities and exact matcher decisions.
-- `lib/api/interface.ts`: `JobSiftApi`, consumed by pages and components. `client.ts` is the composition root for replacing the fixture adapter with a future BFF adapter. No BFF or HTTP route handler is implemented.
+- `lib/api/interface.ts`: `JobSiftApi`, consumed by pages and components. `client.ts` selects the fixture or local service adapter. The GET-only route in `app/api/operator` forwards local reads.
 - `lib/api/fixture-api.ts`: adapter-only filtering, stable authored order, opaque cursor pagination and 30-minute in-memory snapshots. The UI never calculates match, grouping, suppression or freshness. Browser Back retains the cursor scope within the running fixture session. Reload starts a new fixture session; expired cursors require an explicit refresh.
 - `lib/fixtures/evidence.ts`: authored examples, including unknown and unavailable evidence, measured zero, partial coverage, prior delivery, historical suppression, and disabled mutations. Example application links use reserved example domains and do not submit applications.
 - `lib/display.ts`: labels, null presentation, safe external-link handling and keyboard helpers.
