@@ -64,7 +64,7 @@ class LiveRunnerConfig:
     run_once: bool
 
     @classmethod
-    def from_env(cls) -> "LiveRunnerConfig":
+    def from_env(cls) -> LiveRunnerConfig:
         timezone = os.getenv("JOBSIFT_TIMEZONE", "Africa/Lagos").strip() or "Africa/Lagos"
         ZoneInfo(timezone)
         return cls(
