@@ -3,6 +3,7 @@ services:
     name: jobsift-live-runner
     runtime: python
     plan: 0.5c-512mb
+    autoDeployTrigger: checksPass
     buildCommand: pip install -e '.[sheets]'
     startCommand: python -m job_scout.live_runner
     envVars:
