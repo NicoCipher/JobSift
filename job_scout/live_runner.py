@@ -238,6 +238,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
 
+    if config.auto_release:
+        return {
+            "action": "nothing_to_release",
+            "plan_id": plan.plan_id,
+            "client_id": brief.client_id,
+            "destination": destination,
+        }
+
     local_day = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
     idempotency_key = local_day
     today = _batch_by_idempotency(
