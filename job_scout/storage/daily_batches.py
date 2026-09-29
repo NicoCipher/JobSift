@@ -6,8 +6,10 @@ import csv
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
@@ -133,7 +135,8 @@ class DailyBatchStore:
     def _digest(candidates):
         return digest([(v.job.id, v.evidence_sha256) for v in candidates])
 
-    def _load(self, c, batch_id):
+    @staticmethod
+    def _load(c, batch_id):
         row = c.execute("SELECT * FROM daily_batches WHERE batch_id=?", (batch_id,)).fetchone()
         if row is None:
             raise BatchConflict("batch not found")
@@ -165,16 +168,31 @@ class DailyBatchStore:
         """Return the frozen rows for operator review, never mutable current postings."""
         with self.repository.connect() as c:
             result = self._load(c, batch_id)
-            rows = [
-                json.loads(row[0])
-                for row in c.execute(
-                    "SELECT export_row_json FROM daily_batch_items WHERE batch_id=? ORDER BY ordinal",
-                    (batch_id,),
-                )
-            ]
-            if len(rows) != result.selected_count:
-                raise BatchConflict("batch items do not match the selected count")
-            return rows
+            return self._frozen_rows(c, result)
+
+    @staticmethod
+    def _frozen_rows(c, result: DailyBatchResult) -> list[dict[str, str]]:
+        rows = [
+            json.loads(row[0])
+            for row in c.execute(
+                "SELECT export_row_json FROM daily_batch_items WHERE batch_id=? ORDER BY ordinal",
+                (result.batch_id,),
+            )
+        ]
+        if len(rows) != result.selected_count:
+            raise BatchConflict("batch items do not match the selected count")
+        return rows
+
+    @staticmethod
+    def review_readonly(
+        database: str, batch_id: str
+    ) -> tuple[DailyBatchResult, list[dict[str, str]]]:
+        """Read a prepared snapshot without creating, migrating, or locking its database."""
+        uri = Path(database).resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True)) as connection:
+            connection.row_factory = sqlite3.Row
+            result = DailyBatchStore._load(connection, batch_id)
+            return result, DailyBatchStore._frozen_rows(connection, result)
 
     def prepare(self, request, assemble):
         with self.repository.connect() as c:
