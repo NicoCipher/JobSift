@@ -1,0 +1,79 @@
+{
+  "brief_version": "operator-style-sourcing-brief-v1",
+  "candidate_residence": "Lagos, Nigeria",
+  "client_id": "taiwo_software_remote_us_v1",
+  "employment_type": {
+    "intent": "ignore",
+    "types": [],
+    "unknown_policy": "review"
+  },
+  "excluded_seniority": [],
+  "excluded_titles": [
+    "Engineering Manager",
+    "Software Engineering Manager",
+    "Director of Engineering",
+    "VP Engineering",
+    "Vice President of Engineering",
+    "Technical Program Manager",
+    "Product Manager",
+    "Solutions Engineer",
+    "Sales Engineer",
+    "Support Engineer"
+  ],
+  "management_roles": "avoid",
+  "max_required_experience_years": null,
+  "must_have_terms": [],
+  "notes": "Production brief for US-company software roles. Require explicit United States target-market evidence and explicit remote work. Work authorization and sponsorship eligibility are intentionally ignored.",
+  "avoid_terms": [
+    "hybrid",
+    "on-site",
+    "onsite"
+  ],
+  "preferred_terms": [
+    "software",
+    "backend",
+    "frontend",
+    "full stack",
+    "fullstack",
+    "application development",
+    "web development",
+    "mobile",
+    "platform"
+  ],
+  "target_market": {
+    "countries": [
+      "United States"
+    ],
+    "intent": "must",
+    "unknown_policy": "review"
+  },
+  "target_roles": [
+    "Software Engineer",
+    "Software Developer",
+    "Backend Engineer",
+    "Backend Developer",
+    "Frontend Engineer",
+    "Frontend Developer",
+    "Full Stack Engineer",
+    "Fullstack Engineer",
+    "Full Stack Developer",
+    "Application Developer",
+    "Web Developer",
+    "Mobile Engineer",
+    "iOS Engineer",
+    "Android Engineer",
+    "Platform Engineer"
+  ],
+  "work_eligibility": {
+    "countries": [],
+    "intent": "ignore",
+    "unknown_policy": "review"
+  },
+  "work_mode": {
+    "intent": "must",
+    "modes": [
+      "remote"
+    ],
+    "unknown_policy": "review"
+  }
+}
