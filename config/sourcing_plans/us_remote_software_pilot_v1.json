@@ -1,0 +1,19 @@
+{
+  "plan_version": "sourcing-plan-v1",
+  "plan_id": "us-remote-software-pilot-v1",
+  "search_brief": "../search_briefs/us_remote_software_engineering_v1.json",
+  "database": "../../jobs.sqlite3",
+  "csv": "../../exports/us-remote-software-pilot.csv",
+  "targets": [
+    {
+      "source": "ashby",
+      "company": "Render",
+      "board": "render"
+    },
+    {
+      "source": "greenhouse",
+      "company": "GitLab",
+      "board": "gitlab"
+    }
+  ]
+}
