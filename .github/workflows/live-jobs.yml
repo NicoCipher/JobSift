@@ -35,9 +35,9 @@ jobs:
     timeout-minutes: 30
     env:
       JOBSIFT_PLAN: config/sourcing_plans/taiwo_software_remote_us_pilot_v1.json
-      JOBSIFT_DATABASE: ${{ runner.temp }}/jobsift.sqlite3
-      JOBSIFT_CSV: ${{ runner.temp }}/latest-sourcing.csv
-      JOBSIFT_REPORTS_DIR: ${{ runner.temp }}/runs
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      JOBSIFT_CSV: /tmp/latest-sourcing.csv
+      JOBSIFT_REPORTS_DIR: /tmp/jobsift-runs
       JOBSIFT_TIMEZONE: Africa/Lagos
       JOBSIFT_ALLOW_PARTIAL: "false"
       JOBSIFT_RUN_ONCE: "true"
