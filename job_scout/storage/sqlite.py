@@ -12,6 +12,34 @@ from uuid import NAMESPACE_URL, uuid5
 from job_scout.dedupe.resolver import delivery_keys, representative_key
 from job_scout.domain.models import Job, JobLifecycle, JobMatch
 
+class CompatibleRow:
+    """Tuple-like row with sqlite3.Row-style named access across SQLite drivers."""
+
+    def __init__(self, cursor, values) -> None:
+        self._values = tuple(values)
+        self._index = {
+            column[0]: index for index, column in enumerate(cursor.description or ())
+        }
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self._values[self._index[key]]
+        return self._values[key]
+
+    def __iter__(self):
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def keys(self):
+        return self._index.keys()
+
+
+def compatible_row_factory(cursor, values) -> CompatibleRow:
+    return CompatibleRow(cursor, values)
+
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS jobs (
@@ -152,7 +180,7 @@ class SQLiteRepository:
                 connection.pull()
             else:
                 connection = sqlite3.connect(self.path)
-            connection.row_factory = sqlite3.Row
+            connection.row_factory = compatible_row_factory
             connection.execute("PRAGMA foreign_keys = ON")
             yield connection
             connection.commit()
