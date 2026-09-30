@@ -132,7 +132,7 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
     def should_not_source(*args, **kwargs):
         raise AssertionError("sourcing must not run while a batch awaits release")
 
-    monkeypatch.setattr(live_runner, "run_sourcing_plan", should_not_source)
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", should_not_source)
 
     result = live_runner.run_once(config)
 
@@ -334,7 +334,7 @@ def test_release_mode_never_sources_without_prepared_batch(tmp_path, monkeypatch
     def should_not_source(*args, **kwargs):
         raise AssertionError("release mode must not source a replacement batch")
 
-    monkeypatch.setattr(live_runner, "run_sourcing_plan", should_not_source)
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", should_not_source)
 
     result = live_runner.run_once(config)
 
@@ -380,7 +380,7 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     def should_not_source(*args, **kwargs):
         raise AssertionError("discard mode must not source a replacement batch")
 
-    monkeypatch.setattr(live_runner, "run_sourcing_plan", should_not_source)
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", should_not_source)
 
     result = live_runner.run_once(config)
 
@@ -458,10 +458,16 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         ),
     )
     report = SimpleNamespace(
+        run_id="inventory-run-1",
         status="success",
         started_at=datetime(2026, 9, 30, 9, 0, tzinfo=UTC),
         completed_at=datetime(2026, 9, 30, 9, 1, tzinfo=UTC),
         targets=[],
+    )
+    evaluation = SimpleNamespace(
+        evaluated_at=report.completed_at,
+        total_matched=1,
+        total_rejected=0,
     )
 
     monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
@@ -471,8 +477,15 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
     monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
     monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
     monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
-    monkeypatch.setattr(live_runner, "run_sourcing_plan", lambda *_, **__: report)
-    monkeypatch.setattr(live_runner, "_candidate_job_ids", lambda *_, **__: ("job-1",))
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", lambda *_, **__: report)
+    monkeypatch.setattr(
+        live_runner, "evaluate_inventory_run", lambda *_, **__: evaluation
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "InventoryRunStore",
+        lambda _: SimpleNamespace(job_ids=lambda run_id: ("job-1",)),
+    )
     monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
     monkeypatch.setattr(live_runner, "prepare_daily_batch", lambda **_: object())
     monkeypatch.setattr(
@@ -483,7 +496,7 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
     monkeypatch.setattr(
         live_runner,
         "_batch_payload",
-        lambda store, batch, *, action, sourcing=None, retention=None: {
+        lambda store, batch, *, action, sourcing=None, evaluation=None, retention=None: {
             "action": action,
             "retention": retention,
         },
