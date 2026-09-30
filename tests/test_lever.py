@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
@@ -89,6 +90,12 @@ def test_global_api_host_identity_and_urls() -> None:
     assert str(job.job_url) == "https://jobs.lever.co/acme/provider-1"
     assert str(job.canonical_url) == "https://jobs.lever.co/acme/provider-1"
     assert str(job.apply_url) == "https://jobs.lever.co/acme/provider-1/apply"
+    assert job.posted_at == datetime.fromtimestamp(1710000000000 / 1000, tz=UTC)
+
+
+def test_invalid_lever_created_at_keeps_posted_at_unknown() -> None:
+    result = collector_for([response([raw_job(createdAt="not-a-timestamp")])]).collect(target())
+    assert result.jobs[0].posted_at is None
 
 
 def test_eu_host_and_instance_site_identity_are_distinct() -> None:
@@ -234,7 +241,8 @@ def test_locations_country_department_and_timestamps_are_conservative() -> None:
     assert not job.eligible_countries and job.country is None
     assert job.department == "Support"
     assert job.raw_metadata["team"] == "Customer Engineering"
-    assert job.posted_at is None and job.updated_at is None
+    assert job.posted_at == datetime.fromtimestamp(1710000000000 / 1000, tz=UTC)
+    assert job.updated_at is None
     assert job.raw_metadata["createdAt"] == 1710000000000
     assert "description" not in job.raw_metadata
 

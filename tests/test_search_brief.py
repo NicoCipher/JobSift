@@ -9,6 +9,7 @@ from job_scout.domain.models import (
     RuleIntent,
     SearchBrief,
     TargetMarketRule,
+    UnknownEligibilityPolicy,
     WorkEligibilityRule,
     WorkModeRule,
 )
@@ -50,6 +51,11 @@ def _brief(**changes) -> SearchBrief:
     }
     data.update(changes)
     return SearchBrief(**data)
+
+
+def test_posting_freshness_defaults_to_disabled_for_legacy_briefs() -> None:
+    brief = _brief()
+    assert brief.posting_freshness.max_age_hours is None
 
 
 def test_delivery_policy_defaults_to_one_job_per_employer_without_inventing_cooldown() -> None:
@@ -180,6 +186,12 @@ def test_deterministic_explanations_and_version_are_present() -> None:
         "preferred skill matched: Linux",
     ]
     assert result.matcher_version == MATCHER_VERSION == "deterministic-v5"
+
+
+def test_production_software_brief_requires_24_hour_posting_age() -> None:
+    brief = load_search_brief("config/search_briefs/taiwo_software_remote_us_v1.json")
+    assert brief.posting_freshness.max_age_hours == 24
+    assert brief.posting_freshness.unknown_policy is UnknownEligibilityPolicy.REJECT
 
 
 def test_old_saved_profile_has_safe_explicit_compatibility_migration() -> None:

@@ -1,7 +1,7 @@
 import csv
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -120,6 +120,47 @@ def test_quota(repo, tmp_path, quota, supply, selected, shortfall):
     delivered = finalize(repo, result)
     assert delivered.status == "delivered"
     assert len(rows(tmp_path / "out.csv")) == selected
+
+
+def test_batch_freshness_gate_suppresses_stale_unknown_and_future_postings(repo, tmp_path):
+    jobs = [
+        posting(1, posted_at=NOW - timedelta(hours=23)),
+        posting(2, posted_at=NOW - timedelta(hours=25)),
+        posting(3, posted_at=None),
+        posting(4, posted_at=NOW + timedelta(hours=2)),
+    ]
+    seed(repo, jobs)
+    req = request(
+        repo,
+        tmp_path / "out.csv",
+        jobs,
+        quota=4,
+        max_posting_age_hours=24,
+        unknown_posting_age_policy="reject",
+        freshness_evaluated_at=NOW,
+    )
+
+    result = prepare(repo, req)
+
+    assert result.selected_count == 1
+    assert result.shortfall == 3
+    assert result.counts.stale_posting_suppressed_groups == 1
+    assert result.counts.unknown_age_suppressed_groups == 1
+    assert result.counts.invalid_time_suppressed_groups == 1
+    assert result.items[0].representative_job_id == jobs[0].id
+
+    with repo.connect() as connection:
+        dispositions = {
+            row["job_id"]: row["disposition"]
+            for row in connection.execute(
+                "SELECT job_id,disposition FROM daily_batch_candidates WHERE batch_id=?",
+                (result.batch_id,),
+            ).fetchall()
+        }
+    assert dispositions[jobs[0].id] == "selected_representative"
+    assert dispositions[jobs[1].id] == "stale_posting"
+    assert dispositions[jobs[2].id] == "posting_age_unknown"
+    assert dispositions[jobs[3].id] == "posting_time_invalid"
 
 
 def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):

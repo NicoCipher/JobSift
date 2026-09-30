@@ -96,6 +96,9 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
             fresh_eligible_employers=2,
             company_cap_suppressed_groups=0,
             employer_cooldown_suppressed_groups=0,
+            stale_posting_suppressed_groups=0,
+            unknown_age_suppressed_groups=0,
+            invalid_time_suppressed_groups=0,
         ),
     )
     store = SimpleNamespace(
@@ -265,7 +268,10 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         run_once=True,
         validation_only=True,
     )
-    repository = SimpleNamespace(remote_url="")
+    repository = SimpleNamespace(
+        remote_url="",
+        prune_stale_inventory=lambda **_: {"deleted_jobs": 0, "compacted_jobs": 0},
+    )
     store = SimpleNamespace(evidence_digest=lambda *_: "a" * 64)
     plan = SimpleNamespace(plan_id="pilot")
     brief = SimpleNamespace(
@@ -273,6 +279,10 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         delivery_policy=SimpleNamespace(
             max_jobs_per_employer_per_batch=1,
             employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(
+            max_age_hours=24,
+            unknown_policy="reject",
         ),
     )
     report = SimpleNamespace(
@@ -301,8 +311,14 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
     monkeypatch.setattr(
         live_runner,
         "_batch_payload",
-        lambda store, batch, *, action, sourcing=None: {"action": action},
+        lambda store, batch, *, action, sourcing=None, retention=None: {
+            "action": action,
+            "retention": retention,
+        },
     )
 
-    assert live_runner.run_once(config) == {"action": "validated"}
+    assert live_runner.run_once(config) == {
+        "action": "validated",
+        "retention": {"deleted_jobs": 0, "compacted_jobs": 0},
+    }
 

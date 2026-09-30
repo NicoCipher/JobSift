@@ -1,0 +1,100 @@
+# Production throughput and freshness SLA
+
+JobSift's production goal is not a small curated pilot. The system is being built
+to sustain high-volume sourcing while keeping job quality and evidence explicit.
+
+## Throughput target
+
+- Minimum target: **150 deliverable jobs per day**.
+- Weekly target: **1,050+ deliverable jobs per rolling 7 days**.
+- These are delivery targets, not raw ATS posting counts.
+- Capacity is not considered proven until a production-like benchmark sustains the
+  target for 7 consecutive days without weakening client rules.
+
+A job contributes to the throughput target only when it passes the client's full
+SearchBrief, freshness rule, dedupe/history rules, and employer-delivery policy.
+
+## Freshness
+
+For the current remote-US software client:
+
+- a posting must have trustworthy posting-time evidence;
+- the posting must be no more than **24 hours old at evaluation time**;
+- unknown posting age fails closed and is not automatically deliverable;
+- sorting newer jobs first is not a substitute for the freshness gate.
+
+Provider evidence currently used:
+
+- Greenhouse: `first_published`;
+- Ashby: `publishedAt`;
+- Lever: public `createdAt` Unix epoch milliseconds;
+- Workday: normalized CXS posting-date evidence.
+
+## Active inventory retention
+
+Full active posting payloads are retained for at most **72 hours**.
+
+After the retention window:
+
+- stale, undelivered jobs are deleted from active storage;
+- large descriptions, HTML and raw provider metadata are stripped from records
+  that must remain because they were delivered or are part of immutable batch
+  history;
+- a minimal identity ledger may remain for duplicate prevention, delivery history
+  and auditability;
+- detailed candidate rows for old delivered batches expire while batch summary
+  counts and selected rows remain.
+
+The minimal ledger is intentionally not active job inventory. Removing it would
+allow old delivered jobs to re-enter later as false "new" opportunities.
+
+## Source scale
+
+The historical target universe contains 2,287 supported ATS targets. The last full
+health validation (2026-09-09) classified 2,044 as active and observed roughly
+235,622 raw current posting records.
+
+That is source-breadth evidence, not proof of 150 fresh client matches per day.
+Targets may be non-US employers, may have no relevant software role, or may have
+no posting younger than 24 hours.
+
+Production source promotion therefore needs separate employer/company evidence and
+live provider health.
+
+## Collection architecture for scale
+
+The current sequential seven-employer workflow is a smoke test, not the final
+throughput architecture.
+
+At scale:
+
+1. maintain a versioned registry of production-approved source targets;
+2. split targets into deterministic provider-aware shards;
+3. collect shards in parallel without writing to Turso from every worker;
+4. upload normalized shard artifacts;
+5. fan in to one aggregation job;
+6. persist/dedupe/match through one authoritative writer;
+7. apply the 24-hour freshness gate and client delivery policies;
+8. freeze/release the client batch through the existing delivery journal.
+
+This avoids concurrent Turso Sync writers and prevents a single 2,000-target
+sequential GitHub Actions job from becoming the bottleneck.
+
+## Metrics required on every production-scale run
+
+At minimum record:
+
+- source targets attempted/succeeded/failed;
+- raw postings received;
+- postings with trustworthy age evidence;
+- postings <=24h old;
+- full SearchBrief matches;
+- distinct eligible employers;
+- practical duplicates suppressed;
+- employer-policy suppressions;
+- selected/delivered count;
+- shortfall;
+- p50/p95 source and total runtime.
+
+A run with 150 rows is not successful if the rows are old, duplicated, or produced
+by weakening the client's requirements.

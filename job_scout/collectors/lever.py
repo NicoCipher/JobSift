@@ -7,6 +7,7 @@ import json
 import re
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -296,11 +297,26 @@ class LeverCollector:
             employment_type=employment_type,
             department=item.categories.department,
             offices=location_values,
-            posted_at=None,
+            posted_at=self._created_at(item.createdAt),
             updated_at=None,
             content_fingerprint=fingerprint,
             raw_metadata=raw_metadata,
         )
+
+    @staticmethod
+    def _created_at(value: Any) -> datetime | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, str):
+            if not value.isdigit():
+                return None
+            value = int(value)
+        if not isinstance(value, (int, float)):
+            return None
+        # Lever's public postings contract exposes createdAt as Unix epoch milliseconds.
+        if value < 946684800000 or value > 4102444800000:
+            return None
+        return datetime.fromtimestamp(value / 1000, tz=UTC)
 
     @staticmethod
     def _provider_id(value: Any) -> str:
