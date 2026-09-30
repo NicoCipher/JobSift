@@ -42,42 +42,53 @@ No test row is written during registration.
 
 ## Phone-friendly registration
 
-Use **Actions -> Register Client Sheet -> Run workflow**.
+This repository is public, so client Sheet URLs, spreadsheet IDs, client IDs and
+column mappings must **not** be passed as `workflow_dispatch` inputs. GitHub
+Actions run metadata is not a private onboarding store.
 
-Required inputs:
+For phone-only onboarding, use the private repository secret
+`JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON`.
 
-- `client_id`
-- `destination_id` such as `primary-jobs`
-- display name
-- Google Sheet URL
-- exact tab name
-- a JSON mapping
-
-Example:
+In **Settings -> Secrets and variables -> Actions -> Secrets**, set that secret to
+one JSON object:
 
 ```json
 {
-  "Job Link": "URL",
-  "Job Title": "Role",
-  "Company Name": "Company",
-  "Status": "Application Status"
+  "client_id": "acme-client",
+  "destination_id": "primary-jobs",
+  "display_name": "ACME Jobs",
+  "spreadsheet": "https://docs.google.com/spreadsheets/d/...",
+  "tab": "Jobs",
+  "column_mapping": {
+    "Job Link": "URL",
+    "Job Title": "Role",
+    "Company Name": "Company",
+    "Status": "Application Status"
+  }
 }
 ```
 
-Only `Job Link` is mandatory. Other supported fields are:
+Then run **Actions -> Register Client Sheet -> Run workflow**. The workflow has no
+client-data inputs. It writes the secret payload to a temporary runner file,
+registers the destination, suppresses registration details from the logs, and
+prints only a success message.
 
-- Job Title
-- Company Name
-- Job Link
-- Job Description
-- Job Platform
-- Status
-- Batch ID
-- Batch Prepared At
-- Job ID
+After a successful registration, delete or replace
+`JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON`. The persistent destination record is
+already stored in Turso; the onboarding secret is not needed for delivery.
 
-The workflow uses the existing Google service-account and Turso secrets. It stores
-the destination in Turso; it does not put client Sheet URLs into repository code.
+The client still shares the workbook with the service account as Editor:
+
+`jobsift-sheets-publisher@jobsift-510120.iam.gserviceaccount.com`
+
+For trusted local/admin environments, the same private payload can be used with:
+
+```bash
+job-scout destination register-google-sheet-file \
+  --database jobs.sqlite3 \
+  --registration-file /private/path/client-sheet.json
+```
+
 
 ## Arbitrary client layouts
 
@@ -103,6 +114,16 @@ During uncertain-append recovery, edits to unmapped columns are ignored. A mappe
 `Status` column is also intentionally mutable. Changes to headers, row structure,
 JobSift-owned mapped values, the registered tab, or destination configuration fail
 closed and require reconciliation.
+
+## Physical worksheet ownership
+
+A Google worksheet identified by `spreadsheet_id + sheetId` can belong to only
+one JobSift destination. Registration fails if another client or another logical
+destination already owns that physical worksheet.
+
+This is a database-level invariant in addition to an application check. It
+prevents a configuration mistake from routing two clients through the same
+worksheet.
 
 ## Stable logical identity
 
