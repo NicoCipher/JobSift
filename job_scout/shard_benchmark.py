@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -54,7 +55,7 @@ class BenchmarkEvaluationMetrics(BaseModel):
 
     run_id: str
     client_id: str
-    evaluated_at: str
+    evaluated_at: datetime
     total_evaluated: int = Field(ge=0)
     semantic_matches_before_freshness: int = Field(ge=0)
     freshness_eligible_matches: int = Field(ge=0)
@@ -251,7 +252,7 @@ def run_benchmark_fan_in(
         evaluation = BenchmarkEvaluationMetrics(
             run_id=matcher_evaluation.run_id,
             client_id=matcher_evaluation.client_id,
-            evaluated_at=matcher_evaluation.evaluated_at.isoformat(),
+            evaluated_at=matcher_evaluation.evaluated_at,
             total_evaluated=matcher_evaluation.total_evaluated,
             semantic_matches_before_freshness=matcher_evaluation.total_matched,
             freshness_eligible_matches=fresh_matches,
