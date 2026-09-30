@@ -1,0 +1,51 @@
+{
+  "plan_version": "sourcing-plan-v1",
+  "plan_id": "taiwo-software-remote-us-v2",
+  "search_brief": "../search_briefs/taiwo_software_remote_us_v1.json",
+  "database": "../../runtime/jobs.sqlite3",
+  "csv": "../../exports/taiwo_software_remote_us.csv",
+  "targets": [
+    {
+      "source": "greenhouse",
+      "company": "GitLab",
+      "board": "gitlab",
+      "employer_id": "gitlab"
+    },
+    {
+      "source": "greenhouse",
+      "company": "Reddit",
+      "board": "reddit",
+      "employer_id": "reddit"
+    },
+    {
+      "source": "ashby",
+      "company": "Render",
+      "board": "render",
+      "employer_id": "render"
+    },
+    {
+      "source": "greenhouse",
+      "company": "LaunchDarkly",
+      "board": "launchdarkly",
+      "employer_id": "launchdarkly"
+    },
+    {
+      "source": "greenhouse",
+      "company": "Human Interest",
+      "board": "humaninterest",
+      "employer_id": "human-interest"
+    },
+    {
+      "source": "greenhouse",
+      "company": "Life360",
+      "board": "life360",
+      "employer_id": "life360"
+    },
+    {
+      "source": "ashby",
+      "company": "Ramp",
+      "board": "ramp",
+      "employer_id": "ramp"
+    }
+  ]
+}
