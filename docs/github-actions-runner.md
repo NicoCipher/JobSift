@@ -9,6 +9,11 @@ SQLite-compatible state. No always-on server or persistent Render disk is requir
 - Scheduled runs always use `JOBSIFT_AUTO_RELEASE=false`.
 - A scheduled run may source jobs and freeze up to 5 fresh links, but it cannot
   publish them to Google Sheets.
+- Live batches apply the client delivery policy after matching. The current
+  production policy allows at most one job per employer per batch. Extra matching
+  roles remain persisted for other clients or later policy-eligible batches.
+- If fewer distinct eligible employers exist than the requested quota, the run
+  returns an explicit shortfall instead of padding with repeated companies.
 - An unresolved prepared or failed batch blocks replacement sourcing.
 - To publish the exact frozen batch, manually run the workflow with
   `release=true`.
