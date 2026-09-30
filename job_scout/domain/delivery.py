@@ -60,7 +60,8 @@ class SheetDeliveryContract(DeliveryModel):
             character.isalnum() or character in "._-" for character in value
         ):
             raise ValueError(
-                "destination and campaign IDs may contain only letters, numbers, dots, underscores, or hyphens"
+                "destination and campaign IDs may contain only letters, numbers, dots, "
+                "underscores, or hyphens"
             )
         return value
 
