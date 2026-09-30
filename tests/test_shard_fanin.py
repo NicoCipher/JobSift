@@ -267,3 +267,52 @@ def test_fan_in_marks_complete_artifact_set_partial_when_one_target_is_partial(
     assert report.metrics.targets_partial == 1
     assert report.metrics.targets_failed == 0
     assert InventoryRunStore(repository).get(report.run_id).status == "partial"
+
+
+def test_fan_in_resumes_running_receipt_after_persistence_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    original_upsert = repository.upsert_jobs
+
+    def fail_once(jobs) -> dict[str, object]:
+        raise RuntimeError("simulated persistence failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(repository, "upsert_jobs", fail_once)
+        with pytest.raises(RuntimeError, match="simulated persistence failure"):
+            persist_shard_artifacts(
+                repository=repository,
+                registry=registry,
+                manifest=manifest,
+                artifacts=artifacts,
+                now=lambda: PERSISTED,
+            )
+
+    with repository.connect() as connection:
+        row = connection.execute(
+            "SELECT run_id,status FROM inventory_runs ORDER BY run_id"
+        ).fetchone()
+    assert row is not None
+    assert row["status"] == "running"
+
+    monkeypatch.setattr(repository, "upsert_jobs", original_upsert)
+    resumed = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        now=lambda: PERSISTED,
+    )
+
+    assert resumed.replayed is False
+    assert resumed.run_id == row["run_id"]
+    assert resumed.status == "success"
+    assert InventoryRunStore(repository).get(resumed.run_id).status == "success"
