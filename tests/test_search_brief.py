@@ -220,6 +220,12 @@ def test_deterministic_explanations_and_version_are_present() -> None:
     assert result.matcher_version == MATCHER_VERSION == "deterministic-v6"
 
 
+def test_production_software_brief_requires_24_hour_posting_age() -> None:
+    brief = load_search_brief("config/search_briefs/taiwo_software_remote_us_v1.json")
+    assert brief.posting_freshness.max_age_hours == 24
+    assert brief.posting_freshness.unknown_policy is UnknownEligibilityPolicy.REJECT
+
+
 def test_old_saved_profile_has_safe_explicit_compatibility_migration() -> None:
     brief = load_search_brief(Path("config/clients/taiwo_olumide_nigeria.json"))
     assert brief.work_eligibility.intent is RuleIntent.MUST
