@@ -6,7 +6,12 @@ from datetime import UTC
 from pathlib import Path
 
 from job_scout.dedupe.resolver import representative_key
-from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest, DailyBatchResult
+from job_scout.domain.daily_batch import (
+    BatchConflict,
+    DailyBatchCounts,
+    DailyBatchRequest,
+    DailyBatchResult,
+)
 from job_scout.domain.models import MatchDecision, UnknownEligibilityPolicy
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import (
