@@ -108,11 +108,28 @@ class DeliveryDestinationStore:
             with self.repository.connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
                 existing = connection.execute(
-                    "SELECT client_id FROM delivery_destinations WHERE destination_id=?",
+                    "SELECT client_id,spreadsheet_id,worksheet_id "
+                    "FROM delivery_destinations WHERE destination_id=?",
                     (destination_id,),
                 ).fetchone()
                 if existing is not None and existing["client_id"] != client_id:
                     raise BatchConflict("destination identifier belongs to another client")
+                if (
+                    existing is not None
+                    and (
+                        existing["spreadsheet_id"] != spreadsheet_id
+                        or existing["worksheet_id"] != worksheet_id
+                    )
+                    and connection.execute(
+                        "SELECT 1 FROM delivery_campaigns "
+                        "WHERE destination_id=? AND status='active' LIMIT 1",
+                        (destination_id,),
+                    ).fetchone()
+                    is not None
+                ):
+                    raise BatchConflict(
+                        "pause or complete the active campaign before moving its destination"
+                    )
                 connection.execute(
                     "INSERT INTO delivery_destinations "
                     "(destination_id,client_id,spreadsheet_id,worksheet_id,worksheet_name,"
