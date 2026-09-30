@@ -52,6 +52,11 @@ def _brief(**changes) -> SearchBrief:
     return SearchBrief(**data)
 
 
+def test_posting_freshness_defaults_to_disabled_for_legacy_briefs() -> None:
+    brief = _brief()
+    assert brief.posting_freshness.max_age_hours is None
+
+
 def test_delivery_policy_defaults_to_one_job_per_employer_without_inventing_cooldown() -> None:
     brief = _brief()
     assert brief.delivery_policy.max_jobs_per_employer_per_batch == 1
@@ -179,7 +184,7 @@ def test_deterministic_explanations_and_version_are_present() -> None:
         "target role matched: Support Engineer",
         "preferred skill matched: Linux",
     ]
-    assert result.matcher_version == MATCHER_VERSION == "deterministic-v5"
+    assert result.matcher_version == MATCHER_VERSION == "deterministic-v6"
 
 
 def test_old_saved_profile_has_safe_explicit_compatibility_migration() -> None:
