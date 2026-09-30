@@ -241,7 +241,8 @@ def test_locations_country_department_and_timestamps_are_conservative() -> None:
     assert not job.eligible_countries and job.country is None
     assert job.department == "Support"
     assert job.raw_metadata["team"] == "Customer Engineering"
-    assert job.posted_at is None and job.updated_at is None
+    assert job.posted_at == datetime.fromtimestamp(1710000000000 / 1000, tz=UTC)
+    assert job.updated_at is None
     assert job.raw_metadata["createdAt"] == 1710000000000
     assert "description" not in job.raw_metadata
 
