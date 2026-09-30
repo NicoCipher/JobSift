@@ -34,7 +34,7 @@ class ProductionTarget(BaseModel):
     health_inventory_exact: bool | None = None
 
     @model_validator(mode="after")
-    def verify_identity(self) -> "ProductionTarget":
+    def verify_identity(self) -> ProductionTarget:
         if self.source in {"greenhouse", "ashby"}:
             if set(self.coordinates) != {"board"}:
                 raise ValueError(f"{self.source} target requires board coordinates")
@@ -66,7 +66,7 @@ class ProductionSourceRegistry(BaseModel):
     target_counts_by_source: dict[str, int]
     targets: list[ProductionTarget]
     @model_validator(mode="after")
-    def verify_registry(self) -> "ProductionSourceRegistry":
+    def verify_registry(self) -> ProductionSourceRegistry:
         identities = [target.target_identity for target in self.targets]
         if len(identities) != len(set(identities)):
             raise ValueError("production registry contains duplicate target identities")
@@ -98,7 +98,7 @@ class CollectionShardManifest(BaseModel):
     manifest_sha256: str
 
     @model_validator(mode="after")
-    def verify_manifest(self) -> "CollectionShardManifest":
+    def verify_manifest(self) -> CollectionShardManifest:
         shard_ids = [shard.shard_id for shard in self.shards]
         if len(shard_ids) != len(set(shard_ids)):
             raise ValueError("collection shard ids must be unique")
@@ -142,7 +142,7 @@ def build_production_registry(
     records = universe.get("target_records")
     results = health.get("results")
     if not isinstance(records, list) or not isinstance(results, list):
-        raise ValueError("canonical universe and health results are required")
+        raise TypeError("canonical universe and health results are required")
 
     by_identity = {}
     for record in records:
