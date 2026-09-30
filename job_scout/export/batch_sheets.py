@@ -192,7 +192,9 @@ class BatchSheetPublisher:
         if any(len(row) > len(SHEET_COLUMNS) for row in values[1:]):
             raise BatchConflict("Google Sheets rows exceed the delivery contract")
         if any(not any(row) for row in values[1:]):
-            raise BatchConflict("Google Sheets contains an internal blank row; remove it before release")
+            raise BatchConflict(
+                "Google Sheets contains an internal blank row; remove it before release"
+            )
         return [row + [""] * (len(SHEET_COLUMNS) - len(row)) for row in values]
 
     @staticmethod
