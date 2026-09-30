@@ -10,6 +10,7 @@ from typing import ClassVar
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from job_scout.domain.models import EmploymentType, RemoteStatus
+from job_scout.normalization.location import CITY_STATE_PATTERN, US_STATE_CODES
 
 TRACKING_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 
@@ -72,6 +73,15 @@ def normalize_title(value: str) -> str:
     return " ".join(value.split())
 
 
+def _explicit_us_city_state(value: str | None) -> bool:
+    match = CITY_STATE_PATTERN.fullmatch((value or "").strip())
+    return bool(
+        match
+        and match.group(2).upper() in US_STATE_CODES
+        and match.group(1).strip().casefold() not in {"remote", "hybrid", "onsite", "on-site"}
+    )
+
+
 def classify_remote(
     location: str | None,
     description: str | None,
@@ -80,7 +90,8 @@ def classify_remote(
 ) -> RemoteStatus:
     loc = (location or "").casefold()
     body = (description or "").casefold()
-    office_location_text = " ".join(office_locations).casefold()
+    office_location_values = tuple(office_locations)
+    office_location_text = " ".join(office_location_values).casefold()
     explicit_remote_offices = " ".join(
         name
         for name in office_names
@@ -90,12 +101,26 @@ def classify_remote(
             re.IGNORECASE,
         )
     ).casefold()
-    combined = f"{loc} {office_location_text} {explicit_remote_offices} {body}"
+    structured = f"{loc} {office_location_text} {explicit_remote_offices}"
+    combined = f"{structured} {body}"
+
     if re.search(r"\b(hybrid|days? (?:a|per) week (?:in|on)[ -]?office)\b", combined):
         return RemoteStatus.HYBRID
     if re.search(r"\b(on[ -]?site|in[ -]?office)\b", combined):
         return RemoteStatus.ONSITE
-    if re.search(r"\bremote\b", combined):
+
+    # Provider location fields are stronger evidence than generic description text.
+    # A role explicitly located in a US city/state must not become "remote" merely
+    # because the body contains boilerplate such as "#LI-Remote" or mentions
+    # collaborating in a fully remote environment.
+    if _explicit_us_city_state(location):
+        return RemoteStatus.ONSITE
+    if not location and any(_explicit_us_city_state(value) for value in office_location_values):
+        return RemoteStatus.ONSITE
+
+    if re.search(r"\bremote\b", structured):
+        return RemoteStatus.REMOTE
+    if re.search(r"\bremote\b", body):
         return RemoteStatus.REMOTE
     return RemoteStatus.UNKNOWN
 
