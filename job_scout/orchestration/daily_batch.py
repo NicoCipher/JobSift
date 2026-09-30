@@ -16,7 +16,7 @@ from job_scout.domain.daily_batch import (
     DailyBatchRequest,
     DailyBatchResult,
 )
-from job_scout.domain.models import MatchDecision, UnknownEligibilityPolicy
+from job_scout.domain.models import MatchDecision
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import (
     BatchSheetPublisher,
