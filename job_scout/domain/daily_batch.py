@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from job_scout.domain.delivery import SheetDeliveryContract
 from job_scout.domain.models import UnknownEligibilityPolicy
 
 
@@ -21,6 +22,7 @@ class BatchModel(BaseModel):
 class DailyBatchRequest(BatchModel):
     client_id: str
     destination: str
+    sheet_delivery: SheetDeliveryContract | None = None
     idempotency_key: str
     requested_quota: int = Field(strict=True, ge=1)
     max_jobs_per_employer_per_batch: int | None = Field(default=None, ge=1, le=1000)
@@ -62,6 +64,8 @@ class DailyBatchRequest(BatchModel):
             raise ValueError("revision ID must not be blank")
         if self.max_posting_age_hours is not None and self.freshness_evaluated_at is None:
             raise ValueError("posting freshness requires an explicit evaluation timestamp")
+        if self.sheet_delivery is not None and self.sheet_delivery.client_id != self.client_id:
+            raise ValueError("sheet delivery contract must belong to the request client")
         return self
 
 
