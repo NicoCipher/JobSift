@@ -11,8 +11,8 @@ from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.lever import LeverCollector
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.delivery_destinations import (
-    ClientSheetDestinationStore,
     DELIVERY_FIELDS,
+    ClientSheetDestinationStore,
 )
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.export.batch_sheets import GoogleSheetsGateway
