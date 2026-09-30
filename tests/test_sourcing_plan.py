@@ -5,6 +5,7 @@ import json
 import sqlite3
 import sys
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,8 @@ from job_scout.sourcing_plan import (
     load_sourcing_plan,
     run_sourcing_plan,
 )
+from job_scout.storage.daily_batches import DailyBatchStore
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -310,6 +313,58 @@ def test_shared_inventory_collects_once_then_evaluates_multiple_clients(tmp_path
             == 4
         )
         assert connection.execute("SELECT COUNT(*) FROM exports").fetchone()[0] == 0
+
+
+def test_prune_then_evaluate_preserves_authoritative_match_for_retained_stale_inventory(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteRepository(tmp_path / "shared.sqlite3")
+    now = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+    target = plan(tmp_path, [targets()[0]]).targets[0].source_target()
+    old = now - timedelta(hours=80)
+    posting = fixture_job("greenhouse", target).model_copy(
+        update={
+            "posted_at": old,
+            "discovered_at": old,
+            "last_seen_at": old,
+        }
+    )
+    repository.upsert_job(posting)
+    repository.mark_exported(
+        posting.id,
+        "other-client",
+        "client-sheet://other-destination",
+    )
+
+    inventory = InventoryRunStore(repository)
+    run_id = "inventory-retention-regression"
+    inventory.create(run_id=run_id, plan_id="mixed-plan", started_at=now)
+    inventory.add_jobs(
+        run_id=run_id,
+        target_identity="greenhouse:green",
+        jobs=[posting],
+    )
+    inventory.finish(run_id=run_id, status="success", completed_at=now)
+
+    retention = repository.prune_stale_inventory(retention_hours=72, now=now)
+    assert retention["compacted_jobs"] == 1
+
+    brief = SearchBrief(
+        client_id="client-one",
+        target_roles=["Support Engineer"],
+        management_roles=RuleIntent.IGNORE,
+    )
+    evaluation = evaluate_inventory_run(
+        repository=repository,
+        run_id=run_id,
+        brief=brief,
+        evaluated_at=now,
+    )
+
+    candidate_ids = inventory.job_ids(run_id)
+    assert candidate_ids == (posting.id,)
+    assert evaluation.total_evaluated == 1
+    assert DailyBatchStore(repository).evidence_digest("client-one", candidate_ids)
 
 
 def test_failure_is_isolated_and_reported_without_closure_claim(tmp_path: Path) -> None:
