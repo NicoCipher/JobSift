@@ -44,7 +44,7 @@ def header_fingerprint(headers: tuple[str, ...]) -> str:
 
 
 def normalize_header_row(values: list[str]) -> tuple[str, ...]:
-    headers = [str(value).strip() for value in values]
+    headers = [str(value) for value in values]
     while headers and headers[-1] == "":
         headers.pop()
     if not headers:
