@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from job_scout.domain.models import Job, MatchDecision
+from job_scout.domain.models import Job, MatchDecision, SearchBrief
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -20,10 +20,11 @@ from job_scout.production_registry import (
     load_production_registry,
     sha256_json,
 )
+from job_scout.posting_freshness import posting_freshness_disposition
 from job_scout.search_brief import load_search_brief
 from job_scout.shard_collection import ShardCollectionArtifact, collect_shard
 from job_scout.shard_fanin import FanInReport, persist_shard_artifacts
-from job_scout.sourcing_plan import InventoryEvaluationReport, evaluate_inventory_run
+from job_scout.sourcing_plan import evaluate_inventory_run
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -48,12 +49,27 @@ class BenchmarkPlan(BaseModel):
     matrix: dict[str, list[dict[str, str]]]
 
 
+class BenchmarkEvaluationMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    client_id: str
+    evaluated_at: str
+    total_evaluated: int = Field(ge=0)
+    semantic_matches_before_freshness: int = Field(ge=0)
+    freshness_eligible_matches: int = Field(ge=0)
+    matcher_non_matches: int = Field(ge=0)
+    stale_posting_suppressions: int = Field(ge=0)
+    unknown_age_suppressions: int = Field(ge=0)
+    invalid_time_suppressions: int = Field(ge=0)
+
+
 class BenchmarkReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     benchmark_version: Literal["bounded-shard-benchmark-v1"] = "bounded-shard-benchmark-v1"
     fan_in: FanInReport
-    evaluation: InventoryEvaluationReport | None
+    evaluation: BenchmarkEvaluationMetrics | None
     active_inventory_jobs: int = Field(ge=0)
     distinct_matched_employers: int = Field(ge=0)
     distinct_matched_delivery_groups: int = Field(ge=0)
@@ -158,11 +174,12 @@ def _matched_stats(
     repository: SQLiteRepository,
     *,
     run_id: str,
-    client_id: str,
-) -> tuple[int, int]:
+    brief: SearchBrief,
+    evaluated_at,
+) -> tuple[int, int, int, Counter[str]]:
     active_ids = InventoryRunStore(repository).active_job_ids(run_id)
     if not active_ids:
-        return 0, 0
+        return 0, 0, 0, Counter()
     placeholders = ",".join("?" for _ in active_ids)
     with repository.connect() as connection:
         rows = connection.execute(
@@ -175,19 +192,30 @@ def _matched_stats(
             (
                 run_id,
                 *active_ids,
-                client_id,
+                brief.client_id,
                 MatchDecision.STRONG_MATCH.value,
                 MatchDecision.POSSIBLE_MATCH.value,
             ),
         ).fetchall()
     employers = set()
     groups = set()
+    freshness_suppressions: Counter[str] = Counter()
+    fresh_matches = 0
     for row in rows:
         job = Job.model_validate_json(row["payload_json"])
+        disposition = posting_freshness_disposition(
+            posted_at=job.posted_at,
+            max_age_hours=brief.posting_freshness.max_age_hours,
+            unknown_policy=brief.posting_freshness.unknown_policy,
+            evaluated_at=evaluated_at,
+        )
+        if disposition is not None:
+            freshness_suppressions[disposition] += 1
+            continue
+        fresh_matches += 1
         employers.add(job.employer_id or job.company.strip().casefold())
         groups.add(row["group_id"])
-    return len(employers), len(groups)
-
+    return fresh_matches, len(employers), len(groups), freshness_suppressions
 
 def run_benchmark_fan_in(
     *,
@@ -208,16 +236,29 @@ def run_benchmark_fan_in(
     group_count = 0
     if brief_path is not None and fan_in.status != "failure":
         brief = load_search_brief(brief_path)
-        evaluation = evaluate_inventory_run(
+        matcher_evaluation = evaluate_inventory_run(
             repository=repository,
             run_id=fan_in.run_id,
             brief=brief,
             evaluated_at=fan_in.collection_completed_at,
         )
-        employer_count, group_count = _matched_stats(
+        fresh_matches, employer_count, group_count, suppressions = _matched_stats(
             repository,
             run_id=fan_in.run_id,
-            client_id=brief.client_id,
+            brief=brief,
+            evaluated_at=matcher_evaluation.evaluated_at,
+        )
+        evaluation = BenchmarkEvaluationMetrics(
+            run_id=matcher_evaluation.run_id,
+            client_id=matcher_evaluation.client_id,
+            evaluated_at=matcher_evaluation.evaluated_at.isoformat(),
+            total_evaluated=matcher_evaluation.total_evaluated,
+            semantic_matches_before_freshness=matcher_evaluation.total_matched,
+            freshness_eligible_matches=fresh_matches,
+            matcher_non_matches=matcher_evaluation.total_rejected,
+            stale_posting_suppressions=suppressions["stale_posting"],
+            unknown_age_suppressions=suppressions["posting_age_unknown"],
+            invalid_time_suppressions=suppressions["posting_time_invalid"],
         )
     return BenchmarkReport(
         fan_in=fan_in,
