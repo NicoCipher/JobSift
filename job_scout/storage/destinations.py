@@ -4,12 +4,12 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 
+from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.delivery import (
     DeliveryCampaign,
     DeliveryDestination,
     SheetDeliveryContract,
 )
-from job_scout.domain.daily_batch import BatchConflict
 
 DESTINATION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS delivery_destinations (
