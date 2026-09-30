@@ -17,17 +17,21 @@ technical target identities are rejected before collection begins.
   "database": "../../jobs.sqlite3",
   "csv": "../../exports/jobs.csv",
   "targets": [
-    {"source": "greenhouse", "company": "Example", "board": "example"},
-    {"source": "ashby", "company": "Example", "board": "example"},
-    {"source": "workday", "company": "Example", "host": "example.wd1.myworkdayjobs.com", "tenant": "example", "site": "External"},
-    {"source": "lever", "company": "Example", "instance": "global", "site": "example"}
+    {"source": "greenhouse", "company": "Example", "employer_id": "example", "board": "example"},
+    {"source": "ashby", "company": "Example", "employer_id": "example", "board": "example"},
+    {"source": "workday", "company": "Example", "employer_id": "example", "host": "example.wd1.myworkdayjobs.com", "tenant": "example", "site": "External"},
+    {"source": "lever", "company": "Example", "employer_id": "example", "instance": "global", "site": "example"}
   ]
 }
 ```
 
 Technical target identities are `greenhouse:<board>`, `ashby:<board>`,
 `workday:<host>:<tenant>:<site>`, and `lever:<instance>:<site>`. Company is
-reporting evidence, not source identity. Targets run in JSON list order.
+reporting/display evidence, not source identity. `employer_id` is the stable
+business identity used by delivery diversification across ATS adapters; production
+plans should set it explicitly. It is intentionally separate from the technical
+target identity so the same employer can move ATS providers without becoming a
+new company to the delivery policy. Targets run in JSON list order.
 
 Run a plan from the repository root:
 
