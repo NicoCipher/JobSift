@@ -12,6 +12,7 @@ from hashlib import sha256
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.domain.daily_batch import DailyBatchRequest, DailyBatchResult
 from job_scout.export.batch_sheets import sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
@@ -54,14 +55,15 @@ class LiveRunnerConfig:
     database_path: Path
     csv_path: Path
     reports_dir: Path
-    spreadsheet_id: str
-    sheet_tab: str
+    spreadsheet_id: str | None
+    sheet_tab: str | None
     quota: int
     interval_seconds: int
     timezone: str
     auto_release: bool
     allow_partial: bool
     run_once: bool
+    destination_id: str | None = None
     discard_prepared: bool = False
     validation_only: bool = False
     inventory_retention_hours: int = 72
@@ -77,6 +79,14 @@ class LiveRunnerConfig:
             raise ValueError("release and discard modes cannot both be enabled")
         if validation_only and (auto_release or discard_prepared):
             raise ValueError("validation mode cannot release or discard production batches")
+        destination_id = os.getenv("JOBSIFT_DESTINATION_ID", "").strip() or None
+        spreadsheet_id = os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
+        sheet_tab = os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
+        if (destination_id is None or validation_only) and not (spreadsheet_id and sheet_tab):
+            raise ValueError(
+                "JOBSIFT_SHEET_ID and JOBSIFT_SHEET_TAB are required until a "
+                "production client destination is registered"
+            )
         return cls(
             plan_path=Path(
                 os.getenv(
@@ -87,8 +97,9 @@ class LiveRunnerConfig:
             database_path=Path(_required("JOBSIFT_DATABASE")),
             csv_path=Path(_required("JOBSIFT_CSV")),
             reports_dir=Path(os.getenv("JOBSIFT_REPORTS_DIR", "/var/data/runs")),
-            spreadsheet_id=_required("JOBSIFT_SHEET_ID"),
-            sheet_tab=_required("JOBSIFT_SHEET_TAB"),
+            spreadsheet_id=spreadsheet_id,
+            sheet_tab=sheet_tab,
+            destination_id=destination_id,
             quota=_positive_integer("JOBSIFT_BATCH_QUOTA", 5),
             interval_seconds=_positive_integer("JOBSIFT_INTERVAL_SECONDS", 86400),
             timezone=timezone,
@@ -202,6 +213,7 @@ def _batch_payload(
         "action": action,
         "batch_id": batch.batch_id,
         "batch_status": batch.status,
+        "destination_id": getattr(batch.request, "destination_id", None),
         "requested_quota": batch.request.requested_quota,
         "selected_count": batch.selected_count,
         "shortfall": batch.shortfall,
@@ -249,7 +261,15 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     if config.validation_only and repository.remote_url:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
-    destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
+    destination_record = None
+    if config.destination_id is not None and not config.validation_only:
+        destination_record = ClientSheetDestinationStore(repository).get(
+            brief.client_id, config.destination_id
+        )
+        destination = destination_record.logical_uri
+    else:
+        assert config.spreadsheet_id is not None and config.sheet_tab is not None
+        destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
 
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
@@ -338,6 +358,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     request = DailyBatchRequest(
         client_id=brief.client_id,
         destination=destination,
+        destination_id=(destination_record.destination_id if destination_record else None),
+        destination_config_sha256=(
+            destination_record.config_sha256 if destination_record else None
+        ),
         idempotency_key=idempotency_key,
         requested_quota=config.quota,
         max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,

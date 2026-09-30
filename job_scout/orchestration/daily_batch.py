@@ -6,11 +6,21 @@ from datetime import UTC
 from pathlib import Path
 
 from job_scout.dedupe.resolver import representative_key
-from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest, DailyBatchResult
+from job_scout.delivery_destinations import (
+    ClientSheetDestinationStore,
+    parse_logical_destination,
+)
+from job_scout.domain.daily_batch import (
+    BatchConflict,
+    DailyBatchCounts,
+    DailyBatchRequest,
+    DailyBatchResult,
+)
 from job_scout.domain.models import MatchDecision, UnknownEligibilityPolicy
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import (
     BatchSheetPublisher,
+    ClientSheetPublisher,
     GoogleSheetsGateway,
     SheetsGateway,
     parse_sheet_destination,
@@ -218,6 +228,12 @@ def prepare_daily_batch(
     destination = request.destination
     if destination.startswith("gsheet:"):
         parse_sheet_destination(destination)
+    elif destination.startswith("client-sheet:"):
+        destination_id = parse_logical_destination(destination)
+        if request.destination_id != destination_id:
+            raise ValueError("client destination ID does not match destination URI")
+        if request.destination_config_sha256 is None:
+            raise ValueError("client destination requires a frozen config hash")
     elif "://" in destination:
         raise ValueError("unsupported batch destination")
     else:
@@ -238,6 +254,20 @@ def finalize_daily_batch(
             publisher = BatchSheetPublisher(result, sheets_gateway or GoogleSheetsGateway())
             return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
         except OSError as error:
+            return store.fail(batch_id, error)
+    if result.request.destination.startswith("client-sheet:"):
+        try:
+            destination_id = parse_logical_destination(result.request.destination)
+            destination = ClientSheetDestinationStore(repository).get(
+                result.request.client_id, destination_id
+            )
+            publisher = ClientSheetPublisher(
+                result,
+                sheets_gateway or GoogleSheetsGateway(),
+                destination,
+            )
+            return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
+        except (BatchConflict, OSError, ValueError) as error:
             return store.fail(batch_id, error)
     path = Path(result.request.destination)
     try:
