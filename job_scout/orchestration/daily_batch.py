@@ -10,7 +10,12 @@ from job_scout.delivery_destinations import (
     ClientSheetDestinationStore,
     parse_logical_destination,
 )
-from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest, DailyBatchResult
+from job_scout.domain.daily_batch import (
+    BatchConflict,
+    DailyBatchCounts,
+    DailyBatchRequest,
+    DailyBatchResult,
+)
 from job_scout.domain.models import MatchDecision, UnknownEligibilityPolicy
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import (
@@ -262,7 +267,7 @@ def finalize_daily_batch(
                 destination,
             )
             return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
-        except OSError as error:
+        except (BatchConflict, OSError, ValueError) as error:
             return store.fail(batch_id, error)
     path = Path(result.request.destination)
     try:
