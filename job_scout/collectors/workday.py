@@ -190,6 +190,7 @@ class WorkdayCollector:
             status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
             jobs=jobs,
             errors=errors,
+            raw_postings_received=len(unique_paths),
         )
 
     def _configuration(self, target: SourceTarget) -> tuple[WorkdayTargetConfig | None, str | None]:
