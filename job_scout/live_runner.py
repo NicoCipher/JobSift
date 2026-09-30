@@ -379,15 +379,15 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             "source_failures": list(_source_failures(report)),
         }
 
+    retention = repository.prune_stale_inventory(
+        retention_hours=config.inventory_retention_hours
+    )
+
     evaluation = evaluate_inventory_run(
         repository=repository,
         run_id=report.run_id,
         brief=brief,
         evaluated_at=report.completed_at,
-    )
-
-    retention = repository.prune_stale_inventory(
-        retention_hours=config.inventory_retention_hours
     )
 
     candidate_ids = InventoryRunStore(repository).job_ids(report.run_id)
