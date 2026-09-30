@@ -164,6 +164,28 @@ class DailyBatchStore:
         with self.repository.connect() as c:
             return self._load(c, batch_id)
 
+    def discard_prepared(self, batch_id: str) -> DailyBatchResult:
+        """Delete only an unreleased prepared snapshot; never erase uncertain delivery state."""
+        with self.repository.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute(
+                "SELECT status,delivered_at,export_after_sha256 FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+            if row is None:
+                raise BatchConflict("batch not found")
+            if (
+                row["status"] != "prepared"
+                or row["delivered_at"] is not None
+                or row["export_after_sha256"] is not None
+            ):
+                raise BatchConflict("only an unreleased prepared batch can be discarded")
+            result = self._load(c, batch_id)
+            c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
+            c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
+            c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
+            return result
+
     def export_rows(self, batch_id: str) -> list[dict[str, str]]:
         """Return the frozen rows for operator review, never mutable current postings."""
         with self.repository.connect() as c:

@@ -62,11 +62,16 @@ class LiveRunnerConfig:
     auto_release: bool
     allow_partial: bool
     run_once: bool
+    discard_prepared: bool = False
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
         timezone = os.getenv("JOBSIFT_TIMEZONE", "Africa/Lagos").strip() or "Africa/Lagos"
         ZoneInfo(timezone)
+        auto_release = _boolean("JOBSIFT_AUTO_RELEASE")
+        discard_prepared = _boolean("JOBSIFT_DISCARD_PREPARED")
+        if auto_release and discard_prepared:
+            raise ValueError("release and discard modes cannot both be enabled")
         return cls(
             plan_path=Path(
                 os.getenv(
@@ -82,9 +87,10 @@ class LiveRunnerConfig:
             quota=_positive_integer("JOBSIFT_BATCH_QUOTA", 5),
             interval_seconds=_positive_integer("JOBSIFT_INTERVAL_SECONDS", 86400),
             timezone=timezone,
-            auto_release=_boolean("JOBSIFT_AUTO_RELEASE"),
+            auto_release=auto_release,
             allow_partial=_boolean("JOBSIFT_ALLOW_PARTIAL"),
             run_once=_boolean("JOBSIFT_RUN_ONCE"),
+            discard_prepared=discard_prepared,
         )
 
 
@@ -229,6 +235,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         repository, client_id=brief.client_id, destination=destination
     )
     if unresolved is not None:
+        if config.discard_prepared:
+            discarded = store.discard_prepared(unresolved.batch_id)
+            return {
+                "action": "discarded_prepared",
+                "batch_id": discarded.batch_id,
+                "selected_count": discarded.selected_count,
+                "destination": destination,
+            }
         if config.auto_release:
             unresolved = finalize_daily_batch(
                 repository=repository, batch_id=unresolved.batch_id
@@ -237,6 +251,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         else:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
+
+    if config.discard_prepared:
+        return {
+            "action": "nothing_to_discard",
+            "plan_id": plan.plan_id,
+            "client_id": brief.client_id,
+            "destination": destination,
+        }
 
     if config.auto_release:
         return {

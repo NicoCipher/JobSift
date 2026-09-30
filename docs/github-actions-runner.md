@@ -14,6 +14,9 @@ SQLite-compatible state. No always-on server or persistent Render disk is requir
   `release=true`.
 - Release mode is strictly release-only: if there is no unresolved frozen batch,
   it exits with `nothing_to_release` and does not source or publish new jobs.
+- Manual discard mode can remove only an unreleased `prepared` batch. It refuses
+  delivered batches and any batch with an export journal, so uncertain Sheet I/O
+  can never be erased.
 - GitHub Actions concurrency allows only one production run at a time.
 - The stable Taiwo client ID and Turso database preserve historical/delivery
   suppression across ephemeral GitHub runners.
@@ -74,10 +77,12 @@ For the current production sheet, the tab is `Sheet1`.
 2. Open Actions > Live JobSift > Run workflow.
 3. Keep `release=false` and quota `5`.
 4. Inspect the run's final JSON payload and its selected job links.
-5. If the batch is correct, run the workflow again with `release=true`.
-6. Verify the five rows in Google Sheets.
-7. Run it again with `release=true`; it must not duplicate the delivered batch.
-8. After the pilot, increase the quota when desired.
+5. If any frozen link is wrong, run the workflow with `discard=true`,
+   `release=false`, then prepare a replacement batch.
+6. If the batch is correct, run the workflow again with `release=true`.
+7. Verify the five rows in Google Sheets.
+8. Run it again with `release=true`; it must not duplicate the delivered batch.
+9. After the pilot, increase the quota when desired.
 
 The workflow also runs automatically once per day, but it never releases a batch
 without the explicit manual release switch.

@@ -49,3 +49,15 @@ def test_fingerprint_ignores_collection_time() -> None:
         "employment_type": EmploymentType.FULL_TIME,
     }
     assert content_fingerprint(**args) == content_fingerprint(**args)
+
+def test_explicit_city_state_beats_remote_boilerplate() -> None:
+    description = (
+        "Excellent communication skills in a fully remote environment. "
+        "#LI-Remote"
+    )
+    assert classify_remote("Los Angeles, CA", description) is RemoteStatus.ONSITE
+    assert (
+        classify_remote("Remote - United States", description)
+        is RemoteStatus.REMOTE
+    )
+
