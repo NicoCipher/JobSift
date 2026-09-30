@@ -362,6 +362,27 @@ class ClientSheetDestinationStore:
                     raise BatchConflict(
                         "Google worksheet is already registered to another JobSift destination"
                     )
+                legacy_destination = (
+                    f"gsheet://{value.spreadsheet_id}/"
+                    + quote(value.tab_name, safe="")
+                )
+                logical = value.logical_uri
+                connection.execute(
+                    "INSERT OR IGNORE INTO group_deliveries "
+                    "(group_id,client_id,destination,job_id,exported_at) "
+                    "SELECT group_id,client_id,?,job_id,exported_at "
+                    "FROM group_deliveries "
+                    "WHERE client_id=? AND destination=?",
+                    (logical, value.client_id, legacy_destination),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO exports "
+                    "(job_id,client_id,destination,exported_at) "
+                    "SELECT job_id,client_id,?,exported_at "
+                    "FROM exports WHERE client_id=? AND destination=?",
+                    (logical, value.client_id, legacy_destination),
+                )
+
                 connection.execute(
                     "INSERT INTO client_sheet_destinations "
                     "(client_id,destination_id,display_name,spreadsheet_id,sheet_id,tab_name,"
