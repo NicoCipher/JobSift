@@ -121,6 +121,11 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: object())
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: SimpleNamespace(list=lambda client_id: ()),
+    )
     monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
     monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: batch)
 
@@ -133,6 +138,104 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
 
     assert result["action"] == "awaiting_release"
     assert result["batch_id"] == "batch-1"
+
+def test_sole_ready_client_destination_is_auto_selected(tmp_path, monkeypatch):
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id="legacy-sheet",
+        sheet_tab="Legacy",
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=True,
+        allow_partial=False,
+        run_once=True,
+    )
+    destination = SimpleNamespace(
+        destination_id="primary-jobs",
+        logical_uri="client-sheet://primary-jobs",
+        config_sha256="a" * 64,
+        status="ready",
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_runtime_plan",
+        lambda _: (SimpleNamespace(plan_id="pilot"), tmp_path / "brief.json"),
+    )
+    monkeypatch.setattr(
+        live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
+    )
+    monkeypatch.setattr(
+        live_runner, "SQLiteRepository", lambda _: SimpleNamespace(remote_url="")
+    )
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: SimpleNamespace(list=lambda client_id: (destination,)),
+    )
+    observed = {}
+
+    def unresolved(repository, *, client_id, destination):
+        observed["destination"] = destination
+
+    monkeypatch.setattr(live_runner, "_unresolved_batch", unresolved)
+
+    result = live_runner.run_once(config)
+
+    assert observed["destination"] == "client-sheet://primary-jobs"
+    assert result["action"] == "nothing_to_release"
+    assert result["destination"] == "client-sheet://primary-jobs"
+
+
+def test_multiple_ready_client_destinations_require_explicit_selection(tmp_path, monkeypatch):
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id="legacy-sheet",
+        sheet_tab="Legacy",
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+    )
+    destinations = tuple(
+        SimpleNamespace(
+            destination_id=value,
+            logical_uri=f"client-sheet://{value}",
+            config_sha256="a" * 64,
+            status="ready",
+        )
+        for value in ("primary", "secondary")
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_runtime_plan",
+        lambda _: (SimpleNamespace(plan_id="pilot"), tmp_path / "brief.json"),
+    )
+    monkeypatch.setattr(
+        live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
+    )
+    monkeypatch.setattr(
+        live_runner, "SQLiteRepository", lambda _: SimpleNamespace(remote_url="")
+    )
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: SimpleNamespace(list=lambda client_id: destinations),
+    )
+
+    with pytest.raises(ValueError, match="multiple ready client destinations"):
+        live_runner.run_once(config)
+
 
 def test_registered_client_destination_replaces_global_sheet_coordinates(tmp_path, monkeypatch):
     config = LiveRunnerConfig(
@@ -220,6 +323,11 @@ def test_release_mode_never_sources_without_prepared_batch(tmp_path, monkeypatch
     monkeypatch.setattr(
         live_runner, "DailyBatchStore", lambda _: SimpleNamespace()
     )
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: SimpleNamespace(list=lambda client_id: ()),
+    )
     monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
     monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
 
@@ -261,6 +369,11 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     )
     monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: object())
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: SimpleNamespace(list=lambda client_id: ()),
+    )
     monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
     monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: batch)
 
