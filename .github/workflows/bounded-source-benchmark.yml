@@ -141,6 +141,9 @@ jobs:
 
   fan-in:
     if: ${{ always() && needs.plan.result == 'success' }}
+    env:
+      TURSO_DATABASE_URL: ""
+      TURSO_AUTH_TOKEN: ""
     needs:
       - plan
       - collect
