@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
 
 from job_scout.domain.models import (
     CandidateProfile,
@@ -22,7 +21,7 @@ from job_scout.normalization.core import normalize_title
 
 from .experience import extract_required_experience_years
 
-MATCHER_VERSION = "deterministic-v6"
+MATCHER_VERSION = "deterministic-v5"
 
 # Higher-authority title evidence wins when a title contains multiple levels.
 SENIORITY_PRECEDENCE = (
@@ -210,18 +209,7 @@ def _management_title_kind(title: str) -> str | None:
     return None
 
 
-def match_job(
-    job: Job,
-    profile: SearchBrief | CandidateProfile,
-    *,
-    evaluated_at: datetime | None = None,
-) -> JobMatch:
-    evaluation_time = evaluated_at or datetime.now(UTC)
-    evaluation_time = (
-        evaluation_time.replace(tzinfo=UTC)
-        if evaluation_time.tzinfo is None
-        else evaluation_time.astimezone(UTC)
-    )
+def match_job(job: Job, profile: SearchBrief | CandidateProfile) -> JobMatch:
     brief = (
         search_brief_from_candidate_profile(profile)
         if isinstance(profile, CandidateProfile)
@@ -241,7 +229,6 @@ def match_job(
             client_id=brief.client_id,
             decision=MatchDecision.REJECT,
             rejection_reasons=["title does not match a configured target role"],
-            evaluated_at=evaluation_time,
             matcher_version=MATCHER_VERSION,
         )
     reasons.append(f"target role matched: {role_hits[0]}")
@@ -297,33 +284,6 @@ def match_job(
     elif brief.work_mode.intent is RuleIntent.PREFER and job.remote_status in brief.work_mode.modes:
         reasons.append(f"preferred work mode matched: {job.remote_status.value}")
         preference_hits += 1
-
-    freshness = brief.posting_freshness
-    if freshness.max_age_hours is not None:
-        if job.posted_at is None:
-            _unknown_evidence(
-                label="posting age",
-                policy=freshness.unknown_policy,
-                rejects=rejects,
-                reviews=reviews,
-            )
-        else:
-            posted_at = (
-                job.posted_at.replace(tzinfo=UTC)
-                if job.posted_at.tzinfo is None
-                else job.posted_at.astimezone(UTC)
-            )
-            age_seconds = (evaluation_time - posted_at).total_seconds()
-            if age_seconds < -300:
-                rejects.append("posting timestamp is in the future")
-            elif age_seconds > freshness.max_age_hours * 3600:
-                rejects.append(
-                    f"posting age exceeds {freshness.max_age_hours} hours"
-                )
-            else:
-                reasons.append(
-                    f"posting age within {freshness.max_age_hours} hours"
-                )
 
     preference_hits += _country_rule(
         label="work eligibility",
@@ -400,7 +360,6 @@ def match_job(
             client_id=brief.client_id,
             decision=MatchDecision.REJECT,
             rejection_reasons=rejects,
-            evaluated_at=evaluation_time,
             matcher_version=MATCHER_VERSION,
         )
 
@@ -423,6 +382,5 @@ def match_job(
         score=score,
         matched_reasons=reasons,
         rejection_reasons=rejects,
-        evaluated_at=evaluation_time,
         matcher_version=MATCHER_VERSION,
     )
