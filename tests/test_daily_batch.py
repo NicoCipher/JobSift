@@ -122,6 +122,28 @@ def test_quota(repo, tmp_path, quota, supply, selected, shortfall):
     assert len(rows(tmp_path / "out.csv")) == selected
 
 
+def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
+    job = posting(1)
+    seed(repo, [job])
+    req = request(repo, tmp_path / "out.csv", [job])
+    prepared = prepare(repo, req)
+
+    discarded = DailyBatchStore(repo).discard_prepared(prepared.batch_id)
+    assert discarded.batch_id == prepared.batch_id
+    assert discarded.status == "prepared"
+    with pytest.raises(BatchConflict, match="batch not found"):
+        DailyBatchStore(repo).get(prepared.batch_id)
+
+    replacement = prepare(repo, req)
+    assert replacement.status == "prepared"
+    assert replacement.batch_id == prepared.batch_id
+
+    delivered = finalize(repo, replacement)
+    assert delivered.status == "delivered"
+    with pytest.raises(BatchConflict, match="only an unreleased prepared batch"):
+        DailyBatchStore(repo).discard_prepared(delivered.batch_id)
+
+
 def test_operator_reviews_frozen_batch_before_explicit_release(repo, tmp_path, monkeypatch, capsys):
     job = posting(1)
     seed(repo, [job])
