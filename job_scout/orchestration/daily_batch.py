@@ -26,6 +26,7 @@ from job_scout.export.batch_sheets import (
     parse_sheet_destination,
 )
 from job_scout.export.csv_exporter import export_row
+from job_scout.posting_freshness import posting_freshness_disposition
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -49,26 +50,12 @@ def _delivery_priority_key(candidate):
 
 
 def _freshness_disposition(request, candidate) -> str | None:
-    if request.max_posting_age_hours is None:
-        return None
-    posted_at = candidate.job.posted_at
-    if posted_at is None:
-        return (
-            None
-            if request.unknown_posting_age_policy is UnknownEligibilityPolicy.ALLOW
-            else "posting_age_unknown"
-        )
-    evaluated_at = request.freshness_evaluated_at
-    assert evaluated_at is not None
-    evaluated_at = evaluated_at.replace(tzinfo=evaluated_at.tzinfo or UTC)
-    posted_at = posted_at.replace(tzinfo=posted_at.tzinfo or UTC)
-    age_seconds = (evaluated_at.astimezone(UTC) - posted_at.astimezone(UTC)).total_seconds()
-    if age_seconds < -300:
-        return "posting_time_invalid"
-    if age_seconds > request.max_posting_age_hours * 3600:
-        return "stale_posting"
-    return None
-
+    return posting_freshness_disposition(
+        posted_at=candidate.job.posted_at,
+        max_age_hours=request.max_posting_age_hours,
+        unknown_policy=request.unknown_posting_age_policy,
+        evaluated_at=request.freshness_evaluated_at,
+    )
 
 def _assemble(request, candidates):
     eligible = [
