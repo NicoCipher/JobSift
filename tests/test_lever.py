@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 import uuid
 from types import SimpleNamespace
 
@@ -89,6 +90,12 @@ def test_global_api_host_identity_and_urls() -> None:
     assert str(job.job_url) == "https://jobs.lever.co/acme/provider-1"
     assert str(job.canonical_url) == "https://jobs.lever.co/acme/provider-1"
     assert str(job.apply_url) == "https://jobs.lever.co/acme/provider-1/apply"
+    assert job.posted_at == datetime.fromtimestamp(1710000000000 / 1000, tz=UTC)
+
+
+def test_invalid_lever_created_at_keeps_posted_at_unknown() -> None:
+    result = collector_for([response([raw_job(createdAt="not-a-timestamp")])]).collect(target())
+    assert result.jobs[0].posted_at is None
 
 
 def test_eu_host_and_instance_site_identity_are_distinct() -> None:
