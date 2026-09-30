@@ -361,9 +361,10 @@ def test_prune_then_evaluate_preserves_authoritative_match_for_retained_stale_in
         evaluated_at=now,
     )
 
-    candidate_ids = inventory.job_ids(run_id)
-    assert candidate_ids == (posting.id,)
-    assert evaluation.total_evaluated == 1
+    assert inventory.job_ids(run_id) == (posting.id,)
+    candidate_ids = inventory.active_job_ids(run_id)
+    assert candidate_ids == ()
+    assert evaluation.total_evaluated == 0
     assert DailyBatchStore(repository).evidence_digest("client-one", candidate_ids)
 
 
