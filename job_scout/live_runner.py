@@ -63,6 +63,7 @@ class LiveRunnerConfig:
     allow_partial: bool
     run_once: bool
     discard_prepared: bool = False
+    validation_only: bool = False
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
@@ -70,8 +71,11 @@ class LiveRunnerConfig:
         ZoneInfo(timezone)
         auto_release = _boolean("JOBSIFT_AUTO_RELEASE")
         discard_prepared = _boolean("JOBSIFT_DISCARD_PREPARED")
+        validation_only = _boolean("JOBSIFT_VALIDATION_ONLY")
         if auto_release and discard_prepared:
             raise ValueError("release and discard modes cannot both be enabled")
+        if validation_only and (auto_release or discard_prepared):
+            raise ValueError("validation mode cannot release or discard production batches")
         return cls(
             plan_path=Path(
                 os.getenv(
@@ -91,6 +95,7 @@ class LiveRunnerConfig:
             allow_partial=_boolean("JOBSIFT_ALLOW_PARTIAL"),
             run_once=_boolean("JOBSIFT_RUN_ONCE"),
             discard_prepared=discard_prepared,
+            validation_only=validation_only,
         )
 
 
@@ -231,6 +236,8 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     plan, brief_path = _runtime_plan(config)
     brief = load_search_brief(brief_path)
     repository = SQLiteRepository(config.database_path)
+    if config.validation_only and repository.remote_url:
+        raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
     destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
 
@@ -331,7 +338,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         source_failures=failures,
     )
     batch = prepare_daily_batch(repository=repository, request=request)
-    action = "prepared"
+    action = "validated" if config.validation_only else "prepared"
     if config.auto_release:
         batch = finalize_daily_batch(repository=repository, batch_id=batch.batch_id)
         action = "released" if batch.status == "delivered" else "release_failed"
