@@ -265,7 +265,10 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         run_once=True,
         validation_only=True,
     )
-    repository = SimpleNamespace(remote_url="")
+    repository = SimpleNamespace(
+        remote_url="",
+        prune_stale_inventory=lambda **_: {"deleted_jobs": 0, "compacted_jobs": 0},
+    )
     store = SimpleNamespace(evidence_digest=lambda *_: "a" * 64)
     plan = SimpleNamespace(plan_id="pilot")
     brief = SimpleNamespace(
@@ -301,8 +304,14 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
     monkeypatch.setattr(
         live_runner,
         "_batch_payload",
-        lambda store, batch, *, action, sourcing=None: {"action": action},
+        lambda store, batch, *, action, sourcing=None, retention=None: {
+            "action": action,
+            "retention": retention,
+        },
     )
 
-    assert live_runner.run_once(config) == {"action": "validated"}
+    assert live_runner.run_once(config) == {
+        "action": "validated",
+        "retention": {"deleted_jobs": 0, "compacted_jobs": 0},
+    }
 
