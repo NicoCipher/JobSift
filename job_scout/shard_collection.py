@@ -182,8 +182,8 @@ def _build_artifact(
         "shard_manifest_sha256": manifest.manifest_sha256,
         "shard_id": shard_id,
         "source": source,
-        "started_at": started_at,
-        "completed_at": completed_at,
+        "started_at": started_at.isoformat(),
+        "completed_at": completed_at.isoformat(),
         "metrics": metrics.model_dump(mode="json"),
         "targets": [target.model_dump(mode="json") for target in targets],
     }
