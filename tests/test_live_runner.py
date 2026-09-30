@@ -489,7 +489,7 @@ def test_retention_runs_before_client_evaluation(tmp_path, monkeypatch):
     monkeypatch.setattr(
         live_runner,
         "InventoryRunStore",
-        lambda _: SimpleNamespace(job_ids=lambda run_id: ("job-1",)),
+        lambda _: SimpleNamespace(active_job_ids=lambda run_id: ("job-1",)),
     )
     monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
     monkeypatch.setattr(live_runner, "prepare_daily_batch", lambda **_: object())
@@ -567,7 +567,7 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
     monkeypatch.setattr(
         live_runner,
         "InventoryRunStore",
-        lambda _: SimpleNamespace(job_ids=lambda run_id: ("job-1",)),
+        lambda _: SimpleNamespace(active_job_ids=lambda run_id: ("job-1",)),
     )
     monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
     monkeypatch.setattr(live_runner, "prepare_daily_batch", lambda **_: object())

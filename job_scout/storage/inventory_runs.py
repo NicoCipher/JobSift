@@ -87,6 +87,17 @@ class InventoryRunStore:
             ).fetchall()
         return tuple(row[0] for row in rows)
 
+    def active_job_ids(self, run_id: str) -> tuple[str, ...]:
+        """Return only full, active payloads that are valid for client evaluation."""
+        with self.repository.connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT r.job_id FROM inventory_run_jobs r "
+                "JOIN jobs j ON j.id=r.job_id "
+                "WHERE r.run_id=? AND j.lifecycle!='closed' ORDER BY r.job_id",
+                (run_id,),
+            ).fetchall()
+        return tuple(row[0] for row in rows)
+
     def target_job_ids(self, run_id: str, target_identity: str) -> tuple[str, ...]:
         with self.repository.connect() as connection:
             rows = connection.execute(
