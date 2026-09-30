@@ -55,6 +55,11 @@ def _percentile(values: list[int], fraction: float) -> int:
     return round(ordered[lower] * (1 - weight) + ordered[upper] * weight)
 
 
+def _json_datetime(value: datetime) -> str:
+    normalized = value.replace(tzinfo=value.tzinfo or UTC).astimezone(UTC)
+    return normalized.isoformat().replace("+00:00", "Z")
+
+
 def _fresh_24h(job: Job, evaluated_at: datetime) -> bool:
     if job.posted_at is None:
         return False
@@ -182,8 +187,8 @@ def _build_artifact(
         "shard_manifest_sha256": manifest.manifest_sha256,
         "shard_id": shard_id,
         "source": source,
-        "started_at": started_at.isoformat(),
-        "completed_at": completed_at.isoformat(),
+        "started_at": _json_datetime(started_at),
+        "completed_at": _json_datetime(completed_at),
         "metrics": metrics.model_dump(mode="json"),
         "targets": [target.model_dump(mode="json") for target in targets],
     }
