@@ -18,7 +18,7 @@ from job_scout.domain.models import (
 )
 
 CONFIG = WorkdayTargetConfig(host="acme.wd1.myworkdayjobs.com", tenant="acme", site="External")
-TARGET = SourceTarget(board_id=CONFIG.board_id, company="Acme", workday=CONFIG)
+TARGET = SourceTarget(board_id=CONFIG.board_id, company="Acme", employer_id="acme", workday=CONFIG)
 LIVE_DETAIL = json.loads(
     (Path(__file__).parent / "fixtures/workday_detail_bigcommerce.json").read_text()
 )
@@ -79,6 +79,7 @@ def test_normal_pagination_normalizes_cxs_evidence() -> None:
     job = next(job for job in result.jobs if job.source_job_id == "R1")
     assert job.source_board_id == CONFIG.board_id
     assert job.company == "Acme Holdings"
+    assert job.employer_id == "acme"
     assert job.id == str(uuid.uuid5(uuid.NAMESPACE_URL, f"workday:{CONFIG.board_id}:R1"))
     assert str(job.job_url).endswith("/Support-Engineer_R1")
     assert job.apply_url is None
