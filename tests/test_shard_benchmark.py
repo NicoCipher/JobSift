@@ -19,6 +19,7 @@ from job_scout.production_registry import (
 )
 from job_scout.shard_benchmark import (
     build_benchmark_plan,
+    require_local_benchmark_environment,
     run_benchmark_fan_in,
     select_registry_subset,
 )
@@ -256,3 +257,11 @@ def test_benchmark_fan_in_evaluates_shared_inventory_without_delivery(tmp_path: 
 
     with repository.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM exports").fetchone()[0] == 0
+
+
+def test_benchmark_rejects_turso_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://production.example")
+    monkeypatch.setenv("TURSO_AUTH_TOKEN", "secret")
+
+    with pytest.raises(ValueError, match="must not use Turso"):
+        require_local_benchmark_environment()
