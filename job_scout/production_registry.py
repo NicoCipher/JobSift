@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from job_scout.domain.models import LeverTargetConfig, WorkdayTargetConfig
+
 PROVIDERS = ("greenhouse", "ashby", "workday", "lever")
 
 
@@ -30,6 +32,26 @@ class ProductionTarget(BaseModel):
     health_classification: Literal["active"] = "active"
     health_current_postings: int | None = Field(default=None, ge=0)
     health_inventory_exact: bool | None = None
+
+    @model_validator(mode="after")
+    def verify_identity(self) -> "ProductionTarget":
+        if self.source in {"greenhouse", "ashby"}:
+            if set(self.coordinates) != {"board"}:
+                raise ValueError(f"{self.source} target requires board coordinates")
+            expected = f"{self.source}:{self.coordinates['board']}"
+        elif self.source == "lever":
+            if set(self.coordinates) != {"instance", "site"}:
+                raise ValueError("lever target requires instance/site coordinates")
+            config = LeverTargetConfig.model_validate(self.coordinates)
+            expected = f"lever:{config.board_id}"
+        else:
+            if set(self.coordinates) != {"host", "tenant", "site"}:
+                raise ValueError("workday target requires host/tenant/site coordinates")
+            config = WorkdayTargetConfig.model_validate(self.coordinates)
+            expected = f"workday:{config.board_id}"
+        if self.target_identity != expected:
+            raise ValueError("production target identity does not match coordinates")
+        return self
 
 
 class ProductionSourceRegistry(BaseModel):
