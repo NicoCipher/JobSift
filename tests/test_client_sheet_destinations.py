@@ -10,7 +10,7 @@ from job_scout.delivery_destinations import (
     parse_logical_destination,
     spreadsheet_id_from_value,
 )
-from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
+from job_scout.domain.daily_batch import DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
