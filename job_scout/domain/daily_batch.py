@@ -21,6 +21,8 @@ class DailyBatchRequest(BatchModel):
     destination: str
     idempotency_key: str
     requested_quota: int = Field(strict=True, ge=1)
+    max_jobs_per_employer_per_batch: int | None = Field(default=None, ge=1, le=1000)
+    employer_cooldown_days: int = Field(default=0, ge=0, le=3650)
     evidence_scope_id: str
     evaluation_id: str
     candidate_job_ids: tuple[str, ...]
@@ -66,6 +68,9 @@ class DailyBatchCounts(BatchModel):
     previously_delivered_groups: int = Field(ge=0)
     duplicate_postings_collapsed: int = Field(ge=0)
     fresh_eligible_groups: int = Field(ge=0)
+    fresh_eligible_employers: int = Field(default=0, ge=0)
+    employer_cooldown_suppressed_groups: int = Field(default=0, ge=0)
+    company_cap_suppressed_groups: int = Field(default=0, ge=0)
     selected_groups: int = Field(ge=0)
 
     @model_validator(mode="after")
@@ -86,6 +91,11 @@ class DailyBatchCounts(BatchModel):
                 + self.fresh_eligible_groups
             )
             or self.selected_groups > self.fresh_eligible_groups
+            or (
+                self.employer_cooldown_suppressed_groups
+                + self.company_cap_suppressed_groups
+                > self.fresh_eligible_groups
+            )
         ):
             raise ValueError("group suppression/selection accounting does not balance")
         return self
