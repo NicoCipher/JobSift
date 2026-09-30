@@ -20,7 +20,12 @@ from job_scout.domain.models import (
     SearchBrief,
     SourceTarget,
 )
-from job_scout.sourcing_plan import SourcingPlan, SourcingRunReport, run_sourcing_plan
+from job_scout.sourcing_plan import (
+    SourcingPlan,
+    SourcingRunReport,
+    load_sourcing_plan,
+    run_sourcing_plan,
+)
 
 
 def targets() -> list[dict[str, str]]:
@@ -123,6 +128,26 @@ def factory(calls: list[str], failures: set[str] | None = None):
         )
 
     return build
+
+
+def test_production_v2_has_distinct_stable_employers() -> None:
+    production = load_sourcing_plan(
+        Path("config/sourcing_plans/taiwo_software_remote_us_v2.json")
+    )
+
+    employer_ids = [target.employer_id for target in production.targets]
+    assert len(production.targets) == 7
+    assert all(employer_ids)
+    assert len(set(employer_ids)) == len(employer_ids)
+    assert {target.target_identity for target in production.targets} == {
+        "greenhouse:gitlab",
+        "greenhouse:reddit",
+        "ashby:render",
+        "greenhouse:launchdarkly",
+        "greenhouse:humaninterest",
+        "greenhouse:life360",
+        "ashby:ramp",
+    }
 
 
 def test_valid_mixed_plan_exposes_explicit_target_identities(tmp_path: Path) -> None:
