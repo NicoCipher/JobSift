@@ -1,12 +1,14 @@
 import csv
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 
 from job_scout.collectors.greenhouse import GreenhouseCollector
-from job_scout.domain.models import CandidateProfile, SourceTarget
+from job_scout.domain.models import CandidateProfile, Job, SourceTarget
 from job_scout.export.csv_exporter import CSV_COLUMNS
+from job_scout.normalization.core import content_fingerprint
 from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -63,3 +65,59 @@ def test_failure_does_not_change_job_lifecycle(tmp_path) -> None:
     assert result.status == "provider_error"
     with repo.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+def _stored_job(identifier: str, *, posted_at: datetime) -> Job:
+    return Job(
+        id=identifier,
+        source="greenhouse",
+        source_job_id=identifier,
+        source_board_id="acme",
+        title="Backend Engineer",
+        company="Acme",
+        employer_id="acme",
+        description_text="A large description that should not survive stale compaction.",
+        description_html="<p>A large description that should not survive stale compaction.</p>",
+        job_url=f"https://example.com/jobs/{identifier}",
+        canonical_url=f"https://example.com/jobs/{identifier}",
+        posted_at=posted_at,
+        content_fingerprint=content_fingerprint(
+            title="Backend Engineer",
+            description="A large description that should not survive stale compaction.",
+            location=None,
+            employment_type=None,
+        ),
+        raw_metadata={"large": "payload"},
+    )
+
+
+def test_stale_inventory_deletes_undelivered_and_compacts_delivered_jobs(tmp_path) -> None:
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    now = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
+    old = now - timedelta(hours=73)
+    undelivered = _stored_job("old-undelivered", posted_at=old)
+    delivered = _stored_job("old-delivered", posted_at=old)
+    repo.upsert_job(undelivered)
+    repo.upsert_job(delivered)
+    repo.mark_exported(delivered.id, "client", "gsheet://sheet/Sheet1")
+
+    result = repo.prune_stale_inventory(retention_hours=72, now=now)
+
+    assert result["deleted_jobs"] == 1
+    assert result["compacted_jobs"] == 1
+    with repo.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?", (undelivered.id,)
+        ).fetchone() is None
+        delivered_row = connection.execute(
+            "SELECT payload_json,lifecycle FROM jobs WHERE id=?", (delivered.id,)
+        ).fetchone()
+        compact = Job.model_validate_json(delivered_row["payload_json"])
+        assert compact.description_text is None
+        assert compact.description_html is None
+        assert compact.raw_metadata == {}
+        assert delivered_row["lifecycle"] == "closed"
+        ledger = connection.execute(
+            "SELECT was_delivered FROM job_identity_ledger ORDER BY source_job_id"
+        ).fetchall()
+        assert [row[0] for row in ledger] == [1, 0]
+
