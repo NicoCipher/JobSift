@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Literal
@@ -242,6 +243,11 @@ def _assignments(values: list[str], *, label: str) -> dict[str, int]:
     return _exact_provider_map(parsed, label=label)
 
 
+def require_local_benchmark_environment() -> None:
+    if os.getenv("TURSO_DATABASE_URL", "").strip() or os.getenv("TURSO_AUTH_TOKEN", "").strip():
+        raise ValueError("bounded benchmark fan-in must not use Turso credentials")
+
+
 def _write_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
@@ -309,6 +315,7 @@ def main() -> None:
             ShardCollectionArtifact.model_validate_json(path.read_text(encoding="utf-8"))
             for path in artifact_paths
         ]
+        require_local_benchmark_environment()
         args.database.parent.mkdir(parents=True, exist_ok=True)
         report = run_benchmark_fan_in(
             repository=SQLiteRepository(args.database),
