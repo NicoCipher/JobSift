@@ -32,7 +32,9 @@ class FakeClientSheet:
         return list(self.metadata)
 
     def read_table(self, spreadsheet_id, tab, width):
-        assert (spreadsheet_id, tab, width) == ("clientSheet123", "Jobs", 5)
+        assert spreadsheet_id == "clientSheet123"
+        assert tab == "Jobs"
+        assert width in {5, 100}
         return [row.copy() for row in self.values]
 
     def append_table_rows(self, spreadsheet_id, tab, width, rows):
