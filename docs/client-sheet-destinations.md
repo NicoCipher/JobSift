@@ -143,14 +143,20 @@ configuration without erasing prior delivery history for that client destination
 The existing global `JOBSIFT_SHEET_ID` / `JOBSIFT_SHEET_TAB` path remains
 supported while current test/production destinations are migrated.
 
-Once a client destination is registered, set:
+If a client has exactly one ready registered destination, the live runner resolves
+it automatically from Turso. No global destination variable is required.
+
+If a client has multiple ready destinations, JobSift refuses to guess. Set:
 
 ```text
 JOBSIFT_DESTINATION_ID=<destination_id>
 ```
 
-The live runner then resolves the client's destination from Turso. Physical Sheet
-coordinates no longer need to be the authoritative delivery identity.
+to select one explicitly.
+
+The legacy `JOBSIFT_SHEET_ID` / `JOBSIFT_SHEET_TAB` pair remains only as a
+fallback when that client has no registered destination. Physical Sheet
+coordinates are no longer the authoritative delivery identity.
 
 Validation-only runs remain isolated and never write to client Sheets.
 
