@@ -63,8 +63,23 @@ live provider health.
 
 ## Collection architecture for scale
 
-The current sequential seven-employer workflow is a smoke test, not the final
-throughput architecture.
+The live production path now separates source collection from client evaluation:
+
+1. collect an ATS target once into a shared inventory run;
+2. persist normalized jobs and run membership without exporting them;
+3. evaluate that same inventory run independently for each SearchBrief/client;
+4. apply client delivery policy and publish only at the batch layer.
+
+This removes the old local-CSV delivery side effect from the live runner and means
+a second client can be evaluated against the same collected inventory without a
+second ATS fetch. The legacy `job-scout source` command retains its original
+collect/match/CSV behavior for compatibility.
+
+The current seven-employer collection is still sequential. Shared inventory is a
+necessary boundary for scale, but it is **not** evidence that 2,044 targets can be
+processed within the production time budget.
+
+The next throughput step is provider-aware sharding.
 
 At scale:
 
