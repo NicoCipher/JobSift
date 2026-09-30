@@ -180,7 +180,6 @@ def test_registered_client_destination_replaces_global_sheet_coordinates(tmp_pat
     def unresolved(repository, *, client_id, destination):
         observed["client_id"] = client_id
         observed["destination"] = destination
-        return None
 
     monkeypatch.setattr(live_runner, "_unresolved_batch", unresolved)
 
