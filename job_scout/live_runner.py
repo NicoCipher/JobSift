@@ -208,6 +208,9 @@ def _batch_payload(
         "fresh_eligible_employers": batch.counts.fresh_eligible_employers,
         "company_cap_suppressed_groups": batch.counts.company_cap_suppressed_groups,
         "employer_cooldown_suppressed_groups": batch.counts.employer_cooldown_suppressed_groups,
+        "stale_posting_suppressed_groups": batch.counts.stale_posting_suppressed_groups,
+        "unknown_age_suppressed_groups": batch.counts.unknown_age_suppressed_groups,
+        "invalid_time_suppressed_groups": batch.counts.invalid_time_suppressed_groups,
         "completeness": batch.request.completeness,
         "error": batch.error,
         "selected_jobs": [
@@ -339,6 +342,11 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         requested_quota=config.quota,
         max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,
         employer_cooldown_days=brief.delivery_policy.employer_cooldown_days,
+        max_posting_age_hours=brief.posting_freshness.max_age_hours,
+        unknown_posting_age_policy=brief.posting_freshness.unknown_policy,
+        freshness_evaluated_at=(
+            report.completed_at if brief.posting_freshness.max_age_hours is not None else None
+        ),
         evidence_scope_id=scope,
         evaluation_id=scope,
         candidate_job_ids=candidate_ids,
