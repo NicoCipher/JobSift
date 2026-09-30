@@ -17,8 +17,14 @@ from job_scout.domain.daily_batch import DailyBatchRequest, DailyBatchResult
 from job_scout.export.batch_sheets import sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
-from job_scout.sourcing_plan import SourcingPlan, load_sourcing_plan, run_sourcing_plan
+from job_scout.sourcing_plan import (
+    SourcingPlan,
+    collect_inventory_plan,
+    evaluate_inventory_run,
+    load_sourcing_plan,
+)
 from job_scout.storage.daily_batches import DailyBatchStore
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -205,6 +211,7 @@ def _batch_payload(
     *,
     action: str,
     sourcing=None,
+    evaluation=None,
     retention=None,
 ) -> dict[str, object]:
     rows = store.export_rows(batch.batch_id)
@@ -239,9 +246,18 @@ def _batch_payload(
     if sourcing is not None:
         payload["sourcing"] = {
             "status": sourcing.status,
+            "inventory_run_id": getattr(sourcing, "run_id", None),
             "received": sourcing.total_received,
-            "matched": sourcing.total_matched,
-            "rejected": sourcing.total_rejected,
+            "matched": (
+                evaluation.total_matched
+                if evaluation is not None
+                else getattr(sourcing, "total_matched", 0)
+            ),
+            "rejected": (
+                evaluation.total_rejected
+                if evaluation is not None
+                else getattr(sourcing, "total_rejected", 0)
+            ),
             "successful_targets": sourcing.successful_targets,
             "partial_targets": sourcing.partial_targets,
             "failed_targets": sourcing.failed_targets,
@@ -343,9 +359,9 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     if today is not None:
         return _batch_payload(store, today, action="already_ran_today")
 
-    report = run_sourcing_plan(
+    report = collect_inventory_plan(
         plan,
-        base_dir=config.plan_path.resolve().parent,
+        repository=repository,
         reports_dir=config.reports_dir.resolve(),
     )
     if report.status == "failure":
@@ -363,20 +379,24 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             "source_failures": list(_source_failures(report)),
         }
 
+    evaluation = evaluate_inventory_run(
+        repository=repository,
+        run_id=report.run_id,
+        brief=brief,
+        evaluated_at=report.completed_at,
+    )
+
     retention = repository.prune_stale_inventory(
         retention_hours=config.inventory_retention_hours
     )
 
-    candidate_ids = _candidate_job_ids(
-        repository,
-        client_id=brief.client_id,
-        plan=plan,
-        started_at=report.started_at,
-        completed_at=report.completed_at,
-    )
+    candidate_ids = InventoryRunStore(repository).job_ids(report.run_id)
     evidence_sha = store.evidence_digest(brief.client_id, candidate_ids)
     brief_sha = sha256(brief_path.read_bytes()).hexdigest()
-    scope = f"{plan.plan_id}:{report.started_at.astimezone(UTC).isoformat()}"
+    scope = f"{plan.plan_id}:{report.run_id}"
+    evaluation_id = (
+        f"{scope}:{brief.client_id}:{evaluation.evaluated_at.astimezone(UTC).isoformat()}"
+    )
     failures = _source_failures(report)
     completeness = "complete" if report.status == "success" else "partial"
     request = DailyBatchRequest(
@@ -393,10 +413,12 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         max_posting_age_hours=brief.posting_freshness.max_age_hours,
         unknown_posting_age_policy=brief.posting_freshness.unknown_policy,
         freshness_evaluated_at=(
-            report.completed_at if brief.posting_freshness.max_age_hours is not None else None
+            evaluation.evaluated_at
+            if brief.posting_freshness.max_age_hours is not None
+            else None
         ),
         evidence_scope_id=scope,
-        evaluation_id=scope,
+        evaluation_id=evaluation_id,
         candidate_job_ids=candidate_ids,
         evidence_sha256=evidence_sha,
         brief_revision_id=brief_path.stem,
@@ -414,6 +436,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         batch,
         action=action,
         sourcing=report,
+        evaluation=evaluation,
         retention=retention,
     )
 

@@ -23,9 +23,12 @@ from job_scout.domain.models import (
 from job_scout.sourcing_plan import (
     SourcingPlan,
     SourcingRunReport,
+    collect_inventory_plan,
+    evaluate_inventory_run,
     load_sourcing_plan,
     run_sourcing_plan,
 )
+from job_scout.storage.sqlite import SQLiteRepository
 
 
 def targets() -> list[dict[str, str]]:
@@ -232,6 +235,81 @@ def test_targets_run_in_declared_order_with_shared_state_and_report(tmp_path: Pa
             ).fetchone()[0]
             == 4
         )
+
+
+def test_shared_inventory_collects_once_then_evaluates_multiple_clients(tmp_path: Path) -> None:
+    sourcing_plan = plan(tmp_path)
+    repository = SQLiteRepository(tmp_path / "shared.sqlite3")
+    calls: list[str] = []
+
+    inventory = collect_inventory_plan(
+        sourcing_plan,
+        repository=repository,
+        reports_dir=tmp_path / "runs",
+        collector_factory=factory(calls),
+    )
+
+    assert calls == ["greenhouse", "ashby", "workday", "lever"]
+    assert inventory.status == "success"
+    assert inventory.total_received == inventory.total_new == 4
+    assert inventory.total_changed == inventory.total_unchanged == 0
+    assert inventory.report_path and Path(inventory.report_path).is_file()
+
+    with repository.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 4
+        assert connection.execute("SELECT COUNT(*) FROM job_matches").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM exports").fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT COUNT(DISTINCT job_id) FROM inventory_run_jobs WHERE run_id=?",
+                (inventory.run_id,),
+            ).fetchone()[0]
+            == 4
+        )
+
+    first_brief = SearchBrief(
+        client_id="client-one",
+        target_roles=["Support Engineer"],
+        management_roles=RuleIntent.IGNORE,
+    )
+    first = evaluate_inventory_run(
+        repository=repository,
+        run_id=inventory.run_id,
+        brief=first_brief,
+        evaluated_at=inventory.completed_at,
+    )
+    second_brief = SearchBrief(
+        client_id="client-two",
+        target_roles=["Backend Engineer"],
+        management_roles=RuleIntent.IGNORE,
+    )
+    second = evaluate_inventory_run(
+        repository=repository,
+        run_id=inventory.run_id,
+        brief=second_brief,
+        evaluated_at=inventory.completed_at,
+    )
+
+    assert first.total_evaluated == first.total_matched == 4
+    assert first.total_rejected == 0
+    assert second.total_evaluated == second.total_rejected == 4
+    assert second.total_matched == 0
+    assert calls == ["greenhouse", "ashby", "workday", "lever"]
+
+    with repository.connect() as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM job_matches WHERE client_id='client-one'"
+            ).fetchone()[0]
+            == 4
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM job_matches WHERE client_id='client-two'"
+            ).fetchone()[0]
+            == 4
+        )
+        assert connection.execute("SELECT COUNT(*) FROM exports").fetchone()[0] == 0
 
 
 def test_failure_is_isolated_and_reported_without_closure_claim(tmp_path: Path) -> None:

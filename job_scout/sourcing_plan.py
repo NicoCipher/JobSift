@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -17,12 +18,19 @@ from job_scout.collectors.lever import LeverCollector
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.domain.models import (
     CollectionResult,
+    CollectionStatus,
+    Job,
+    JobLifecycle,
     LeverTargetConfig,
+    MatchDecision,
+    SearchBrief,
     SourceTarget,
     WorkdayTargetConfig,
 )
+from job_scout.matching.matcher import match_job
 from job_scout.orchestration.pipeline import PipelineSummary, run_pipeline
 from job_scout.search_brief import load_search_brief
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -246,6 +254,51 @@ class SourcingRunReport(BaseModel):
     report_path: str | None = None
 
 
+class InventoryTargetReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_identity: str
+    source: str
+    company: str
+    status: str
+    received: int = 0
+    new: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+
+class InventoryRunReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    plan_id: str
+    started_at: datetime
+    completed_at: datetime
+    status: Literal["success", "partial", "failure"]
+    total_targets: int
+    successful_targets: int
+    partial_targets: int
+    failed_targets: int
+    total_received: int
+    total_new: int
+    total_changed: int
+    total_unchanged: int
+    targets: list[InventoryTargetReport]
+    report_path: str | None = None
+
+
+class InventoryEvaluationReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    client_id: str
+    evaluated_at: datetime
+    total_evaluated: int
+    total_matched: int
+    total_rejected: int
+
+
 class _ObservedCollector:
     def __init__(self, collector: JobCollector) -> None:
         self.collector = collector
@@ -306,6 +359,171 @@ def _target_report(
         rejected=summary.rejected,
         exported=summary.exported,
         errors=errors,
+    )
+
+
+def _inventory_target_report(
+    plan_target: PlanTarget,
+    *,
+    status: str,
+    received: int = 0,
+    states: dict[str, JobLifecycle] | None = None,
+    errors: list[str] | None = None,
+) -> InventoryTargetReport:
+    states = states or {}
+    return InventoryTargetReport(
+        target_identity=plan_target.target_identity,
+        source=plan_target.source,
+        company=plan_target.company,
+        status=status,
+        received=received,
+        new=sum(state is JobLifecycle.NEW for state in states.values()),
+        changed=sum(state is JobLifecycle.CHANGED for state in states.values()),
+        unchanged=sum(state is JobLifecycle.SEEN for state in states.values()),
+        errors=list(errors or []),
+    )
+
+
+def collect_inventory_plan(
+    plan: SourcingPlan,
+    *,
+    repository: SQLiteRepository,
+    reports_dir: Path | None = None,
+    collector_factory: CollectorFactory = default_collector_factory,
+) -> InventoryRunReport:
+    """Collect shared source inventory without matching or delivery side effects."""
+    reports_dir = (reports_dir or Path("runs").resolve()).resolve()
+    started_at = datetime.now(UTC)
+    run_id = str(uuid5(NAMESPACE_URL, f"inventory:{plan.plan_id}:{started_at.isoformat()}"))
+    inventory = InventoryRunStore(repository)
+    inventory.create(run_id=run_id, plan_id=plan.plan_id, started_at=started_at)
+    target_reports: list[InventoryTargetReport] = []
+
+    for plan_target in plan.targets:
+        collector: JobCollector | None = None
+        try:
+            collector = collector_factory(plan_target.source)
+            result = collector.collect(plan_target.source_target())
+            states: dict[str, JobLifecycle] = {}
+            received = 0
+            if result.status in {CollectionStatus.SUCCESS, CollectionStatus.PARTIAL}:
+                received = len(result.jobs)
+                states = repository.upsert_jobs(result.jobs)
+                inventory.add_jobs(
+                    run_id=run_id,
+                    target_identity=plan_target.target_identity,
+                    jobs=result.jobs,
+                )
+            target_reports.append(
+                _inventory_target_report(
+                    plan_target,
+                    status=result.status.value,
+                    received=received,
+                    states=states,
+                    errors=result.errors,
+                )
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            target_reports.append(
+                _inventory_target_report(
+                    plan_target,
+                    status=CollectionStatus.PROVIDER_ERROR.value,
+                    errors=[f"orchestration error: {type(exc).__name__}: {exc}"],
+                )
+            )
+        finally:
+            if collector is not None:
+                _close_collector(collector)
+
+    successful = sum(report.status == "success" for report in target_reports)
+    partial = sum(report.status == "partial" for report in target_reports)
+    failed = len(target_reports) - successful - partial
+    status: Literal["success", "partial", "failure"]
+    status = (
+        "success"
+        if not partial and not failed
+        else "partial"
+        if successful or partial
+        else "failure"
+    )
+    completed_at = datetime.now(UTC)
+    inventory.finish(run_id=run_id, status=status, completed_at=completed_at)
+    report = InventoryRunReport(
+        run_id=run_id,
+        plan_id=plan.plan_id,
+        started_at=started_at,
+        completed_at=completed_at,
+        status=status,
+        total_targets=len(target_reports),
+        successful_targets=successful,
+        partial_targets=partial,
+        failed_targets=failed,
+        total_received=sum(item.received for item in target_reports),
+        total_new=sum(item.new for item in target_reports),
+        total_changed=sum(item.changed for item in target_reports),
+        total_unchanged=sum(item.unchanged for item in target_reports),
+        targets=target_reports,
+    )
+    output = reports_dir / plan.plan_id
+    output.mkdir(parents=True, exist_ok=True)
+    report_path = output / f"{report.started_at.strftime('%Y%m%dT%H%M%S%fZ')}-inventory.json"
+    report.report_path = str(report_path)
+    report_path.write_text(
+        json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return report
+
+
+def evaluate_inventory_run(
+    *,
+    repository: SQLiteRepository,
+    run_id: str,
+    brief: SearchBrief,
+    evaluated_at: datetime | None = None,
+) -> InventoryEvaluationReport:
+    """Evaluate one shared inventory run for one client without recollecting sources."""
+    evaluation_time = evaluated_at or datetime.now(UTC)
+    evaluation_time = (
+        evaluation_time.replace(tzinfo=UTC)
+        if evaluation_time.tzinfo is None
+        else evaluation_time.astimezone(UTC)
+    )
+    matched = 0
+    rejected = 0
+    evaluated = 0
+    with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        cursor = connection.execute(
+            "SELECT DISTINCT j.id,j.payload_json FROM inventory_run_jobs r "
+            "JOIN jobs j ON j.id=r.job_id WHERE r.run_id=? ORDER BY j.id",
+            (run_id,),
+        )
+        for row in cursor:
+            job = Job.model_validate_json(row[1])
+            match = match_job(job, brief).model_copy(
+                update={"evaluated_at": evaluation_time}
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                repository._match_row(match),
+            )
+            evaluated += 1
+            if match.decision in {
+                MatchDecision.STRONG_MATCH,
+                MatchDecision.POSSIBLE_MATCH,
+            }:
+                matched += 1
+            else:
+                rejected += 1
+
+    return InventoryEvaluationReport(
+        run_id=run_id,
+        client_id=brief.client_id,
+        evaluated_at=evaluation_time,
+        total_evaluated=evaluated,
+        total_matched=matched,
+        total_rejected=rejected,
     )
 
 

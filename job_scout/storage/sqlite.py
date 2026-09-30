@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -205,53 +205,75 @@ class SQLiteRepository:
             if connection is not None:
                 connection.close()
 
+    def _upsert_job_in_connection(
+        self, connection: sqlite3.Connection, job: Job, now: str
+    ) -> JobLifecycle:
+        row = connection.execute(
+            "SELECT id, content_fingerprint FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (job.source, job.source_board_id, job.source_job_id),
+        ).fetchone()
+        if row is None:
+            connection.execute(
+                "INSERT INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    job.id,
+                    job.source,
+                    job.source_job_id,
+                    job.source_board_id,
+                    str(job.canonical_url),
+                    job.content_fingerprint,
+                    job.discovered_at.isoformat(),
+                    job.last_seen_at.isoformat(),
+                    now,
+                    JobLifecycle.NEW.value,
+                    job.model_dump_json(),
+                ),
+            )
+            self._assign_group(connection, job)
+            return JobLifecycle.NEW
+
+        lifecycle = (
+            JobLifecycle.CHANGED
+            if row["content_fingerprint"] != job.content_fingerprint
+            else JobLifecycle.SEEN
+        )
+        job.id = row["id"]
+        connection.execute(
+            "UPDATE jobs SET canonical_url=?, content_fingerprint=?, last_seen_at=?, "
+            "last_verified_at=?, lifecycle=?, payload_json=? WHERE id=?",
+            (
+                str(job.canonical_url),
+                job.content_fingerprint,
+                job.last_seen_at.isoformat(),
+                now,
+                lifecycle.value,
+                job.model_dump_json(),
+                job.id,
+            ),
+        )
+        self._assign_group(connection, job)
+        return lifecycle
+
     def upsert_job(self, job: Job) -> JobLifecycle:
         now = datetime.now(UTC).isoformat()
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT id, content_fingerprint FROM jobs WHERE source=? AND source_board_id=? AND source_job_id=?",
-                (job.source, job.source_board_id, job.source_job_id),
-            ).fetchone()
-            if row is None:
-                connection.execute(
-                    "INSERT INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        job.id,
-                        job.source,
-                        job.source_job_id,
-                        job.source_board_id,
-                        str(job.canonical_url),
-                        job.content_fingerprint,
-                        job.discovered_at.isoformat(),
-                        job.last_seen_at.isoformat(),
-                        now,
-                        JobLifecycle.NEW.value,
-                        job.model_dump_json(),
-                    ),
-                )
-                self._assign_group(connection, job)
-                return JobLifecycle.NEW
-            lifecycle = (
-                JobLifecycle.CHANGED
-                if row["content_fingerprint"] != job.content_fingerprint
-                else JobLifecycle.SEEN
-            )
-            job.id = row["id"]
-            connection.execute(
-                "UPDATE jobs SET canonical_url=?, content_fingerprint=?, last_seen_at=?, last_verified_at=?, lifecycle=?, payload_json=? WHERE id=?",
-                (
-                    str(job.canonical_url),
-                    job.content_fingerprint,
-                    job.last_seen_at.isoformat(),
-                    now,
-                    lifecycle.value,
-                    job.model_dump_json(),
-                    job.id,
-                ),
-            )
-            self._assign_group(connection, job)
-            return lifecycle
+            return self._upsert_job_in_connection(connection, job, now)
+
+    def upsert_jobs(self, jobs: Iterable[Job]) -> dict[str, JobLifecycle]:
+        """Persist one provider batch in a single transaction/push."""
+        values = list(jobs)
+        if not values:
+            return {}
+        now = datetime.now(UTC).isoformat()
+        states: dict[str, JobLifecycle] = {}
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for job in values:
+                state = self._upsert_job_in_connection(connection, job, now)
+                states[job.id] = state
+        return states
 
     @staticmethod
     def _aware(value: datetime) -> datetime:
@@ -553,21 +575,38 @@ class SQLiteRepository:
             )
             return len(values), 0
 
+    @staticmethod
+    def _match_row(match: JobMatch) -> tuple[object, ...]:
+        return (
+            match.job_id,
+            match.client_id,
+            match.decision.value,
+            match.score,
+            json.dumps(match.matched_reasons),
+            json.dumps(match.rejection_reasons),
+            match.evaluated_at.isoformat(),
+            match.matcher_version,
+        )
+
     def save_match(self, match: JobMatch) -> None:
         with self.connect() as connection:
             connection.execute(
                 "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    match.job_id,
-                    match.client_id,
-                    match.decision.value,
-                    match.score,
-                    json.dumps(match.matched_reasons),
-                    json.dumps(match.rejection_reasons),
-                    match.evaluated_at.isoformat(),
-                    match.matcher_version,
-                ),
+                self._match_row(match),
             )
+
+    def save_matches(self, matches: Iterable[JobMatch]) -> int:
+        """Persist one client evaluation set in a single transaction/push."""
+        values = list(matches)
+        if not values:
+            return 0
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [self._match_row(match) for match in values],
+            )
+        return len(values)
 
     def is_exported(self, job_id: str, client_id: str, destination: str) -> bool:
         with self.connect() as connection:
