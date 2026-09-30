@@ -144,6 +144,112 @@ def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
         DailyBatchStore(repo).discard_prepared(delivered.batch_id)
 
 
+def test_company_cap_returns_distinct_employers_and_honest_shortfall(repo, tmp_path):
+    jobs = [
+        posting(1, company="Reddit", employer_id="reddit"),
+        posting(2, company="Reddit", employer_id="reddit"),
+        posting(3, company="Reddit", employer_id="reddit"),
+        posting(4, company="GitLab", employer_id="gitlab"),
+        posting(5, company="Render", employer_id="render"),
+    ]
+    seed(repo, jobs)
+    req = request(
+        repo,
+        tmp_path / "out.csv",
+        jobs,
+        quota=5,
+        max_jobs_per_employer_per_batch=1,
+    )
+    result = prepare(repo, req)
+
+    assert result.selected_count == 3
+    assert result.shortfall == 2
+    assert result.counts.fresh_eligible_employers == 3
+    assert result.counts.company_cap_suppressed_groups == 2
+
+    selected_companies = {row["Company Name"] for row in DailyBatchStore(repo).export_rows(result.batch_id)}
+    assert selected_companies == {"Reddit", "GitLab", "Render"}
+
+    with repo.connect() as connection:
+        dispositions = {
+            row[0]
+            for row in connection.execute(
+                "SELECT disposition FROM daily_batch_candidates WHERE batch_id=?",
+                (result.batch_id,),
+            ).fetchall()
+        }
+    assert "company_duplicate_in_batch" in dispositions
+
+
+def test_company_cap_is_configurable_and_diversity_precedes_second_slot(repo, tmp_path):
+    jobs = [
+        posting(1, company="Alpha", employer_id="alpha"),
+        posting(2, company="Alpha", employer_id="alpha"),
+        posting(3, company="Alpha", employer_id="alpha"),
+        posting(4, company="Beta", employer_id="beta"),
+    ]
+    seed(repo, jobs)
+    result = prepare(
+        repo,
+        request(
+            repo,
+            tmp_path / "out.csv",
+            jobs,
+            quota=3,
+            max_jobs_per_employer_per_batch=2,
+        ),
+    )
+    companies = [row["Company Name"] for row in DailyBatchStore(repo).export_rows(result.batch_id)]
+
+    assert result.selected_count == 3
+    assert companies.count("Alpha") == 2
+    assert companies.count("Beta") == 1
+    assert companies[:2] == ["Alpha", "Beta"]
+
+
+def test_employer_cooldown_suppresses_new_role_without_rejecting_it(repo, tmp_path):
+    destination = tmp_path / "out.csv"
+    first = posting(1, company="Reddit", employer_id="reddit")
+    seed(repo, [first])
+    delivered = finalize(
+        repo,
+        prepare(
+            repo,
+            request(
+                repo,
+                destination,
+                [first],
+                quota=1,
+                max_jobs_per_employer_per_batch=1,
+            ),
+        ),
+    )
+    assert delivered.status == "delivered"
+
+    second = posting(2, company="Reddit", employer_id="reddit")
+    seed(repo, [second])
+    req = request(
+        repo,
+        destination,
+        [second],
+        quota=1,
+        idempotency_key="day-2",
+        max_jobs_per_employer_per_batch=1,
+        employer_cooldown_days=30,
+    )
+    result = prepare(repo, req)
+
+    assert result.selected_count == 0
+    assert result.shortfall == 1
+    assert result.counts.employer_cooldown_suppressed_groups == 1
+    with repo.connect() as connection:
+        disposition = connection.execute(
+            "SELECT disposition FROM daily_batch_candidates WHERE batch_id=? AND job_id=?",
+            (result.batch_id, second.id),
+        ).fetchone()[0]
+    assert disposition == "employer_cooldown"
+
+
 def test_operator_reviews_frozen_batch_before_explicit_release(repo, tmp_path, monkeypatch, capsys):
     job = posting(1)
     seed(repo, [job])
