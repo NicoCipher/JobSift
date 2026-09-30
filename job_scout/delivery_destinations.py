@@ -89,6 +89,44 @@ def spreadsheet_id_from_value(value: str) -> str:
     raise ValueError("Google Sheets URL does not contain a valid spreadsheet ID")
 
 
+class ClientSheetRegistrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    client_id: str
+    destination_id: str
+    display_name: str
+    spreadsheet: str
+    tab: str
+    column_mapping: dict[str, str]
+
+    @field_validator("client_id", "display_name", "spreadsheet", "tab")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("registration fields must not be blank")
+        return value
+
+    @field_validator("destination_id")
+    @classmethod
+    def stable_destination_id(cls, value: str) -> str:
+        value = value.strip()
+        if not _ID.fullmatch(value):
+            raise ValueError("destination_id must be path-safe")
+        return value
+
+    @field_validator("column_mapping")
+    @classmethod
+    def valid_mapping(cls, value: dict[str, str]) -> dict[str, str]:
+        cleaned = {
+            str(source).strip(): str(target).strip()
+            for source, target in value.items()
+        }
+        if not cleaned or any(not source or not target for source, target in cleaned.items()):
+            raise ValueError("column_mapping must contain nonblank field/header pairs")
+        return cleaned
+
+
 class SheetMetadataGateway(Protocol):
     def read_rows(self, spreadsheet_id: str, tab: str) -> list[list[str]]: ...
 
