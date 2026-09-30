@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 
 from job_scout.dedupe.resolver import representative_key
@@ -20,7 +21,9 @@ from job_scout.storage.sqlite import SQLiteRepository
 
 
 def _timestamp(value) -> float:
-    return value.timestamp() if value is not None else 0.0
+    if value is None:
+        return 0.0
+    return value.replace(tzinfo=value.tzinfo or UTC).timestamp()
 
 
 def _delivery_priority_key(candidate):
