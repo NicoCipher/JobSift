@@ -37,7 +37,7 @@ class ProductionSourceRegistry(BaseModel):
 
     registry_version: Literal["production-source-registry-v1"] = "production-source-registry-v1"
     registry_id: str
-    target_universe_sha256: str = Field(min_length=64, max_length=64)
+    target_universe_git_blob_sha: str = Field(min_length=40, max_length=40)
     health_manifest_sha256: str = Field(min_length=64, max_length=64)
     health_evidence_updated_at: str
     approval_policy: Literal["health-active-only"] = "health-active-only"
@@ -93,7 +93,7 @@ def build_production_registry(
     *,
     universe: dict[str, Any],
     health: dict[str, Any],
-    target_universe_sha256: str,
+    target_universe_git_blob_sha: str,
     registry_id: str,
 ) -> ProductionSourceRegistry:
     """Approve only targets with complete, matching, active health evidence."""
@@ -151,7 +151,7 @@ def build_production_registry(
     payload = {
         "registry_version": "production-source-registry-v1",
         "registry_id": registry_id,
-        "target_universe_sha256": target_universe_sha256,
+        "target_universe_git_blob_sha": target_universe_git_blob_sha,
         "health_manifest_sha256": manifest_hash,
         "health_evidence_updated_at": updated_at,
         "approval_policy": "health-active-only",
