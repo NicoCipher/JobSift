@@ -90,6 +90,11 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
         selected_count=2,
         shortfall=3,
         error=None,
+        counts=SimpleNamespace(
+            fresh_eligible_employers=2,
+            company_cap_suppressed_groups=0,
+            employer_cooldown_suppressed_groups=0,
+        ),
     )
     store = SimpleNamespace(
         export_rows=lambda batch_id: [
