@@ -7,8 +7,8 @@ import pytest
 from job_scout.domain.models import CollectionResult, CollectionStatus, Job, SourceTarget
 from job_scout.production_registry import build_production_registry, build_shard_manifest
 from job_scout.shard_collection import (
-    ShardCollectionArtifact,
     collect_shard,
+    ShardCollectionArtifact,
     validate_complete_artifact_set,
 )
 
