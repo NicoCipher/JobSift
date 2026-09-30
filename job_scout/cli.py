@@ -10,7 +10,12 @@ from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.lever import LeverCollector
 from job_scout.collectors.workday import WorkdayCollector
+from job_scout.delivery_destinations import (
+    ClientSheetDestinationStore,
+    DELIVERY_FIELDS,
+)
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
+from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
 from job_scout.orchestration.daily_batch import finalize_daily_batch
 from job_scout.orchestration.pipeline import run_pipeline
@@ -47,6 +52,40 @@ def main() -> None:
     )
     history_import.add_argument("--workbook", required=True, type=Path)
     history_import.add_argument("--database", default="jobs.sqlite3")
+    destination = commands.add_parser(
+        "destination", help="Register and manage client-owned delivery destinations"
+    )
+    destination_commands = destination.add_subparsers(
+        dest="destination_command", required=True
+    )
+    destination_register = destination_commands.add_parser(
+        "register-google-sheet",
+        help="Validate and register a client-owned Google Sheet",
+    )
+    destination_register.add_argument("--database", default="jobs.sqlite3")
+    destination_register.add_argument("--client", required=True)
+    destination_register.add_argument("--destination-id", required=True)
+    destination_register.add_argument("--display-name", required=True)
+    destination_register.add_argument("--spreadsheet", required=True)
+    destination_register.add_argument("--tab", required=True)
+    destination_register.add_argument(
+        "--map",
+        action="append",
+        default=[],
+        metavar="JOBSIFT_FIELD=CLIENT_HEADER",
+        help=(
+            "Repeat for every delivered field. Supported fields: "
+            + ", ".join(DELIVERY_FIELDS)
+        ),
+    )
+    destination_list = destination_commands.add_parser("list")
+    destination_list.add_argument("--database", default="jobs.sqlite3")
+    destination_list.add_argument("--client", required=True)
+    destination_disable = destination_commands.add_parser("disable")
+    destination_disable.add_argument("--database", default="jobs.sqlite3")
+    destination_disable.add_argument("--client", required=True)
+    destination_disable.add_argument("--destination-id", required=True)
+
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     profile_create = profile_commands.add_parser("create")
@@ -64,6 +103,89 @@ def main() -> None:
                 help="Repeat the reviewed batch ID to authorize delivery",
             )
     args = parser.parse_args()
+    if args.command == "destination":
+        from job_scout.domain.daily_batch import BatchConflict
+
+        repository = SQLiteRepository(args.database)
+        store = ClientSheetDestinationStore(repository)
+        try:
+            if args.destination_command == "register-google-sheet":
+                mapping: dict[str, str] = {}
+                for value in args.map:
+                    if "=" not in value:
+                        parser.error("--map must use JOBSIFT_FIELD=CLIENT_HEADER")
+                    source, target = (part.strip() for part in value.split("=", 1))
+                    if source not in DELIVERY_FIELDS:
+                        parser.error(f"unsupported JobSift field in --map: {source}")
+                    if not target:
+                        parser.error("client header in --map must not be blank")
+                    if source in mapping:
+                        parser.error(f"duplicate JobSift field in --map: {source}")
+                    mapping[source] = target
+                result = store.register_google_sheet(
+                    client_id=args.client,
+                    destination_id=args.destination_id,
+                    display_name=args.display_name,
+                    spreadsheet=args.spreadsheet,
+                    tab_name=args.tab,
+                    column_mapping=mapping,
+                    gateway=GoogleSheetsGateway(),
+                )
+                print(
+                    json.dumps(
+                        {
+                            "client_id": result.client_id,
+                            "destination_id": result.destination_id,
+                            "display_name": result.display_name,
+                            "logical_destination": result.logical_uri,
+                            "spreadsheet_id": result.spreadsheet_id,
+                            "sheet_id": result.sheet_id,
+                            "tab_name": result.tab_name,
+                            "header": result.header,
+                            "column_mapping": result.column_mapping,
+                            "header_sha256": result.header_sha256,
+                            "config_sha256": result.config_sha256,
+                            "status": result.status,
+                        },
+                        sort_keys=True,
+                    )
+                )
+            elif args.destination_command == "list":
+                values = store.list(args.client)
+                print(
+                    json.dumps(
+                        [
+                            {
+                                "destination_id": value.destination_id,
+                                "display_name": value.display_name,
+                                "logical_destination": value.logical_uri,
+                                "spreadsheet_id": value.spreadsheet_id,
+                                "sheet_id": value.sheet_id,
+                                "tab_name": value.tab_name,
+                                "column_mapping": value.column_mapping,
+                                "status": value.status,
+                                "config_sha256": value.config_sha256,
+                            }
+                            for value in values
+                        ],
+                        sort_keys=True,
+                    )
+                )
+            else:
+                result = store.disable(args.client, args.destination_id)
+                print(
+                    json.dumps(
+                        {
+                            "client_id": result.client_id,
+                            "destination_id": result.destination_id,
+                            "status": result.status,
+                        },
+                        sort_keys=True,
+                    )
+                )
+        except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
+            parser.error(f"unable to manage destination: {exc}")
+        return
     if args.command == "batch":
         from job_scout.domain.daily_batch import BatchConflict
 
