@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
 
 from job_scout.domain.models import Job
@@ -27,11 +29,41 @@ CREATE INDEX IF NOT EXISTS ix_inventory_run_jobs_run
 """
 
 
+@dataclass(frozen=True)
+class InventoryRunRecord:
+    run_id: str
+    plan_id: str
+    started_at: datetime
+    completed_at: datetime | None
+    status: str
+
+
 class InventoryRunStore:
     def __init__(self, repository):
         self.repository = repository
         with repository.connect() as connection:
             connection.executescript(INVENTORY_RUN_SCHEMA)
+
+    @staticmethod
+    def _record(row) -> InventoryRunRecord:
+        return InventoryRunRecord(
+            run_id=row["run_id"],
+            plan_id=row["plan_id"],
+            started_at=datetime.fromisoformat(row["started_at"]),
+            completed_at=(
+                datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+            ),
+            status=row["status"],
+        )
+
+    def get(self, run_id: str) -> InventoryRunRecord | None:
+        with self.repository.connect() as connection:
+            row = connection.execute(
+                "SELECT run_id,plan_id,started_at,completed_at,status "
+                "FROM inventory_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+        return self._record(row) if row is not None else None
 
     def create(self, *, run_id: str, plan_id: str, started_at: datetime) -> None:
         with self.repository.connect() as connection:
@@ -42,6 +74,46 @@ class InventoryRunStore:
                 (run_id, plan_id, started_at.isoformat(), None, "running"),
             )
 
+    def create_if_absent(self, *, run_id: str, plan_id: str, started_at: datetime) -> bool:
+        """Create a deterministic run receipt, or verify the existing receipt."""
+        started = started_at.isoformat()
+        with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            inserted = connection.execute(
+                "INSERT OR IGNORE INTO inventory_runs "
+                "(run_id,plan_id,started_at,completed_at,status) VALUES (?,?,?,?,?)",
+                (run_id, plan_id, started, None, "running"),
+            ).rowcount
+            row = connection.execute(
+                "SELECT run_id,plan_id,started_at,completed_at,status "
+                "FROM inventory_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("inventory run receipt was not created")
+        if row["plan_id"] != plan_id or row["started_at"] != started:
+            raise ValueError("inventory run identity collision")
+        return inserted == 1
+
+    def add_memberships(
+        self,
+        *,
+        run_id: str,
+        memberships: Iterable[tuple[str, str]],
+    ) -> int:
+        """Attach target/job pairs to one run in a single transaction."""
+        rows = [(run_id, job_id, target_identity) for target_identity, job_id in memberships]
+        if not rows:
+            return 0
+        with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                "INSERT OR IGNORE INTO inventory_run_jobs "
+                "(run_id,job_id,target_identity) VALUES (?,?,?)",
+                rows,
+            )
+        return len(rows)
+
     def add_jobs(
         self,
         *,
@@ -49,16 +121,10 @@ class InventoryRunStore:
         target_identity: str,
         jobs: list[Job],
     ) -> int:
-        if not jobs:
-            return 0
-        with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.executemany(
-                "INSERT OR IGNORE INTO inventory_run_jobs "
-                "(run_id,job_id,target_identity) VALUES (?,?,?)",
-                [(run_id, job.id, target_identity) for job in jobs],
-            )
-        return len(jobs)
+        return self.add_memberships(
+            run_id=run_id,
+            memberships=((target_identity, job.id) for job in jobs),
+        )
 
     def finish(
         self,
