@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
