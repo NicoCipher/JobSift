@@ -15,7 +15,7 @@ from job_scout.domain.models import JobLifecycle, SearchBrief, SourceTarget
 from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.storage.sqlite import SQLiteRepository
 
-TARGET = SourceTarget(board_id="acme", company="Acme")
+TARGET = SourceTarget(board_id="acme", company="Acme", employer_id="acme")
 PROVIDER_ID = "af12c78b-61dd-4e30-8ca7-5d8b34bfc253"
 
 
@@ -69,6 +69,7 @@ def test_valid_public_board_and_identity():
     job = normalized()
     assert job.source == "ashby" and job.source_board_id == "acme"
     assert job.source_job_id == PROVIDER_ID
+    assert job.employer_id == "acme"
     assert job.id == str(uuid.uuid5(uuid.NAMESPACE_URL, f"ashby:acme:{PROVIDER_ID}"))
     assert job.raw_metadata["identity_source"] == "provider_id"
     assert job.country == "United States"
