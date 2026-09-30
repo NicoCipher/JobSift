@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from job_scout.domain.models import LeverTargetConfig, WorkdayTargetConfig
+from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 
 PROVIDERS = ("greenhouse", "ashby", "workday", "lever")
 
@@ -51,7 +51,20 @@ class ProductionTarget(BaseModel):
             expected = f"workday:{config.board_id}"
         if self.target_identity != expected:
             raise ValueError("production target identity does not match coordinates")
+        if not self.company_hint or not self.company_hint.strip():
+            raise ValueError("production target requires an employer/company hint")
         return self
+
+    def source_target(self) -> SourceTarget:
+        company = self.company_hint
+        assert company is not None
+        if self.source in {"greenhouse", "ashby"}:
+            return SourceTarget(board_id=self.coordinates["board"], company=company)
+        if self.source == "lever":
+            config = LeverTargetConfig.model_validate(self.coordinates)
+            return SourceTarget(board_id=config.board_id, company=company, lever=config)
+        config = WorkdayTargetConfig.model_validate(self.coordinates)
+        return SourceTarget(board_id=config.board_id, company=company, workday=config)
 
 
 class ProductionSourceRegistry(BaseModel):
