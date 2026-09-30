@@ -13,7 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from job_scout.domain.daily_batch import DailyBatchRequest, DailyBatchResult
-from job_scout.export.batch_sheets import sheet_destination
+from job_scout.export.batch_sheets import managed_sheet_destination, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
 from job_scout.sourcing_plan import SourcingPlan, load_sourcing_plan, run_sourcing_plan
@@ -57,13 +57,13 @@ class LiveRunnerConfig:
     reports_dir: Path
     spreadsheet_id: str | None
     sheet_tab: str | None
-    campaign_id: str | None
     quota: int
     interval_seconds: int
     timezone: str
     auto_release: bool
     allow_partial: bool
     run_once: bool
+    campaign_id: str | None = None
     discard_prepared: bool = False
     validation_only: bool = False
     inventory_retention_hours: int = 72
@@ -277,10 +277,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             client_id=brief.client_id,
             campaign_id=config.campaign_id,
         )
-        destination = sheet_destination(
-            sheet_contract.spreadsheet_id,
-            sheet_contract.worksheet_name,
-        )
+        destination = managed_sheet_destination(sheet_contract.destination_id)
     elif config.spreadsheet_id is not None and config.sheet_tab is not None:
         destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
     elif config.validation_only:
