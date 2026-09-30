@@ -14,6 +14,7 @@ from job_scout.export.batch_sheets import (
     GoogleSheetsGateway,
     ManagedBatchSheetPublisher,
     SheetsGateway,
+    parse_managed_sheet_destination,
     parse_sheet_destination,
 )
 from job_scout.export.csv_exporter import export_row
@@ -217,7 +218,9 @@ def prepare_daily_batch(
 ) -> DailyBatchResult:
     # CSV paths resolve as in run_pipeline; Sheets destinations have stable URI identity.
     destination = request.destination
-    if destination.startswith("gsheet:"):
+    if destination.startswith("gsheet-managed:"):
+        parse_managed_sheet_destination(destination)
+    elif destination.startswith("gsheet:"):
         parse_sheet_destination(destination)
     elif "://" in destination:
         raise ValueError("unsupported batch destination")
@@ -234,7 +237,7 @@ def finalize_daily_batch(
     result = store.get(batch_id)
     if result.status == "delivered":
         return result
-    if result.request.destination.startswith("gsheet:"):
+    if result.request.destination.startswith(("gsheet:", "gsheet-managed:")):
         try:
             gateway = sheets_gateway or GoogleSheetsGateway()
             if result.request.sheet_delivery is not None:
