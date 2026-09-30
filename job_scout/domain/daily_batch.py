@@ -64,8 +64,14 @@ class DailyBatchRequest(BatchModel):
             raise ValueError("revision ID must not be blank")
         if self.max_posting_age_hours is not None and self.freshness_evaluated_at is None:
             raise ValueError("posting freshness requires an explicit evaluation timestamp")
-        if self.sheet_delivery is not None and self.sheet_delivery.client_id != self.client_id:
-            raise ValueError("sheet delivery contract must belong to the request client")
+        if self.sheet_delivery is not None:
+            if self.sheet_delivery.client_id != self.client_id:
+                raise ValueError("sheet delivery contract must belong to the request client")
+            expected = f"gsheet-managed://{self.sheet_delivery.destination_id}"
+            if self.destination != expected:
+                raise ValueError("managed destination must match the frozen sheet contract")
+        elif self.destination.startswith("gsheet-managed:"):
+            raise ValueError("managed destination requires a frozen sheet contract")
         return self
 
 
