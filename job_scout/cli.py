@@ -10,13 +10,16 @@ from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.lever import LeverCollector
 from job_scout.collectors.workday import WorkdayCollector
+from job_scout.delivery_destinations import inspect_client_sheet, register_client_sheet
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
+from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
 from job_scout.orchestration.daily_batch import finalize_daily_batch
 from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
+from job_scout.storage.destinations import DeliveryDestinationStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -47,6 +50,40 @@ def main() -> None:
     )
     history_import.add_argument("--workbook", required=True, type=Path)
     history_import.add_argument("--database", default="jobs.sqlite3")
+    destination = commands.add_parser(
+        "destination", help="Inspect or register a client-owned Google Sheet"
+    )
+    destination_commands = destination.add_subparsers(
+        dest="destination_command", required=True
+    )
+    destination_inspect = destination_commands.add_parser("inspect")
+    destination_inspect.add_argument("--sheet-url", required=True)
+    destination_inspect.add_argument("--worksheet")
+    destination_inspect.add_argument(
+        "--map",
+        action="append",
+        default=[],
+        metavar="JOBSIFT_FIELD=CLIENT_HEADER",
+        help="Override an automatic column mapping",
+    )
+    destination_register = destination_commands.add_parser("register")
+    destination_register.add_argument("--database", default="jobs.sqlite3")
+    destination_register.add_argument("--client", required=True)
+    destination_register.add_argument("--destination-id", required=True)
+    destination_register.add_argument("--campaign-id", required=True)
+    destination_register.add_argument("--sheet-url", required=True)
+    destination_register.add_argument("--worksheet")
+    destination_register.add_argument(
+        "--map",
+        action="append",
+        default=[],
+        metavar="JOBSIFT_FIELD=CLIENT_HEADER",
+        help="Override an automatic column mapping",
+    )
+    destination_show = destination_commands.add_parser("show")
+    destination_show.add_argument("--database", default="jobs.sqlite3")
+    destination_show.add_argument("--client", required=True)
+    destination_show.add_argument("--campaign-id", required=True)
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     profile_create = profile_commands.add_parser("create")
@@ -64,6 +101,84 @@ def main() -> None:
                 help="Repeat the reviewed batch ID to authorize delivery",
             )
     args = parser.parse_args()
+
+    def column_overrides(values):
+        result = {}
+        for value in values:
+            field, separator, header = value.partition("=")
+            field, header = field.strip(), header.strip()
+            if not separator or not field or not header:
+                parser.error("--map must be JOBSIFT_FIELD=CLIENT_HEADER")
+            if field in result:
+                parser.error(f"duplicate --map for {field}")
+            result[field] = header
+        return result
+
+    if args.command == "destination":
+        from job_scout.domain.daily_batch import BatchConflict
+
+        try:
+            if args.destination_command == "inspect":
+                result = inspect_client_sheet(
+                    gateway=GoogleSheetsGateway(),
+                    sheet_url=args.sheet_url,
+                    worksheet_name=args.worksheet,
+                    overrides=column_overrides(args.map),
+                )
+                print(
+                    json.dumps(
+                        {
+                            **result,
+                            "headers": list(result["headers"]),
+                            "validated_at": result["validated_at"].isoformat(),
+                        },
+                        sort_keys=True,
+                    )
+                )
+                return
+            repository = SQLiteRepository(args.database)
+            if args.destination_command == "register":
+                destination_value, campaign = register_client_sheet(
+                    repository=repository,
+                    gateway=GoogleSheetsGateway(),
+                    client_id=args.client,
+                    destination_id=args.destination_id,
+                    campaign_id=args.campaign_id,
+                    sheet_url=args.sheet_url,
+                    worksheet_name=args.worksheet,
+                    overrides=column_overrides(args.map),
+                )
+                contract = DeliveryDestinationStore(repository).resolve_campaign(
+                    client_id=args.client,
+                    campaign_id=args.campaign_id,
+                )
+                print(
+                    json.dumps(
+                        {
+                            "destination_id": destination_value.destination_id,
+                            "campaign_id": campaign.campaign_id,
+                            "client_id": contract.client_id,
+                            "spreadsheet_id": contract.spreadsheet_id,
+                            "worksheet_id": contract.worksheet_id,
+                            "worksheet_name": contract.worksheet_name,
+                            "headers": list(contract.headers),
+                            "column_map": contract.column_map,
+                            "header_sha256": contract.header_sha256,
+                            "status": "ready",
+                        },
+                        sort_keys=True,
+                    )
+                )
+                return
+            contract = DeliveryDestinationStore(repository).resolve_campaign(
+                client_id=args.client,
+                campaign_id=args.campaign_id,
+            )
+            print(json.dumps(contract.model_dump(mode="json"), sort_keys=True))
+            return
+        except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
+            parser.error(f"unable to {args.destination_command} destination: {exc}")
+
     if args.command == "batch":
         from job_scout.domain.daily_batch import BatchConflict
 
