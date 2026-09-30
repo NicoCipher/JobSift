@@ -11,42 +11,42 @@ on:
       greenhouse_targets:
         description: Production-approved Greenhouse targets to sample
         required: true
-        default: "10"
+        default: 10
         type: number
       ashby_targets:
         description: Production-approved Ashby targets to sample
         required: true
-        default: "10"
+        default: 10
         type: number
       workday_targets:
         description: Production-approved Workday targets to sample
         required: true
-        default: "5"
+        default: 5
         type: number
       lever_targets:
         description: Production-approved Lever targets to sample
         required: true
-        default: "10"
+        default: 10
         type: number
       greenhouse_shards:
         description: Greenhouse worker shards
         required: true
-        default: "2"
+        default: 2
         type: number
       ashby_shards:
         description: Ashby worker shards
         required: true
-        default: "2"
+        default: 2
         type: number
       workday_shards:
         description: Workday worker shards
         required: true
-        default: "2"
+        default: 2
         type: number
       lever_shards:
         description: Lever worker shards
         required: true
-        default: "2"
+        default: 2
         type: number
 
 permissions:
@@ -77,14 +77,14 @@ jobs:
           python -m job_scout.shard_benchmark plan \
             --registry config/source_registries/production_active_v1.json \
             --output-dir benchmark-plan \
-            --limit greenhouse=${{ inputs.greenhouse_targets || 10 }} \
-            --limit ashby=${{ inputs.ashby_targets || 10 }} \
-            --limit workday=${{ inputs.workday_targets || 5 }} \
-            --limit lever=${{ inputs.lever_targets || 10 }} \
-            --shards greenhouse=${{ inputs.greenhouse_shards || 2 }} \
-            --shards ashby=${{ inputs.ashby_shards || 2 }} \
-            --shards workday=${{ inputs.workday_shards || 2 }} \
-            --shards lever=${{ inputs.lever_shards || 2 }}
+            --limit greenhouse=${{ github.event.inputs.greenhouse_targets || 10 }} \
+            --limit ashby=${{ github.event.inputs.ashby_targets || 10 }} \
+            --limit workday=${{ github.event.inputs.workday_targets || 5 }} \
+            --limit lever=${{ github.event.inputs.lever_targets || 10 }} \
+            --shards greenhouse=${{ github.event.inputs.greenhouse_shards || 2 }} \
+            --shards ashby=${{ github.event.inputs.ashby_shards || 2 }} \
+            --shards workday=${{ github.event.inputs.workday_shards || 2 }} \
+            --shards lever=${{ github.event.inputs.lever_shards || 2 }}
 
       - name: Export worker matrix
         id: matrix
