@@ -78,6 +78,10 @@ def main() -> None:
             + ", ".join(DELIVERY_FIELDS)
         ),
     )
+    destination_register.add_argument(
+        "--mapping-json",
+        help="JSON object mapping JobSift fields to client header names",
+    )
     destination_list = destination_commands.add_parser("list")
     destination_list.add_argument("--database", default="jobs.sqlite3")
     destination_list.add_argument("--client", required=True)
@@ -110,18 +114,36 @@ def main() -> None:
         store = ClientSheetDestinationStore(repository)
         try:
             if args.destination_command == "register-google-sheet":
+                if args.map and args.mapping_json:
+                    parser.error("use either --map or --mapping-json, not both")
                 mapping: dict[str, str] = {}
-                for value in args.map:
-                    if "=" not in value:
-                        parser.error("--map must use JOBSIFT_FIELD=CLIENT_HEADER")
-                    source, target = (part.strip() for part in value.split("=", 1))
+                if args.mapping_json:
+                    try:
+                        raw_mapping = json.loads(args.mapping_json)
+                    except json.JSONDecodeError as exc:
+                        parser.error(f"invalid --mapping-json: {exc.msg}")
+                    if not isinstance(raw_mapping, dict) or not all(
+                        isinstance(source, str) and isinstance(target, str)
+                        for source, target in raw_mapping.items()
+                    ):
+                        parser.error("--mapping-json must be an object of string-to-string values")
+                    mapping = {
+                        source.strip(): target.strip()
+                        for source, target in raw_mapping.items()
+                    }
+                else:
+                    for value in args.map:
+                        if "=" not in value:
+                            parser.error("--map must use JOBSIFT_FIELD=CLIENT_HEADER")
+                        source, target = (part.strip() for part in value.split("=", 1))
+                        if source in mapping:
+                            parser.error(f"duplicate JobSift field in --map: {source}")
+                        mapping[source] = target
+                for source, target in mapping.items():
                     if source not in DELIVERY_FIELDS:
-                        parser.error(f"unsupported JobSift field in --map: {source}")
+                        parser.error(f"unsupported JobSift field in mapping: {source}")
                     if not target:
-                        parser.error("client header in --map must not be blank")
-                    if source in mapping:
-                        parser.error(f"duplicate JobSift field in --map: {source}")
-                    mapping[source] = target
+                        parser.error("client header in mapping must not be blank")
                 result = store.register_google_sheet(
                     client_id=args.client,
                     destination_id=args.destination_id,
