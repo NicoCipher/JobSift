@@ -99,9 +99,32 @@ class CollectionShardManifest(BaseModel):
 
     @model_validator(mode="after")
     def verify_manifest(self) -> "CollectionShardManifest":
+        shard_ids = [shard.shard_id for shard in self.shards]
+        if len(shard_ids) != len(set(shard_ids)):
+            raise ValueError("collection shard ids must be unique")
         ids = [identity for shard in self.shards for identity in shard.target_identities]
         if len(ids) != len(set(ids)):
             raise ValueError("target appears in more than one collection shard")
+        actual_shards = dict(sorted(Counter(shard.source for shard in self.shards).items()))
+        actual_targets = dict(
+            sorted(
+                Counter(
+                    shard.source
+                    for shard in self.shards
+                    for _ in shard.target_identities
+                ).items()
+            )
+        )
+        if actual_shards != self.shard_counts_by_source:
+            raise ValueError("collection shard counts do not reconcile")
+        if actual_targets != self.target_counts_by_source:
+            raise ValueError("collection target counts do not reconcile")
+        if any(
+            not identity.startswith(f"{shard.source}:")
+            for shard in self.shards
+            for identity in shard.target_identities
+        ):
+            raise ValueError("collection shard contains a target from another provider")
         payload = self.model_dump(mode="json", exclude={"manifest_sha256"})
         if self.manifest_sha256 != sha256_json(payload):
             raise ValueError("collection shard manifest hash is invalid")
@@ -198,6 +221,8 @@ def build_shard_manifest(
         if not targets:
             continue
         count = shard_counts_by_source[source]
+        if count > len(targets):
+            raise ValueError(f"shard count exceeds {source} target count")
         buckets: list[list[str]] = [[] for _ in range(count)]
         ordered = sorted(
             targets,
