@@ -16,7 +16,7 @@ from job_scout.export.csv_exporter import CSV_COLUMNS
 
 DESTINATION_SCHEME = "client-sheet"
 SYSTEM_FIELDS = ("Status", "Batch ID", "Batch Prepared At", "Job ID")
-DELIVERY_FIELDS = tuple([*CSV_COLUMNS, *SYSTEM_FIELDS])
+DELIVERY_FIELDS = (*CSV_COLUMNS, *SYSTEM_FIELDS)
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 DESTINATION_SCHEMA = """
