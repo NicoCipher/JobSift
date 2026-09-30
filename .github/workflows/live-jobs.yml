@@ -78,10 +78,6 @@ jobs:
         shell: bash
         run: |
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
-          if [[ -z "$JOBSIFT_DESTINATION_ID" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.validate }}" == "true" ) ]]; then
-            test -n "$JOBSIFT_SHEET_ID" || { echo "Missing JOBSIFT_SHEET_ID repository variable"; exit 1; }
-            test -n "$JOBSIFT_SHEET_TAB" || { echo "Missing JOBSIFT_SHEET_TAB repository variable"; exit 1; }
-          fi
           if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.validate }}" != "true" ]]; then
             test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
             test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
