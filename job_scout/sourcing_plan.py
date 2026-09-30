@@ -45,11 +45,24 @@ class _PlanTarget(BaseModel):
 
     source: str
     company: str
+    employer_id: str | None = None
 
     @field_validator("company")
     @classmethod
     def company_required(cls, value: str) -> str:
         return _non_blank(value)
+
+    @field_validator("employer_id")
+    @classmethod
+    def employer_id_is_stable(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().casefold()
+        if not value or not all(character.isalnum() or character in "._-" for character in value):
+            raise ValueError(
+                "employer_id must contain only letters, numbers, dots, underscores, or hyphens"
+            )
+        return value
 
     @property
     def target_identity(self) -> str:
@@ -73,7 +86,9 @@ class GreenhousePlanTarget(_PlanTarget):
         return f"greenhouse:{self.board}"
 
     def source_target(self) -> SourceTarget:
-        return SourceTarget(board_id=self.board, company=self.company)
+        return SourceTarget(
+            board_id=self.board, company=self.company, employer_id=self.employer_id
+        )
 
 
 class AshbyPlanTarget(_PlanTarget):
@@ -114,7 +129,12 @@ class WorkdayPlanTarget(_PlanTarget):
 
     def source_target(self) -> SourceTarget:
         config = self.config
-        return SourceTarget(board_id=config.board_id, company=self.company, workday=config)
+        return SourceTarget(
+            board_id=config.board_id,
+            company=self.company,
+            employer_id=self.employer_id,
+            workday=config,
+        )
 
 
 class LeverPlanTarget(_PlanTarget):
@@ -137,7 +157,12 @@ class LeverPlanTarget(_PlanTarget):
 
     def source_target(self) -> SourceTarget:
         config = self.config
-        return SourceTarget(board_id=config.board_id, company=self.company, lever=config)
+        return SourceTarget(
+            board_id=config.board_id,
+            company=self.company,
+            employer_id=self.employer_id,
+            lever=config,
+        )
 
 
 PlanTarget = Annotated[
