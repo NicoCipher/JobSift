@@ -495,12 +495,12 @@ def evaluate_inventory_run(
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
-            "SELECT DISTINCT j.payload_json FROM inventory_run_jobs r "
+            "SELECT DISTINCT j.id,j.payload_json FROM inventory_run_jobs r "
             "JOIN jobs j ON j.id=r.job_id WHERE r.run_id=? ORDER BY j.id",
             (run_id,),
         )
         for row in cursor:
-            job = Job.model_validate_json(row[0])
+            job = Job.model_validate_json(row[1])
             match = match_job(job, brief, evaluated_at=evaluation_time)
             connection.execute(
                 "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
