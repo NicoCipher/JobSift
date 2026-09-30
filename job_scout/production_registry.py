@@ -43,8 +43,6 @@ class ProductionSourceRegistry(BaseModel):
     approval_policy: Literal["health-active-only"] = "health-active-only"
     target_counts_by_source: dict[str, int]
     targets: list[ProductionTarget]
-    registry_sha256: str
-
     @model_validator(mode="after")
     def verify_registry(self) -> "ProductionSourceRegistry":
         identities = [target.target_identity for target in self.targets]
@@ -53,9 +51,6 @@ class ProductionSourceRegistry(BaseModel):
         expected_counts = dict(sorted(Counter(target.source for target in self.targets).items()))
         if self.target_counts_by_source != expected_counts:
             raise ValueError("production registry source counts do not reconcile")
-        payload = self.model_dump(mode="json", exclude={"registry_sha256"})
-        if self.registry_sha256 != sha256_json(payload):
-            raise ValueError("production registry hash is invalid")
         return self
 
 
@@ -158,7 +153,7 @@ def build_production_registry(
         "target_counts_by_source": dict(sorted(Counter(t.source for t in targets).items())),
         "targets": [target.model_dump(mode="json") for target in targets],
     }
-    return ProductionSourceRegistry(**payload, registry_sha256=sha256_json(payload))
+    return ProductionSourceRegistry(**payload)
 
 
 def build_shard_manifest(
@@ -202,7 +197,7 @@ def build_shard_manifest(
     payload = {
         "manifest_version": "collection-shards-v1",
         "registry_id": registry.registry_id,
-        "registry_sha256": registry.registry_sha256,
+        "registry_sha256": sha256_json(registry.model_dump(mode="json")),
         "shard_counts_by_source": dict(sorted(shard_counts_by_source.items())),
         "target_counts_by_source": target_counts,
         "shards": [shard.model_dump(mode="json") for shard in shards],
