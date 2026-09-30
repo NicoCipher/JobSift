@@ -422,6 +422,89 @@ def test_validation_mode_refuses_cloud_repository(tmp_path, monkeypatch):
         live_runner.run_once(config)
 
 
+def test_retention_runs_before_client_evaluation(tmp_path, monkeypatch):
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text("{}", encoding="utf-8")
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "validation.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id="sheet123",
+        sheet_tab="Sheet1",
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        validation_only=True,
+    )
+    events = []
+    repository = SimpleNamespace(remote_url="")
+
+    def prune(**kwargs):
+        events.append("prune")
+        return {"deleted_jobs": 0, "compacted_jobs": 1}
+
+    repository.prune_stale_inventory = prune
+    store = SimpleNamespace(evidence_digest=lambda *_: "a" * 64)
+    plan = SimpleNamespace(plan_id="pilot")
+    brief = SimpleNamespace(
+        client_id="client",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(max_age_hours=24, unknown_policy="reject"),
+    )
+    report = SimpleNamespace(
+        run_id="inventory-run-1",
+        status="success",
+        started_at=datetime(2026, 9, 30, 9, 0, tzinfo=UTC),
+        completed_at=datetime(2026, 9, 30, 9, 1, tzinfo=UTC),
+        targets=[],
+    )
+    evaluation = SimpleNamespace(
+        evaluated_at=report.completed_at,
+        total_matched=1,
+        total_rejected=0,
+    )
+
+    monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", lambda *_, **__: report)
+
+    def evaluate(**kwargs):
+        assert events == ["prune"]
+        events.append("evaluate")
+        return evaluation
+
+    monkeypatch.setattr(live_runner, "evaluate_inventory_run", evaluate)
+    monkeypatch.setattr(
+        live_runner,
+        "InventoryRunStore",
+        lambda _: SimpleNamespace(job_ids=lambda run_id: ("job-1",)),
+    )
+    monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
+    monkeypatch.setattr(live_runner, "prepare_daily_batch", lambda **_: object())
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda store, batch, *, action, sourcing=None, evaluation=None, retention=None: {
+            "action": action
+        },
+    )
+
+    assert live_runner.run_once(config) == {"action": "validated"}
+    assert events == ["prune", "evaluate"]
+
+
 def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatch):
     brief_path = tmp_path / "brief.json"
     brief_path.write_text("{}", encoding="utf-8")
