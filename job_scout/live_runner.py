@@ -57,13 +57,13 @@ class LiveRunnerConfig:
     reports_dir: Path
     spreadsheet_id: str | None
     sheet_tab: str | None
-    destination_id: str | None
     quota: int
     interval_seconds: int
     timezone: str
     auto_release: bool
     allow_partial: bool
     run_once: bool
+    destination_id: str | None = None
     discard_prepared: bool = False
     validation_only: bool = False
     inventory_retention_hours: int = 72
