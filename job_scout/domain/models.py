@@ -93,6 +93,7 @@ class Job(BaseModel):
     source_board_id: str
     title: str
     company: str
+    employer_id: str | None = None
     description_text: str | None = None
     description_html: str | None = None
     job_url: HttpUrl
@@ -122,6 +123,18 @@ class Job(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("must not be blank")
+        return value
+
+    @field_validator("employer_id")
+    @classmethod
+    def stable_employer_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().casefold()
+        if not value or not all(character.isalnum() or character in "._-" for character in value):
+            raise ValueError(
+                "employer_id must contain only letters, numbers, dots, underscores, or hyphens"
+            )
         return value
 
     @model_validator(mode="after")
@@ -223,6 +236,13 @@ class CandidateProfile(BaseModel):
     notes: str | None = None
 
 
+class DeliveryPolicy(BaseModel):
+    """Client-specific delivery constraints; matching remains independent."""
+
+    max_jobs_per_employer_per_batch: int | None = Field(default=1, ge=1, le=1000)
+    employer_cooldown_days: int = Field(default=0, ge=0, le=3650)
+
+
 class SearchBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -241,6 +261,7 @@ class SearchBrief(BaseModel):
     max_required_experience_years: int | None = Field(default=None, ge=0, le=50)
     candidate_residence: str | None = None
     work_eligibility: WorkEligibilityRule = Field(default_factory=WorkEligibilityRule)
+    delivery_policy: DeliveryPolicy = Field(default_factory=DeliveryPolicy)
     notes: str | None = None
 
     @field_validator("client_id")
@@ -321,8 +342,21 @@ class LeverTargetConfig(BaseModel):
 class SourceTarget(BaseModel):
     board_id: str
     company: str
+    employer_id: str | None = None
     workday: WorkdayTargetConfig | None = None
     lever: LeverTargetConfig | None = None
+
+    @field_validator("employer_id")
+    @classmethod
+    def stable_employer_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().casefold()
+        if not value or not all(character.isalnum() or character in "._-" for character in value):
+            raise ValueError(
+                "employer_id must contain only letters, numbers, dots, underscores, or hyphens"
+            )
+        return value
 
 
 class CollectionResult(BaseModel):
