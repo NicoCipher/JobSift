@@ -390,7 +390,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         evaluated_at=report.completed_at,
     )
 
-    candidate_ids = InventoryRunStore(repository).job_ids(report.run_id)
+    candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
     evidence_sha = store.evidence_digest(brief.client_id, candidate_ids)
     brief_sha = sha256(brief_path.read_bytes()).hexdigest()
     scope = f"{plan.plan_id}:{report.run_id}"
