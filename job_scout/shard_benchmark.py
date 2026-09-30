@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from job_scout.domain.models import Job, MatchDecision, SearchBrief
+from job_scout.posting_freshness import posting_freshness_disposition
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -21,7 +22,6 @@ from job_scout.production_registry import (
     load_production_registry,
     sha256_json,
 )
-from job_scout.posting_freshness import posting_freshness_disposition
 from job_scout.search_brief import load_search_brief
 from job_scout.shard_collection import ShardCollectionArtifact, collect_shard
 from job_scout.shard_fanin import FanInReport, persist_shard_artifacts
