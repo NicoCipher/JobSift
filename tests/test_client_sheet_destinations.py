@@ -277,6 +277,50 @@ def test_destination_reconfiguration_after_prepare_cannot_change_frozen_delivery
     assert gateway.append_calls == 0
 
 
+def test_registration_carries_legacy_sheet_delivery_history_into_logical_destination(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway = FakeClientSheet()
+    posting = job()
+    seed(repo, posting)
+
+    legacy_destination = "gsheet://sheet123/Jobs"
+    repo.mark_exported(posting.id, CLIENT, legacy_destination)
+
+    destination = register(repo, gateway)
+    with repo.connect() as connection:
+        group = connection.execute(
+            "SELECT group_id FROM posting_delivery_groups WHERE job_id=?",
+            (posting.id,),
+        ).fetchone()[0]
+        assert connection.execute(
+            "SELECT 1 FROM group_deliveries "
+            "WHERE group_id=? AND client_id=? AND destination=?",
+            (group, CLIENT, destination.logical_uri),
+        ).fetchone() is not None
+        assert connection.execute(
+            "SELECT 1 FROM exports "
+            "WHERE job_id=? AND client_id=? AND destination=?",
+            (posting.id, CLIENT, destination.logical_uri),
+        ).fetchone() is not None
+
+    request = DailyBatchRequest(
+        client_id=CLIENT,
+        destination=destination.logical_uri,
+        destination_id=destination.destination_id,
+        destination_config_sha256=destination.config_sha256,
+        idempotency_key="day-2",
+        requested_quota=1,
+        evidence_scope_id="scope-2",
+        evaluation_id="eval-2",
+        candidate_job_ids=(posting.id,),
+        evidence_sha256=DailyBatchStore(repo).evidence_digest(CLIENT, (posting.id,)),
+    )
+    result = prepare_daily_batch(repository=repo, request=request)
+
+    assert result.selected_count == 0
+    assert result.counts.previously_delivered_groups == 1
+
+
 def test_logical_destination_keeps_duplicate_history_stable_when_physical_mapping_changes(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     gateway = FakeClientSheet()
