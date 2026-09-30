@@ -64,6 +64,7 @@ class LiveRunnerConfig:
     run_once: bool
     discard_prepared: bool = False
     validation_only: bool = False
+    inventory_retention_hours: int = 72
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
@@ -96,6 +97,9 @@ class LiveRunnerConfig:
             run_once=_boolean("JOBSIFT_RUN_ONCE"),
             discard_prepared=discard_prepared,
             validation_only=validation_only,
+            inventory_retention_hours=_positive_integer(
+                "JOBSIFT_INVENTORY_RETENTION_HOURS", 72
+            ),
         )
 
 
@@ -191,6 +195,7 @@ def _batch_payload(
     *,
     action: str,
     sourcing=None,
+    retention=None,
 ) -> dict[str, object]:
     rows = store.export_rows(batch.batch_id)
     payload: dict[str, object] = {
@@ -215,6 +220,8 @@ def _batch_payload(
             for row in rows
         ],
     }
+    if retention is not None:
+        payload["retention"] = retention
     if sourcing is not None:
         payload["sourcing"] = {
             "status": sourcing.status,
@@ -309,6 +316,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             "source_failures": list(_source_failures(report)),
         }
 
+    retention = repository.prune_stale_inventory(
+        retention_hours=config.inventory_retention_hours
+    )
+
     candidate_ids = _candidate_job_ids(
         repository,
         client_id=brief.client_id,
@@ -342,7 +353,13 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     if config.auto_release:
         batch = finalize_daily_batch(repository=repository, batch_id=batch.batch_id)
         action = "released" if batch.status == "delivered" else "release_failed"
-    return _batch_payload(store, batch, action=action, sourcing=report)
+    return _batch_payload(
+        store,
+        batch,
+        action=action,
+        sourcing=report,
+        retention=retention,
+    )
 
 
 def main() -> None:
