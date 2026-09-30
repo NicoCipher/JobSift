@@ -143,7 +143,8 @@ class DeliveryDestinationStore:
                     "headers_json=excluded.headers_json,"
                     "column_map_json=excluded.column_map_json,"
                     "header_sha256=excluded.header_sha256,"
-                    "status='ready',validated_at=excluded.validated_at,updated_at=excluded.updated_at",
+                    "status='ready',validated_at=excluded.validated_at,"
+                    "updated_at=excluded.updated_at",
                     (
                         destination_id,
                         client_id,
