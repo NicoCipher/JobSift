@@ -20,7 +20,6 @@ from job_scout.domain.models import (
     SearchBrief,
     SourceTarget,
 )
-from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.sourcing_plan import (
     SourcingPlan,
     SourcingRunReport,
@@ -29,6 +28,7 @@ from job_scout.sourcing_plan import (
     load_sourcing_plan,
     run_sourcing_plan,
 )
+from job_scout.storage.sqlite import SQLiteRepository
 
 
 def targets() -> list[dict[str, str]]:
