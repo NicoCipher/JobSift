@@ -272,7 +272,9 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
     sheet_contract = None
-    if config.campaign_id is not None:
+    if config.validation_only:
+        destination = str((config.reports_dir / "validation-output.csv").resolve())
+    elif config.campaign_id is not None:
         sheet_contract = DeliveryDestinationStore(repository).resolve_campaign(
             client_id=brief.client_id,
             campaign_id=config.campaign_id,
@@ -280,8 +282,6 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         destination = managed_sheet_destination(sheet_contract.destination_id)
     elif config.spreadsheet_id is not None and config.sheet_tab is not None:
         destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
-    elif config.validation_only:
-        destination = str((config.reports_dir / "validation-output.csv").resolve())
     else:
         raise ValueError("no delivery destination is configured")
 
