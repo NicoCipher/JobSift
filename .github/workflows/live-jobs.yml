@@ -29,6 +29,8 @@ on:
           - "25"
           - "50"
           - "100"
+          - "150"
+          - "200"
   schedule:
     - cron: "0 7 * * *"
 
@@ -51,6 +53,7 @@ jobs:
       JOBSIFT_TIMEZONE: Africa/Lagos
       JOBSIFT_ALLOW_PARTIAL: "false"
       JOBSIFT_RUN_ONCE: "true"
+      JOBSIFT_INVENTORY_RETENTION_HOURS: "72"
       JOBSIFT_SHEET_ID: ${{ vars.JOBSIFT_SHEET_ID }}
       JOBSIFT_SHEET_TAB: ${{ vars.JOBSIFT_SHEET_TAB }}
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
