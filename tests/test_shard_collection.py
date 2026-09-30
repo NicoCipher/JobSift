@@ -105,6 +105,7 @@ def test_collect_shard_emits_normalized_metrics_without_persistence() -> None:
                 _job(job_id="fresh", board="a", company="Alpha", posted_at=NOW - timedelta(hours=3)),
                 _job(job_id="unknown", board="a", company="Alpha", posted_at=None),
             ],
+            raw_postings_received=3,
         ),
         "b": CollectionResult(
             source="greenhouse",
@@ -114,6 +115,7 @@ def test_collect_shard_emits_normalized_metrics_without_persistence() -> None:
                 _job(job_id="stale", board="b", company="Beta", posted_at=NOW - timedelta(hours=30))
             ],
             errors=["provider pagination stopped"],
+            raw_postings_received=4,
         ),
     }
 
@@ -140,7 +142,7 @@ def test_collect_shard_emits_normalized_metrics_without_persistence() -> None:
     assert artifact.metrics.targets_succeeded == 1
     assert artifact.metrics.targets_partial == 1
     assert artifact.metrics.targets_failed == 0
-    assert artifact.metrics.raw_postings_received == 3
+    assert artifact.metrics.raw_postings_received == 7
     assert artifact.metrics.postings_with_trustworthy_timestamps == 2
     assert artifact.metrics.postings_at_most_24h_old_at_collection == 1
     assert artifact.metrics.target_runtime_p50_ms == 175
@@ -164,6 +166,7 @@ def test_artifact_hash_rejects_tampering() -> None:
                 target=target,
                 status=CollectionStatus.SUCCESS,
                 jobs=[],
+                raw_postings_received=0,
             )
 
     artifact = collect_shard(
@@ -178,6 +181,48 @@ def test_artifact_hash_rejects_tampering() -> None:
     payload["metrics"]["raw_postings_received"] = 99
     with pytest.raises(ValueError):
         ShardCollectionArtifact.model_validate(payload)
+
+
+def test_artifact_hash_ignores_set_serialization_order() -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 1})
+
+    class Collector:
+        client = None
+
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def collect(self, target: SourceTarget) -> CollectionResult:
+            job = _job(
+                job_id=f"job-{target.board_id}",
+                board=target.board_id,
+                company=target.company,
+                posted_at=NOW - timedelta(hours=1),
+            )
+            job.eligible_countries = {"United States", "Canada"}
+            return CollectionResult(
+                source=self.source,
+                target=target,
+                status=CollectionStatus.SUCCESS,
+                jobs=[job],
+                raw_postings_received=1,
+            )
+
+    artifact = collect_shard(
+        registry=registry,
+        manifest=manifest,
+        shard_id="greenhouse-000",
+        collector_factory=Collector,
+        now=_clock([NOW, NOW, NOW, NOW, NOW, NOW]),
+        monotonic=_clock([0.0, 0.01, 0.01, 0.02]),
+    )
+    payload = artifact.model_dump(mode="json")
+    countries = payload["targets"][0]["jobs"][0]["eligible_countries"]
+    payload["targets"][0]["jobs"][0]["eligible_countries"] = list(reversed(countries))
+
+    reloaded = ShardCollectionArtifact.model_validate(payload)
+    assert reloaded.artifact_sha256 == artifact.artifact_sha256
 
 
 def test_complete_artifact_set_fails_closed_on_missing_or_duplicate_shards() -> None:
@@ -196,6 +241,7 @@ def test_complete_artifact_set_fails_closed_on_missing_or_duplicate_shards() -> 
                 target=target,
                 status=CollectionStatus.SUCCESS,
                 jobs=[],
+                raw_postings_received=0,
             )
 
     artifacts = []
