@@ -58,8 +58,15 @@ That is source-breadth evidence, not proof of 150 fresh client matches per day.
 Targets may be non-US employers, may have no relevant software role, or may have
 no posting younger than 24 hours.
 
-Production source promotion therefore needs separate employer/company evidence and
-live provider health.
+Production source promotion is now explicit rather than implicit. The checked
+`production-source-registry-v1` artifact contains only the 2,044 targets that the
+complete 2026-09-09 health run classified as active. It carries the canonical
+target-universe Git blob identity and health-manifest SHA so the approval evidence
+is auditable. A future registry version must be rebuilt from a complete health run;
+missing, duplicate, non-active, or source-mismatched evidence fails closed.
+
+This registry is a collection allowlist. It does **not** assert that every approved
+target is relevant to every client or can contribute a fresh match today.
 
 ## Collection architecture for scale
 
@@ -79,7 +86,12 @@ The current seven-employer collection is still sequential. Shared inventory is a
 necessary boundary for scale, but it is **not** evidence that 2,044 targets can be
 processed within the production time budget.
 
-The next throughput step is provider-aware sharding.
+Provider-aware deterministic sharding is now defined over that registry. Shard
+counts remain an explicit runtime/benchmark input rather than an invented capacity
+claim: targets are isolated by provider, deterministically ordered, distributed
+once across that provider's shards, and validated for duplicate-free coverage.
+
+The next throughput step is the shard-worker artifact contract and fan-in writer.
 
 At scale:
 
