@@ -18,6 +18,7 @@ from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_da
 from job_scout.search_brief import load_search_brief
 from job_scout.sourcing_plan import SourcingPlan, load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
+from job_scout.storage.destinations import DeliveryDestinationStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -54,8 +55,9 @@ class LiveRunnerConfig:
     database_path: Path
     csv_path: Path
     reports_dir: Path
-    spreadsheet_id: str
-    sheet_tab: str
+    spreadsheet_id: str | None
+    sheet_tab: str | None
+    campaign_id: str | None
     quota: int
     interval_seconds: int
     timezone: str
@@ -77,6 +79,15 @@ class LiveRunnerConfig:
             raise ValueError("release and discard modes cannot both be enabled")
         if validation_only and (auto_release or discard_prepared):
             raise ValueError("validation mode cannot release or discard production batches")
+        campaign_id = os.getenv("JOBSIFT_CAMPAIGN_ID", "").strip() or None
+        spreadsheet_id = os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
+        sheet_tab = os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
+        if campaign_id is None and bool(spreadsheet_id) != bool(sheet_tab):
+            raise ValueError("legacy Google Sheets delivery requires both sheet ID and tab")
+        if campaign_id is None and not validation_only and not spreadsheet_id:
+            raise ValueError(
+                "JOBSIFT_CAMPAIGN_ID is required unless legacy sheet ID/tab are configured"
+            )
         return cls(
             plan_path=Path(
                 os.getenv(
@@ -87,8 +98,9 @@ class LiveRunnerConfig:
             database_path=Path(_required("JOBSIFT_DATABASE")),
             csv_path=Path(_required("JOBSIFT_CSV")),
             reports_dir=Path(os.getenv("JOBSIFT_REPORTS_DIR", "/var/data/runs")),
-            spreadsheet_id=_required("JOBSIFT_SHEET_ID"),
-            sheet_tab=_required("JOBSIFT_SHEET_TAB"),
+            spreadsheet_id=spreadsheet_id,
+            sheet_tab=sheet_tab,
+            campaign_id=campaign_id,
             quota=_positive_integer("JOBSIFT_BATCH_QUOTA", 5),
             interval_seconds=_positive_integer("JOBSIFT_INTERVAL_SECONDS", 86400),
             timezone=timezone,
@@ -213,6 +225,16 @@ def _batch_payload(
         "invalid_time_suppressed_groups": batch.counts.invalid_time_suppressed_groups,
         "completeness": batch.request.completeness,
         "error": batch.error,
+        "campaign_id": (
+            batch.request.sheet_delivery.campaign_id
+            if batch.request.sheet_delivery is not None
+            else None
+        ),
+        "destination_id": (
+            batch.request.sheet_delivery.destination_id
+            if batch.request.sheet_delivery is not None
+            else None
+        ),
         "selected_jobs": [
             {
                 "title": row["Job Title"],
@@ -249,7 +271,22 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     if config.validation_only and repository.remote_url:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
-    destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
+    sheet_contract = None
+    if config.campaign_id is not None:
+        sheet_contract = DeliveryDestinationStore(repository).resolve_campaign(
+            client_id=brief.client_id,
+            campaign_id=config.campaign_id,
+        )
+        destination = sheet_destination(
+            sheet_contract.spreadsheet_id,
+            sheet_contract.worksheet_name,
+        )
+    elif config.spreadsheet_id is not None and config.sheet_tab is not None:
+        destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
+    elif config.validation_only:
+        destination = str((config.reports_dir / "validation-output.csv").resolve())
+    else:
+        raise ValueError("no delivery destination is configured")
 
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
@@ -289,11 +326,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         }
 
     local_day = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
-    idempotency_key = local_day
+    idempotency_key = (
+        f"{config.campaign_id}:{local_day}" if config.campaign_id is not None else local_day
+    )
     today = _batch_by_idempotency(
         repository,
         client_id=brief.client_id,
         destination=destination,
+        sheet_delivery=sheet_contract,
         idempotency_key=idempotency_key,
     )
     if today is not None:
