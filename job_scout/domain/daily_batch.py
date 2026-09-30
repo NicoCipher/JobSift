@@ -21,6 +21,8 @@ class BatchModel(BaseModel):
 class DailyBatchRequest(BatchModel):
     client_id: str
     destination: str
+    destination_id: str | None = None
+    destination_config_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     idempotency_key: str
     requested_quota: int = Field(strict=True, ge=1)
     max_jobs_per_employer_per_batch: int | None = Field(default=None, ge=1, le=1000)
@@ -62,6 +64,12 @@ class DailyBatchRequest(BatchModel):
             raise ValueError("revision ID must not be blank")
         if self.max_posting_age_hours is not None and self.freshness_evaluated_at is None:
             raise ValueError("posting freshness requires an explicit evaluation timestamp")
+        if (self.destination_id is None) != (self.destination_config_sha256 is None):
+            raise ValueError(
+                "client destination attribution requires both destination ID and config hash"
+            )
+        if self.destination_id is not None and not self.destination_id.strip():
+            raise ValueError("destination ID must not be blank")
         return self
 
 
