@@ -61,6 +61,18 @@ duplicating the rows.
 Without the Turso environment variables, JobSift keeps using the standard local
 SQLite backend for development and tests.
 
+## Managed client destinations
+
+For client-owned delivery, set `JOBSIFT_CAMPAIGN_ID` as the runner variable.
+That campaign resolves to a persisted client-owned destination and its validated
+column mapping. The prepared batch freezes the resolved contract before release.
+
+`JOBSIFT_SHEET_ID` and `JOBSIFT_SHEET_TAB` remain only as a backward-compatible
+legacy path for the current test sheet. Do not put client spreadsheet IDs or links
+in public workflow-dispatch inputs.
+
+See [Client-owned Google Sheets delivery](client-sheet-destinations.md).
+
 ## Required repository secrets
 
 In GitHub repository Settings > Secrets and variables > Actions > Secrets, add:
@@ -74,12 +86,12 @@ commit it to the repository.
 
 ## Required repository variables
 
-In Settings > Secrets and variables > Actions > Variables, add:
+In Settings > Secrets and variables > Actions > Variables, use:
 
-- `JOBSIFT_SHEET_ID`
-- `JOBSIFT_SHEET_TAB`
+- `JOBSIFT_CAMPAIGN_ID` for managed client delivery, or
+- legacy `JOBSIFT_SHEET_ID` + `JOBSIFT_SHEET_TAB` for the existing test sheet.
 
-For the current production sheet, the tab is `Sheet1`.
+Do not configure a client's Sheet URL as a public workflow input.
 
 ## Production source set
 
