@@ -97,9 +97,17 @@ raw posting counts, trustworthy timestamp counts, <=24h-at-collection metrics, a
 target runtime p50/p95. A complete artifact set must match the exact registry and
 shard-manifest provenance and cover every expected shard exactly once.
 
-The next throughput step is the authoritative fan-in/persistence writer. Until that
-exists and is proven idempotent, the parallel collector is not wired into Live
-JobSift.
+The authoritative fan-in/persistence boundary now validates the complete artifact
+set before creating an inventory run, verifies each normalized job belongs to its
+approved target, deduplicates provider identities before persistence, and derives a
+deterministic run receipt from the exact artifact set. Replaying the same completed
+artifact set returns the existing run instead of re-persisting it. A crashed
+`running` fan-in can safely retry through idempotent job upserts and run
+membership inserts.
+
+The parallel collector is still not wired into Live JobSift. Workflow parallelism
+comes only after this fan-in path passes CI/review and a bounded benchmark chooses
+provider shard counts from measured runtime rather than assumption.
 
 At scale:
 
