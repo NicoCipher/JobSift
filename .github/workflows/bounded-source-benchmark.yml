@@ -77,14 +77,14 @@ jobs:
           python -m job_scout.shard_benchmark plan \
             --registry config/source_registries/production_active_v1.json \
             --output-dir benchmark-plan \
-            --limit greenhouse=${{ inputs.greenhouse_targets }} \
-            --limit ashby=${{ inputs.ashby_targets }} \
-            --limit workday=${{ inputs.workday_targets }} \
-            --limit lever=${{ inputs.lever_targets }} \
-            --shards greenhouse=${{ inputs.greenhouse_shards }} \
-            --shards ashby=${{ inputs.ashby_shards }} \
-            --shards workday=${{ inputs.workday_shards }} \
-            --shards lever=${{ inputs.lever_shards }}
+            --limit greenhouse=${{ inputs.greenhouse_targets || 10 }} \
+            --limit ashby=${{ inputs.ashby_targets || 10 }} \
+            --limit workday=${{ inputs.workday_targets || 5 }} \
+            --limit lever=${{ inputs.lever_targets || 10 }} \
+            --shards greenhouse=${{ inputs.greenhouse_shards || 2 }} \
+            --shards ashby=${{ inputs.ashby_shards || 2 }} \
+            --shards workday=${{ inputs.workday_shards || 2 }} \
+            --shards lever=${{ inputs.lever_shards || 2 }}
 
       - name: Export worker matrix
         id: matrix
