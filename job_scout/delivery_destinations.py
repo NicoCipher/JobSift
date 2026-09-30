@@ -237,8 +237,13 @@ def destination_config_sha(
 class ClientSheetDestinationStore:
     def __init__(self, repository):
         self.repository = repository
-        with repository.connect() as connection:
-            connection.executescript(DESTINATION_SCHEMA)
+        try:
+            with repository.connect() as connection:
+                connection.executescript(DESTINATION_SCHEMA)
+        except sqlite3.IntegrityError as error:
+            raise BatchConflict(
+                "duplicate physical client worksheets exist; reconcile destination ownership"
+            ) from error
 
     @staticmethod
     def _from_row(row) -> ClientSheetDestination:
