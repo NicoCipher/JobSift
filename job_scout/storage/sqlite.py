@@ -91,6 +91,19 @@ CREATE TABLE IF NOT EXISTS delivery_keys (
   PRIMARY KEY(job_id, kind, value)
 );
 CREATE INDEX IF NOT EXISTS ix_delivery_key ON delivery_keys(kind, value);
+CREATE TABLE IF NOT EXISTS job_identity_ledger (
+  source TEXT NOT NULL,
+  source_board_id TEXT NOT NULL,
+  source_job_id TEXT NOT NULL,
+  canonical_url TEXT NOT NULL,
+  employer_id TEXT,
+  company TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  pruned_at TEXT NOT NULL,
+  was_delivered INTEGER NOT NULL CHECK(was_delivered IN (0,1)),
+  PRIMARY KEY(source, source_board_id, source_job_id)
+);
 CREATE TABLE IF NOT EXISTS group_deliveries (
   group_id TEXT NOT NULL REFERENCES delivery_groups(id),
   client_id TEXT NOT NULL, destination TEXT NOT NULL,
@@ -239,6 +252,136 @@ class SQLiteRepository:
             )
             self._assign_group(connection, job)
             return lifecycle
+
+    @staticmethod
+    def _aware(value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    def prune_stale_inventory(
+        self,
+        *,
+        retention_hours: int = 72,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        """Purge stale active payloads while retaining minimal delivery identity."""
+        if retention_hours < 1:
+            raise ValueError("retention_hours must be at least 1")
+        current = self._aware(now or datetime.now(UTC))
+        cutoff = current.timestamp() - retention_hours * 3600
+        counts = {
+            "deleted_jobs": 0,
+            "compacted_jobs": 0,
+            "deleted_delivered_candidates": 0,
+            "skipped_unresolved": 0,
+        }
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            has_batches = (
+                connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='daily_batches'"
+                ).fetchone()
+                is not None
+            )
+            if has_batches:
+                cutoff_iso = datetime.fromtimestamp(cutoff, tz=UTC).isoformat()
+                counts["deleted_delivered_candidates"] = connection.execute(
+                    "DELETE FROM daily_batch_candidates WHERE batch_id IN ("
+                    "SELECT batch_id FROM daily_batches "
+                    "WHERE status='delivered' AND assembled_at<?"
+                    ")",
+                    (cutoff_iso,),
+                ).rowcount
+
+            rows = connection.execute(
+                "SELECT id,first_seen_at,last_seen_at,payload_json FROM jobs ORDER BY id"
+            ).fetchall()
+            for row in rows:
+                job = Job.model_validate_json(row["payload_json"])
+                first_seen = datetime.fromisoformat(row["first_seen_at"])
+                basis = self._aware(job.posted_at or first_seen)
+                if basis.timestamp() >= cutoff:
+                    continue
+
+                if has_batches:
+                    unresolved = connection.execute(
+                        "SELECT 1 FROM daily_batches b "
+                        "LEFT JOIN daily_batch_candidates c ON c.batch_id=b.batch_id "
+                        "LEFT JOIN daily_batch_items i ON i.batch_id=b.batch_id "
+                        "WHERE b.status!='delivered' AND (c.job_id=? OR i.representative_job_id=?) "
+                        "LIMIT 1",
+                        (job.id, job.id),
+                    ).fetchone()
+                    if unresolved is not None:
+                        counts["skipped_unresolved"] += 1
+                        continue
+                    selected_batch = connection.execute(
+                        "SELECT 1 FROM daily_batch_items i JOIN daily_batches b "
+                        "ON b.batch_id=i.batch_id "
+                        "WHERE i.representative_job_id=? LIMIT 1",
+                        (job.id,),
+                    ).fetchone()
+                else:
+                    selected_batch = None
+
+                delivered = connection.execute(
+                    "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1", (job.id,)
+                ).fetchone()
+                exported = connection.execute(
+                    "SELECT 1 FROM exports WHERE job_id=? LIMIT 1", (job.id,)
+                ).fetchone()
+                keep_identity_row = any(value is not None for value in (selected_batch, delivered, exported))
+
+                connection.execute(
+                    "INSERT OR REPLACE INTO job_identity_ledger "
+                    "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+                    "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                        str(job.canonical_url),
+                        job.employer_id,
+                        job.company,
+                        row["first_seen_at"],
+                        row["last_seen_at"],
+                        current.isoformat(),
+                        1 if delivered is not None or exported is not None else 0,
+                    ),
+                )
+                connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
+
+                if keep_identity_row:
+                    compact = job.model_copy(
+                        update={
+                            "description_text": None,
+                            "description_html": None,
+                            "raw_metadata": {},
+                            "offices": [],
+                        }
+                    )
+                    connection.execute(
+                        "UPDATE jobs SET payload_json=?, lifecycle=? WHERE id=?",
+                        (compact.model_dump_json(), JobLifecycle.CLOSED.value, job.id),
+                    )
+                    counts["compacted_jobs"] += 1
+                    continue
+
+                group = connection.execute(
+                    "SELECT group_id FROM posting_delivery_groups WHERE job_id=?", (job.id,)
+                ).fetchone()
+                connection.execute("DELETE FROM delivery_keys WHERE job_id=?", (job.id,))
+                connection.execute("DELETE FROM posting_delivery_groups WHERE job_id=?", (job.id,))
+                connection.execute("DELETE FROM jobs WHERE id=?", (job.id,))
+                counts["deleted_jobs"] += 1
+                if group is not None:
+                    connection.execute(
+                        "DELETE FROM delivery_groups WHERE id=? "
+                        "AND NOT EXISTS (SELECT 1 FROM posting_delivery_groups WHERE group_id=?) "
+                        "AND NOT EXISTS (SELECT 1 FROM group_deliveries WHERE group_id=?)",
+                        (group[0], group[0], group[0]),
+                    )
+        return counts
 
     def _assign_group(self, connection: sqlite3.Connection, job: Job) -> None:
         keys = delivery_keys(job)
