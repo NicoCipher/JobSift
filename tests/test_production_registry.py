@@ -129,7 +129,7 @@ def test_provider_shards_are_deterministic_balanced_and_exhaustive() -> None:
                 "target_identity": f"greenhouse:g{index}",
                 "source": "greenhouse",
                 "coordinates": {"board": f"g{index}"},
-                "company_hint": None,
+                "company_hint": f"Greenhouse {index}",
             }
         )
         health["results"].append(

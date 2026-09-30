@@ -182,6 +182,7 @@ class LeverCollector:
             status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
             jobs=jobs,
             errors=errors,
+            raw_postings_received=int(self.last_counts["received"]),
         )
 
     def _configuration(self, target: SourceTarget) -> tuple[LeverTargetConfig | None, str | None]:

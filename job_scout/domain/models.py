@@ -373,6 +373,7 @@ class CollectionResult(BaseModel):
     status: CollectionStatus
     jobs: list[Job] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    raw_postings_received: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def failures_are_not_empty_successes(self) -> CollectionResult:

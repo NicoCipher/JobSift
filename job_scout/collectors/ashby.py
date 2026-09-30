@@ -245,6 +245,7 @@ class AshbyCollector:
                 jobs=jobs,
                 errors=errors,
                 status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
+                raw_postings_received=int(self.last_counts["received"]),
             )
         except httpx.RequestError as exc:
             return self._failure(target, CollectionStatus.NETWORK_FAILURE, type(exc).__name__)

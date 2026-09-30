@@ -91,7 +91,15 @@ counts remain an explicit runtime/benchmark input rather than an invented capaci
 claim: targets are isolated by provider, deterministically ordered, distributed
 once across that provider's shards, and validated for duplicate-free coverage.
 
-The next throughput step is the shard-worker artifact contract and fan-in writer.
+The shard-worker artifact contract is now explicit: workers perform provider reads
+only and emit normalized, content-fingerprinted artifacts with per-target status,
+raw posting counts, trustworthy timestamp counts, <=24h-at-collection metrics, and
+target runtime p50/p95. A complete artifact set must match the exact registry and
+shard-manifest provenance and cover every expected shard exactly once.
+
+The next throughput step is the authoritative fan-in/persistence writer. Until that
+exists and is proven idempotent, the parallel collector is not wired into Live
+JobSift.
 
 At scale:
 
