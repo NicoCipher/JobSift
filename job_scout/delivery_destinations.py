@@ -65,7 +65,10 @@ def parse_google_sheet_url(value: str) -> tuple[str, int | None]:
     spreadsheet_id = parts[2]
     if not _SPREADSHEET_ID.fullmatch(spreadsheet_id):
         raise BatchConflict("invalid spreadsheet ID")
-    gid_values = parse_qs(parsed.fragment).get("gid", [])
+    gid_values = (
+        parse_qs(parsed.fragment).get("gid", [])
+        or parse_qs(parsed.query).get("gid", [])
+    )
     gid = None
     if gid_values:
         try:
