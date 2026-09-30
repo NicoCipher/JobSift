@@ -76,6 +76,22 @@ In Settings > Secrets and variables > Actions > Variables, add:
 
 For the current production sheet, the tab is `Sheet1`.
 
+## Production source set
+
+The live workflow now uses
+`config/sourcing_plans/taiwo_software_remote_us_v2.json`, a seven-employer
+source set documented in [Production software sources V2](production-sources-v2.md).
+
+The seven-employer set is intentionally bounded. It is large enough to test a
+five-job, five-employer batch, but it is not evidence that 25, 50, or 100 distinct
+employers can be supplied reliably. Production expansion should follow measured
+distinct-employer yield.
+
+`JOBSIFT_ALLOW_PARTIAL=false` remains in force. A source failure or partial
+target blocks preparation rather than silently pretending the source set was
+complete. This is conservative and may become an availability bottleneck as the
+target count grows; change it only with an explicit completeness policy.
+
 ## First pilot
 
 1. Configure the secrets and variables above.
