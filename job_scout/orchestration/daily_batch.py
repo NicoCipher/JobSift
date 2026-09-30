@@ -12,6 +12,7 @@ from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, 
 from job_scout.export.batch_sheets import (
     BatchSheetPublisher,
     GoogleSheetsGateway,
+    ManagedBatchSheetPublisher,
     SheetsGateway,
     parse_sheet_destination,
 )
@@ -235,9 +236,17 @@ def finalize_daily_batch(
         return result
     if result.request.destination.startswith("gsheet:"):
         try:
-            publisher = BatchSheetPublisher(result, sheets_gateway or GoogleSheetsGateway())
+            gateway = sheets_gateway or GoogleSheetsGateway()
+            if result.request.sheet_delivery is not None:
+                publisher = ManagedBatchSheetPublisher(
+                    result,
+                    gateway,
+                    result.request.sheet_delivery,
+                )
+            else:
+                publisher = BatchSheetPublisher(result, gateway)
             return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
-        except OSError as error:
+        except (OSError, BatchConflict) as error:
             return store.fail(batch_id, error)
     path = Path(result.request.destination)
     try:
