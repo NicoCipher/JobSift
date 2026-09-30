@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 
 from job_scout.dedupe.resolver import representative_key
@@ -19,6 +20,24 @@ from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
+def _timestamp(value) -> float:
+    if value is None:
+        return 0.0
+    return value.replace(tzinfo=value.tzinfo or UTC).timestamp()
+
+
+def _delivery_priority_key(candidate):
+    decision_rank = 0 if candidate.match.decision is MatchDecision.STRONG_MATCH else 1
+    score = candidate.match.score if candidate.match.score is not None else -1
+    return (
+        decision_rank,
+        -score,
+        -_timestamp(candidate.job.posted_at),
+        -_timestamp(candidate.job.updated_at),
+        representative_key(candidate.job),
+    )
+
+
 def _assemble(request, candidates):
     eligible = [
         v
@@ -28,6 +47,7 @@ def _assemble(request, candidates):
     groups = {}
     for v in eligible:
         groups.setdefault(v.group_id, []).append(v)
+
     historical = {group for group, members in groups.items() if any(v.historical for v in members)}
     delivered = {
         group
@@ -39,10 +59,50 @@ def _assemble(request, candidates):
         for group, members in groups.items()
         if group not in historical | delivered
     }
-    # Match priority is not new ranking: retain the existing sorted persistent-group order.
-    selected = [fresh[group] for group in sorted(fresh)[: request.requested_quota]]
+
+    cooldown_groups = {
+        group for group, candidate in fresh.items() if candidate.employer_recently_delivered
+    }
+    available = {
+        group: candidate for group, candidate in fresh.items() if group not in cooldown_groups
+    }
+    available_employers = {candidate.employer_key for candidate in available.values()}
+
+    company_cap_groups: set[str] = set()
+    if request.max_jobs_per_employer_per_batch is None:
+        ordered_pool = [(group, available[group]) for group in sorted(available)]
+    else:
+        by_employer = {}
+        for group, candidate in available.items():
+            by_employer.setdefault(candidate.employer_key, []).append((group, candidate))
+        for members in by_employer.values():
+            members.sort(key=lambda item: (_delivery_priority_key(item[1]), item[0]))
+
+        cap = request.max_jobs_per_employer_per_batch
+        retained_by_employer = {}
+        for employer, members in by_employer.items():
+            retained_by_employer[employer] = members[:cap]
+            company_cap_groups.update(group for group, _ in members[cap:])
+
+        employer_order = sorted(
+            retained_by_employer,
+            key=lambda employer: (
+                _delivery_priority_key(retained_by_employer[employer][0][1]),
+                employer,
+            ),
+        )
+        ordered_pool = []
+        for position in range(cap):
+            for employer in employer_order:
+                members = retained_by_employer[employer]
+                if position < len(members):
+                    ordered_pool.append(members[position])
+
+    selected_pairs = ordered_pool[: request.requested_quota]
+    selected = [candidate for _, candidate in selected_pairs]
     selected_jobs = {v.job.id for v in selected}
-    selected_groups = {v.group_id for v in selected}
+    selected_groups = {group for group, _ in selected_pairs}
+
     dispositions = {}
     for v in candidates:
         dispositions[v.job.id] = (
@@ -52,12 +112,17 @@ def _assemble(request, candidates):
             if v.group_id in historical
             else "prior_delivery"
             if v.group_id in delivered
+            else "employer_cooldown"
+            if v.group_id in cooldown_groups
+            else "company_duplicate_in_batch"
+            if v.group_id in company_cap_groups
             else "selected_representative"
             if v.job.id in selected_jobs
             else "practical_duplicate"
             if v.group_id in selected_groups
             else "outside_quota"
         )
+
     counts = DailyBatchCounts(
         candidate_postings=len(candidates),
         match_eligible_postings=len(eligible),
@@ -70,6 +135,9 @@ def _assemble(request, candidates):
         previously_delivered_groups=len(delivered),
         duplicate_postings_collapsed=len(eligible) - len(groups),
         fresh_eligible_groups=len(fresh),
+        fresh_eligible_employers=len(available_employers),
+        employer_cooldown_suppressed_groups=len(cooldown_groups),
+        company_cap_suppressed_groups=len(company_cap_groups),
         selected_groups=len(selected),
     )
     return counts, selected, dispositions, [export_row(v.job) for v in selected]

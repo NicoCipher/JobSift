@@ -52,6 +52,12 @@ def _brief(**changes) -> SearchBrief:
     return SearchBrief(**data)
 
 
+def test_delivery_policy_defaults_to_one_job_per_employer_without_inventing_cooldown() -> None:
+    brief = _brief()
+    assert brief.delivery_policy.max_jobs_per_employer_per_batch == 1
+    assert brief.delivery_policy.employer_cooldown_days == 0
+
+
 @pytest.mark.parametrize(
     "title",
     [

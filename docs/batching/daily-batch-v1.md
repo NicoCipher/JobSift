@@ -64,12 +64,32 @@ so those categories are mutually exclusive. Prior delivery is scoped to
 client + destination + group. Destination paths are resolved as in `run_pipeline`.
 
 Group eligible postings using existing persisted group IDs. Remove historical and
-prior-delivery groups, select the minimum existing `representative_key` among the
-remaining eligible in-scope members, sort by persistent group ID, and take the
-first Q groups. Group IDs are existing deterministic identities, not random IDs
-created for selection. The representative key prefers direct application URLs,
-then richer descriptions/evidence and existing timestamp tie-breaks, followed by
-source/board/posting/ID. No new ranking or dedupe policy is introduced.
+prior-delivery groups, then apply the request's client delivery policy. Matching
+eligibility and delivery eligibility are deliberately separate: a posting can stay
+a valid match while receiving a batch disposition such as
+`company_duplicate_in_batch` or `employer_cooldown`.
+
+`max_jobs_per_employer_per_batch` is optional at the batch-contract layer for
+backward compatibility. Live JobSift freezes the SearchBrief delivery policy into
+every request; the production default is 1. Employer identity uses explicit
+`employer_id` when supplied by the source plan and a conservative normalized
+company-name fallback for legacy records.
+
+Within each practical delivery group, the existing `representative_key` still
+chooses the posting representative. Within an employer, delivery priority uses
+only persisted evidence: strong match before possible match, higher existing
+match score, newer posting/update timestamps, then the existing representative
+tie-breaker. With a cap above 1, selection round-robins employers so every employer
+gets its first slot before any employer gets a second.
+
+`employer_cooldown_days` is also frozen into the request. A value of 0 disables
+cooldown; this is the production setting until client evidence supports a specific
+interval. When enabled, a recently delivered employer is suppressed for that
+client/destination without changing the underlying match decision.
+
+If employer diversity leaves fewer groups than the requested quota, JobSift
+returns the smaller batch and an explicit shortfall. It never pads a batch with
+same-company roles merely to hit the requested row count.
 
 Counts use these denominators:
 
@@ -77,7 +97,10 @@ Counts use these denominators:
 - `match_eligible_postings = match_eligible_groups + duplicate_postings_collapsed`.
   Duplicate postings are counted across all eligible groups before suppression.
 - `match_eligible_groups = historically_suppressed_groups + previously_delivered_groups + fresh_eligible_groups`.
-- `selected_groups = selected_count = min(requested_quota, fresh_eligible_groups)`.
+- `fresh_eligible_employers` counts distinct employers after any configured cooldown.
+- `company_cap_suppressed_groups` counts otherwise-fresh groups beyond the per-employer cap.
+- `employer_cooldown_suppressed_groups` counts otherwise-fresh groups suppressed by cooldown.
+- `selected_groups = selected_count` never exceeds quota or the policy-eligible pool.
 - `shortfall = requested_quota - selected_count`, always nonnegative.
 
 Thus grouping before suppression retains equivalent quota semantics: neither

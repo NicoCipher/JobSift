@@ -195,6 +195,9 @@ def _batch_payload(
         "requested_quota": batch.request.requested_quota,
         "selected_count": batch.selected_count,
         "shortfall": batch.shortfall,
+        "fresh_eligible_employers": batch.counts.fresh_eligible_employers,
+        "company_cap_suppressed_groups": batch.counts.company_cap_suppressed_groups,
+        "employer_cooldown_suppressed_groups": batch.counts.employer_cooldown_suppressed_groups,
         "completeness": batch.request.completeness,
         "error": batch.error,
         "selected_jobs": [
@@ -316,6 +319,8 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         destination=destination,
         idempotency_key=idempotency_key,
         requested_quota=config.quota,
+        max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,
+        employer_cooldown_days=brief.delivery_policy.employer_cooldown_days,
         evidence_scope_id=scope,
         evaluation_id=scope,
         candidate_job_ids=candidate_ids,

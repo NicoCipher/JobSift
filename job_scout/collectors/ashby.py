@@ -293,6 +293,7 @@ class AshbyCollector:
             provider_id=item.id if isinstance(item.id, str) else None,
             board_token=target.board_id,
             company=target.company,
+            employer_id=target.employer_id,
             api_version=api_version,
             identity_source=identity_source,
         )
@@ -314,6 +315,7 @@ class AshbyCollector:
             source_job_id=source_id,
             title=item.title,
             company=target.company,
+            employer_id=target.employer_id,
             description_text=description,
             description_html=item.descriptionHtml,
             job_url=job_url,

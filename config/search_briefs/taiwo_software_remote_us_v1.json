@@ -23,7 +23,7 @@
   "management_roles": "avoid",
   "max_required_experience_years": null,
   "must_have_terms": [],
-  "notes": "Production brief for US-company software roles. Require explicit United States target-market evidence and explicit remote work. Work authorization and sponsorship eligibility are intentionally ignored.",
+  "notes": "Production brief for US-company software roles. Require explicit United States target-market evidence and explicit remote work. Work authorization and sponsorship eligibility are intentionally ignored. Delivery defaults to one job per employer per batch; employer cooldown is disabled until client evidence supports a specific interval.",
   "avoid_terms": [],
   "preferred_terms": [
     "software",
@@ -71,5 +71,9 @@
       "remote"
     ],
     "unknown_policy": "review"
+  },
+  "delivery_policy": {
+    "max_jobs_per_employer_per_batch": 1,
+    "employer_cooldown_days": 0
   }
 }

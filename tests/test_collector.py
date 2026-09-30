@@ -18,7 +18,7 @@ def collector(status=200, payload=None):
 
 
 def test_greenhouse_fixture_normalizes() -> None:
-    result = collector().collect(SourceTarget(board_id="acme", company="Acme"))
+    result = collector().collect(SourceTarget(board_id="acme", company="Acme", employer_id="acme"))
     assert result.status is CollectionStatus.SUCCESS
     assert len(result.jobs) == 2
     assert result.jobs[0].remote_status is RemoteStatus.REMOTE
@@ -26,6 +26,7 @@ def test_greenhouse_fixture_normalizes() -> None:
     assert result.jobs[0].offices == ["Remote US"]
     assert result.jobs[0].posted_at is not None
     assert result.jobs[0].country == "United States"
+    assert result.jobs[0].employer_id == "acme"
 
 
 def test_malformed_payload_is_not_empty_success() -> None:

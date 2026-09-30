@@ -8,17 +8,20 @@
     {
       "source": "greenhouse",
       "company": "GitLab",
-      "board": "gitlab"
+      "board": "gitlab",
+      "employer_id": "gitlab"
     },
     {
       "source": "greenhouse",
       "company": "Reddit",
-      "board": "reddit"
+      "board": "reddit",
+      "employer_id": "reddit"
     },
     {
       "source": "ashby",
       "company": "Render",
-      "board": "render"
+      "board": "render",
+      "employer_id": "render"
     }
   ]
 }

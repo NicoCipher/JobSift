@@ -25,16 +25,17 @@ from job_scout.sourcing_plan import SourcingPlan, SourcingRunReport, run_sourcin
 
 def targets() -> list[dict[str, str]]:
     return [
-        {"source": "greenhouse", "company": "Green Co", "board": "green"},
-        {"source": "ashby", "company": "Ash Co", "board": "ash"},
+        {"source": "greenhouse", "company": "Green Co", "employer_id": "green-co", "board": "green"},
+        {"source": "ashby", "company": "Ash Co", "employer_id": "ash-co", "board": "ash"},
         {
             "source": "workday",
             "company": "Work Co",
+            "employer_id": "work-co",
             "host": "work.wd1.myworkdayjobs.com",
             "tenant": "work",
             "site": "External",
         },
-        {"source": "lever", "company": "Lever Co", "instance": "eu", "site": "lever"},
+        {"source": "lever", "company": "Lever Co", "employer_id": "lever-co", "instance": "eu", "site": "lever"},
     ]
 
 
@@ -68,6 +69,7 @@ def fixture_job(source: str, target: SourceTarget) -> Job:
         source_board_id=target.board_id,
         title="Support Engineer",
         company=target.company,
+        employer_id=target.employer_id,
         description_text=description,
         job_url=url,
         canonical_url=url,
@@ -136,6 +138,12 @@ def test_valid_mixed_plan_exposes_explicit_target_identities(tmp_path: Path) -> 
     lever = sourcing_plan.targets[3].source_target()
     assert workday.workday and workday.board_id == workday.workday.board_id
     assert lever.lever and lever.board_id == lever.lever.board_id
+    assert [target.source_target().employer_id for target in sourcing_plan.targets] == [
+        "green-co",
+        "ash-co",
+        "work-co",
+        "lever-co",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -145,6 +153,7 @@ def test_valid_mixed_plan_exposes_explicit_target_identities(tmp_path: Path) -> 
         {"source": "workday", "company": "Work", "host": "host", "tenant": "", "site": "x"},
         {"source": "greenhouse", "company": "Green", "board": "has space"},
         {"source": "ashby", "company": "Ash", "board": "board", "unknown": "no"},
+        {"source": "greenhouse", "company": "Green", "employer_id": "bad id", "board": "green"},
     ],
 )
 def test_malformed_source_specific_targets_are_rejected(
