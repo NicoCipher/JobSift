@@ -10,7 +10,7 @@ from job_scout.delivery_destinations import (
     parse_logical_destination,
     spreadsheet_id_from_value,
 )
-from job_scout.domain.daily_batch import DailyBatchRequest
+from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
@@ -148,6 +148,43 @@ def test_registration_persists_stable_sheet_identity_and_mapping(tmp_path):
     assert destination.column_mapping["Job Link"] == "URL"
     assert destination.logical_uri == "client-sheet://primary-jobs"
     assert ClientSheetDestinationStore(repo).get(CLIENT, "primary-jobs") == destination
+
+
+def test_physical_worksheet_cannot_be_registered_to_two_clients(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway = FakeClientSheet()
+    first = register(repo, gateway)
+    assert first.client_id == CLIENT
+
+    with pytest.raises(BatchConflict, match="already registered"):
+        ClientSheetDestinationStore(repo).register_google_sheet(
+            client_id="client-b",
+            destination_id="client-b-jobs",
+            display_name="Client B Jobs",
+            spreadsheet="https://docs.google.com/spreadsheets/d/sheet123/edit",
+            tab_name="Jobs",
+            column_mapping={"Job Link": "URL"},
+            gateway=gateway,
+        )
+
+    assert ClientSheetDestinationStore(repo).get(CLIENT, "primary-jobs") == first
+
+
+def test_same_client_cannot_alias_one_worksheet_as_two_destinations(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway = FakeClientSheet()
+    register(repo, gateway)
+
+    with pytest.raises(BatchConflict, match="already registered"):
+        ClientSheetDestinationStore(repo).register_google_sheet(
+            client_id=CLIENT,
+            destination_id="secondary-jobs",
+            display_name="Duplicate Alias",
+            spreadsheet="sheet123",
+            tab_name="Jobs",
+            column_mapping={"Job Link": "URL"},
+            gateway=gateway,
+        )
 
 
 def test_registration_requires_unique_existing_mapped_headers(tmp_path):
