@@ -501,7 +501,9 @@ def evaluate_inventory_run(
         )
         for row in cursor:
             job = Job.model_validate_json(row[1])
-            match = match_job(job, brief, evaluated_at=evaluation_time)
+            match = match_job(job, brief).model_copy(
+                update={"evaluated_at": evaluation_time}
+            )
             connection.execute(
                 "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 repository._match_row(match),
