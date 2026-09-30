@@ -213,7 +213,7 @@ def _batch_payload(
         "action": action,
         "batch_id": batch.batch_id,
         "batch_status": batch.status,
-        "destination_id": batch.request.destination_id,
+        "destination_id": getattr(batch.request, "destination_id", None),
         "requested_quota": batch.request.requested_quota,
         "selected_count": batch.selected_count,
         "shortfall": batch.shortfall,
