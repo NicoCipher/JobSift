@@ -13,6 +13,7 @@ from job_scout.collectors.workday import WorkdayCollector
 from job_scout.delivery_destinations import (
     DELIVERY_FIELDS,
     ClientSheetDestinationStore,
+    ClientSheetRegistrationRequest,
 )
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.export.batch_sheets import GoogleSheetsGateway
@@ -81,6 +82,17 @@ def main() -> None:
     destination_register.add_argument(
         "--mapping-json",
         help="JSON object mapping JobSift fields to client header names",
+    )
+    destination_register_file = destination_commands.add_parser(
+        "register-google-sheet-file",
+        help="Register a client-owned Google Sheet from a private JSON file",
+    )
+    destination_register_file.add_argument("--database", default="jobs.sqlite3")
+    destination_register_file.add_argument(
+        "--registration-file",
+        required=True,
+        type=Path,
+        help="Private JSON file containing the client Sheet registration payload",
     )
     destination_list = destination_commands.add_parser("list")
     destination_list.add_argument("--database", default="jobs.sqlite3")
@@ -167,6 +179,36 @@ def main() -> None:
                             "column_mapping": result.column_mapping,
                             "header_sha256": result.header_sha256,
                             "config_sha256": result.config_sha256,
+                            "status": result.status,
+                        },
+                        sort_keys=True,
+                    )
+                )
+            elif args.destination_command == "register-google-sheet-file":
+                try:
+                    registration = ClientSheetRegistrationRequest.model_validate_json(
+                        args.registration_file.read_text(encoding="utf-8")
+                    )
+                except OSError as exc:
+                    parser.error(f"unable to read registration file: {exc}")
+                for source in registration.column_mapping:
+                    if source not in DELIVERY_FIELDS:
+                        parser.error(f"unsupported JobSift field in mapping: {source}")
+                result = store.register_google_sheet(
+                    client_id=registration.client_id,
+                    destination_id=registration.destination_id,
+                    display_name=registration.display_name,
+                    spreadsheet=registration.spreadsheet,
+                    tab_name=registration.tab,
+                    column_mapping=registration.column_mapping,
+                    gateway=GoogleSheetsGateway(),
+                )
+                print(
+                    json.dumps(
+                        {
+                            "client_id": result.client_id,
+                            "destination_id": result.destination_id,
+                            "logical_destination": result.logical_uri,
                             "status": result.status,
                         },
                         sort_keys=True,
