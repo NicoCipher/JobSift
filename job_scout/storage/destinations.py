@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS delivery_campaigns (
 );
 CREATE INDEX IF NOT EXISTS ix_delivery_campaigns_client
   ON delivery_campaigns(client_id, status, campaign_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_active_campaign_destination
+  ON delivery_campaigns(destination_id) WHERE status='active';
 """
 
 
@@ -205,12 +207,17 @@ class DeliveryDestinationStore:
                 ):
                     raise BatchConflict("campaign identifier already has a different binding")
                 return self._campaign(existing)
-            connection.execute(
-                "INSERT INTO delivery_campaigns "
-                "(campaign_id,client_id,destination_id,status,created_at,completed_at) "
-                "VALUES (?,?,?,'active',?,NULL)",
-                (campaign_id, client_id, destination_id, now),
-            )
+            try:
+                connection.execute(
+                    "INSERT INTO delivery_campaigns "
+                    "(campaign_id,client_id,destination_id,status,created_at,completed_at) "
+                    "VALUES (?,?,?,'active',?,NULL)",
+                    (campaign_id, client_id, destination_id, now),
+                )
+            except sqlite3.IntegrityError as error:
+                raise BatchConflict(
+                    "destination already has another active campaign"
+                ) from error
             row = connection.execute(
                 "SELECT * FROM delivery_campaigns WHERE campaign_id=?", (campaign_id,)
             ).fetchone()
@@ -222,18 +229,23 @@ class DeliveryDestinationStore:
         if status not in {"active", "paused", "completed"}:
             raise ValueError("invalid campaign status")
         completed_at = _now().isoformat() if status == "completed" else None
-        with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            updated = connection.execute(
-                "UPDATE delivery_campaigns SET status=?,completed_at=? "
-                "WHERE campaign_id=? AND client_id=?",
-                (status, completed_at, campaign_id, client_id),
-            ).rowcount
-            if not updated:
-                raise BatchConflict("delivery campaign not found for client")
-            row = connection.execute(
-                "SELECT * FROM delivery_campaigns WHERE campaign_id=?", (campaign_id,)
-            ).fetchone()
+        try:
+            with self.repository.connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                updated = connection.execute(
+                    "UPDATE delivery_campaigns SET status=?,completed_at=? "
+                    "WHERE campaign_id=? AND client_id=?",
+                    (status, completed_at, campaign_id, client_id),
+                ).rowcount
+                if not updated:
+                    raise BatchConflict("delivery campaign not found for client")
+                row = connection.execute(
+                    "SELECT * FROM delivery_campaigns WHERE campaign_id=?", (campaign_id,)
+                ).fetchone()
+        except sqlite3.IntegrityError as error:
+            raise BatchConflict(
+                "destination already has another active campaign"
+            ) from error
         return self._campaign(row)
 
     def resolve_campaign(self, *, client_id: str, campaign_id: str) -> SheetDeliveryContract:
