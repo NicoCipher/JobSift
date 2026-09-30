@@ -27,7 +27,13 @@ def build(output: Path = OUTPUT) -> None:
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
-        json.dumps(registry.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            registry.model_dump(mode="json"),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
