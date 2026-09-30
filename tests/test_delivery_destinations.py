@@ -12,7 +12,7 @@ from job_scout.delivery_destinations import (
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
 from job_scout.domain.delivery import WorksheetMetadata
 from job_scout.domain.models import Job, JobMatch
-from job_scout.export.batch_sheets import sheet_destination
+from job_scout.export.batch_sheets import managed_sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.destinations import DeliveryDestinationStore
@@ -82,7 +82,7 @@ def request(repo, value, contract, *, key="day-1"):
     ids = (value.id,)
     return DailyBatchRequest(
         client_id="client-a",
-        destination=sheet_destination(contract.spreadsheet_id, contract.worksheet_name),
+        destination=managed_sheet_destination(contract.destination_id),
         sheet_delivery=contract,
         idempotency_key=key,
         requested_quota=1,
@@ -184,8 +184,6 @@ def test_header_change_and_tab_rename_fail_closed(tmp_path):
     )
     assert failed.status == "failed"
     assert gateway.append_calls == 0
-
-    DailyBatchStore(repo).discard_prepared(first.batch_id) if first.status == "prepared" else None
 
 
 def test_tab_rename_detected_by_stable_worksheet_id(tmp_path):
