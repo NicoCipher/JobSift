@@ -61,6 +61,12 @@ def _brief(**changes) -> SearchBrief:
         "Lead Support Engineer",
     ],
 )
+def test_delivery_policy_defaults_to_one_job_per_employer_without_inventing_cooldown() -> None:
+    brief = _brief()
+    assert brief.delivery_policy.max_jobs_per_employer_per_batch == 1
+    assert brief.delivery_policy.employer_cooldown_days == 0
+
+
 def test_individual_contributor_seniority_is_not_rejected_by_default(title: str) -> None:
     result = match_job(_job(title=title), _brief())
     assert result.decision is MatchDecision.POSSIBLE_MATCH
