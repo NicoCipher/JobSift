@@ -44,12 +44,34 @@ class SheetDeliveryContract(DeliveryModel):
     header_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     validated_at: datetime
 
-    @field_validator("destination_id", "client_id", "campaign_id", "spreadsheet_id", "worksheet_name")
+    @field_validator("client_id", "worksheet_name")
     @classmethod
     def nonblank(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("delivery identity must not be blank")
+        return value
+
+    @field_validator("destination_id", "campaign_id")
+    @classmethod
+    def stable_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value or not all(
+            character.isalnum() or character in "._-" for character in value
+        ):
+            raise ValueError(
+                "destination and campaign IDs may contain only letters, numbers, dots, underscores, or hyphens"
+            )
+        return value
+
+    @field_validator("spreadsheet_id")
+    @classmethod
+    def valid_spreadsheet_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value or not all(
+            character.isalnum() or character in "-_" for character in value
+        ):
+            raise ValueError("invalid spreadsheet ID")
         return value
 
     @model_validator(mode="after")
