@@ -9,9 +9,11 @@ from job_scout.domain.models import (
     CollectionResult,
     CollectionStatus,
     Job,
+    PostingFreshnessRule,
     RuleIntent,
     SearchBrief,
     SourceTarget,
+    UnknownEligibilityPolicy,
 )
 from job_scout.production_registry import (
     ProductionSourceRegistry,
@@ -177,7 +179,12 @@ def test_benchmark_plan_rejects_shards_above_selected_targets() -> None:
         )
 
 
-def _job(source: str, target: SourceTarget) -> Job:
+def _job(
+    source: str,
+    target: SourceTarget,
+    *,
+    posted_at: datetime | None = NOW - timedelta(hours=2),
+) -> Job:
     source_id = f"{source}-{target.board_id}"
     return Job(
         id=source_id,
@@ -192,7 +199,7 @@ def _job(source: str, target: SourceTarget) -> Job:
         canonical_url=f"https://example.test/{source}/{source_id}",
         country="United States",
         eligible_countries={"United States"},
-        posted_at=NOW - timedelta(hours=2),
+        posted_at=posted_at,
         discovered_at=NOW,
         last_seen_at=NOW,
         content_fingerprint=f"fp-{source_id}",
@@ -251,7 +258,8 @@ def test_benchmark_fan_in_evaluates_shared_inventory_without_delivery(tmp_path: 
     assert report.active_inventory_jobs == 4
     assert report.evaluation is not None
     assert report.evaluation.total_evaluated == 4
-    assert report.evaluation.total_matched == 4
+    assert report.evaluation.semantic_matches_before_freshness == 4
+    assert report.evaluation.freshness_eligible_matches == 4
     assert report.distinct_matched_employers == 4
     assert report.distinct_matched_delivery_groups == 4
 
@@ -265,3 +273,70 @@ def test_benchmark_rejects_turso_environment(monkeypatch: pytest.MonkeyPatch) ->
 
     with pytest.raises(ValueError, match="must not use Turso"):
         require_local_benchmark_environment()
+
+
+def test_benchmark_match_yield_applies_production_freshness_policy(tmp_path: Path) -> None:
+    registry = select_registry_subset(_registry(), target_limits_by_source=_all(1))
+    manifest = build_shard_manifest(registry, shard_counts_by_source=_all(1))
+
+    class Collector:
+        client = None
+
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def collect(self, target: SourceTarget) -> CollectionResult:
+            posted_at = (
+                NOW - timedelta(hours=30)
+                if self.source == "ashby"
+                else None
+                if self.source == "workday"
+                else NOW - timedelta(hours=2)
+            )
+            return CollectionResult(
+                source=self.source,
+                target=target,
+                status=CollectionStatus.SUCCESS,
+                jobs=[_job(self.source, target, posted_at=posted_at)],
+                raw_postings_received=1,
+            )
+
+    artifacts = [
+        collect_shard(
+            registry=registry,
+            manifest=manifest,
+            shard_id=shard.shard_id,
+            collector_factory=Collector,
+            now=lambda: NOW,
+            monotonic=lambda: 0.0,
+        )
+        for shard in manifest.shards
+    ]
+    brief = SearchBrief(
+        client_id="benchmark-freshness-client",
+        target_roles=["Software Engineer"],
+        management_roles=RuleIntent.IGNORE,
+        posting_freshness=PostingFreshnessRule(
+            max_age_hours=24,
+            unknown_policy=UnknownEligibilityPolicy.REJECT,
+        ),
+    )
+    brief_path = tmp_path / "freshness-brief.json"
+    brief_path.write_text(brief.model_dump_json(), encoding="utf-8")
+
+    report = run_benchmark_fan_in(
+        repository=SQLiteRepository(tmp_path / "freshness.sqlite3"),
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        brief_path=brief_path,
+    )
+
+    assert report.evaluation is not None
+    assert report.evaluation.semantic_matches_before_freshness == 4
+    assert report.evaluation.freshness_eligible_matches == 2
+    assert report.evaluation.stale_posting_suppressions == 1
+    assert report.evaluation.unknown_age_suppressions == 1
+    assert report.evaluation.invalid_time_suppressions == 0
+    assert report.distinct_matched_employers == 2
+    assert report.distinct_matched_delivery_groups == 2
