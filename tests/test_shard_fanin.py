@@ -316,3 +316,29 @@ def test_fan_in_resumes_running_receipt_after_persistence_failure(
     assert resumed.run_id == row["run_id"]
     assert resumed.status == "success"
     assert InventoryRunStore(repository).get(resumed.run_id).status == "success"
+
+
+def test_fan_in_reverifies_artifact_hash_before_inventory_mutation(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    artifacts[0].targets[0].jobs[0].title = "Tampered after validation"
+
+    with pytest.raises(ValueError, match="artifact hash"):
+        persist_shard_artifacts(
+            repository=repository,
+            registry=registry,
+            manifest=manifest,
+            artifacts=artifacts,
+        )
+
+    assert _inventory_table_exists(repository) is False
+    with repository.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
