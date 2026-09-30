@@ -200,15 +200,22 @@ def persist_shard_artifacts(
     now: Callable[[], datetime] = utc_now,
 ) -> FanInReport:
     """Validate the complete artifact set before making any inventory-run mutation."""
-    validate_complete_artifact_set(
-        registry=registry,
-        manifest=manifest,
-        artifacts=artifacts,
-    )
     if not artifacts:
         raise ValueError("fan-in requires at least one shard artifact")
 
-    ordered = _ordered_artifacts(manifest, artifacts)
+    # Re-parse every artifact immediately before persistence so in-memory mutation
+    # after initial loading cannot bypass the artifact SHA validator.
+    verified_artifacts = [
+        ShardCollectionArtifact.model_validate(artifact.model_dump(mode="json"))
+        for artifact in artifacts
+    ]
+    validate_complete_artifact_set(
+        registry=registry,
+        manifest=manifest,
+        artifacts=verified_artifacts,
+    )
+
+    ordered = _ordered_artifacts(manifest, verified_artifacts)
     jobs_by_identity, membership_keys, normalized_records = _prepare_jobs(
         registry=registry,
         artifacts=ordered,
