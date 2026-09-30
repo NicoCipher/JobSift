@@ -10,6 +10,7 @@ from job_scout.domain.models import CandidateProfile, Job, SourceTarget
 from job_scout.export.csv_exporter import CSV_COLUMNS
 from job_scout.normalization.core import content_fingerprint
 from job_scout.orchestration.pipeline import run_pipeline
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 FIXTURE = Path(__file__).parent / "fixtures" / "greenhouse_jobs.json"
@@ -88,6 +89,33 @@ def _stored_job(identifier: str, *, posted_at: datetime) -> Job:
         ),
         raw_metadata={"large": "payload"},
     )
+
+
+def test_stale_inventory_pruning_cascades_shared_run_membership(tmp_path) -> None:
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    now = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
+    posting = _stored_job("old-run-job", posted_at=now - timedelta(hours=73))
+    repo.upsert_job(posting)
+
+    inventory = InventoryRunStore(repo)
+    inventory.create(run_id="run-1", plan_id="shared", started_at=now - timedelta(hours=1))
+    inventory.add_jobs(
+        run_id="run-1",
+        target_identity="greenhouse:acme",
+        jobs=[posting],
+    )
+    inventory.finish(run_id="run-1", status="success", completed_at=now)
+
+    result = repo.prune_stale_inventory(retention_hours=72, now=now)
+
+    assert result["deleted_jobs"] == 1
+    with repo.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM inventory_run_jobs WHERE run_id='run-1'"
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT status FROM inventory_runs WHERE run_id='run-1'"
+        ).fetchone()[0] == "success"
 
 
 def test_stale_inventory_deletes_undelivered_and_compacts_delivered_jobs(tmp_path) -> None:
