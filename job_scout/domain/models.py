@@ -236,6 +236,13 @@ class CandidateProfile(BaseModel):
     notes: str | None = None
 
 
+class PostingFreshnessRule(BaseModel):
+    """How recent a posting must be to qualify for this client."""
+
+    max_age_hours: int | None = Field(default=None, ge=1, le=24 * 30)
+    unknown_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+
+
 class DeliveryPolicy(BaseModel):
     """Client-specific delivery constraints; matching remains independent."""
 
@@ -261,6 +268,7 @@ class SearchBrief(BaseModel):
     max_required_experience_years: int | None = Field(default=None, ge=0, le=50)
     candidate_residence: str | None = None
     work_eligibility: WorkEligibilityRule = Field(default_factory=WorkEligibilityRule)
+    posting_freshness: PostingFreshnessRule = Field(default_factory=PostingFreshnessRule)
     delivery_policy: DeliveryPolicy = Field(default_factory=DeliveryPolicy)
     notes: str | None = None
 
