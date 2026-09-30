@@ -37,6 +37,26 @@ def parse_sheet_destination(value: str) -> tuple[str, str]:
     return parsed.netloc, tab
 
 
+def managed_sheet_destination(destination_id: str) -> str:
+    value = destination_id.strip()
+    if not value or not all(character.isalnum() or character in "._-" for character in value):
+        raise BatchConflict("invalid managed destination ID")
+    return f"gsheet-managed://{value}"
+
+
+def parse_managed_sheet_destination(value: str) -> str:
+    parsed = urlparse(value)
+    if (
+        parsed.scheme != "gsheet-managed"
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or value != managed_sheet_destination(parsed.netloc)
+    ):
+        raise BatchConflict("invalid managed Google Sheets destination")
+    return parsed.netloc
+
+
 class SheetsGateway(Protocol):
     def read_rows(self, spreadsheet_id: str, tab: str) -> list[list[str]]: ...
 
@@ -229,7 +249,7 @@ class ManagedBatchSheetPublisher:
         self.contract = contract
         if result.request.client_id != contract.client_id:
             raise BatchConflict("batch client does not own the delivery contract")
-        expected = sheet_destination(contract.spreadsheet_id, contract.worksheet_name)
+        expected = managed_sheet_destination(contract.destination_id)
         if result.request.destination != expected:
             raise BatchConflict("batch destination differs from the frozen delivery contract")
 
