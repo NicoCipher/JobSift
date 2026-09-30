@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS inventory_runs (
 CREATE INDEX IF NOT EXISTS ix_inventory_runs_plan_started
   ON inventory_runs(plan_id, started_at);
 CREATE TABLE IF NOT EXISTS inventory_run_jobs (
-  run_id TEXT NOT NULL REFERENCES inventory_runs(run_id),
-  job_id TEXT NOT NULL REFERENCES jobs(id),
+  run_id TEXT NOT NULL REFERENCES inventory_runs(run_id) ON DELETE CASCADE,
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   target_identity TEXT NOT NULL,
   PRIMARY KEY(run_id, job_id, target_identity)
 );
