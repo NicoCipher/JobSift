@@ -141,3 +141,28 @@ At minimum record:
 
 A run with 150 rows is not successful if the rows are old, duplicated, or produced
 by weakening the client's requirements.
+
+
+## Bounded parallel benchmark
+
+Before production parallelism is connected to Turso or Google Sheets, JobSift uses
+the manual `Bounded Source Benchmark` workflow.
+
+The workflow selects a deterministic subset only from the production-approved
+registry, builds provider-isolated shards, runs those shards as parallel DB-free
+workers, validates the exact complete artifact set, persists it to a temporary
+local SQLite database, and evaluates the shared inventory against the current
+remote-US software SearchBrief. The local database and JSON report are uploaded as
+short-lived benchmark evidence.
+
+The default first pass is intentionally small: 10 Greenhouse, 10 Ashby, 5 Workday,
+and 10 Lever targets across two shards per provider (35 targets / 8 workers). The
+benchmark runtime enforces a 100-target ceiling so this workflow cannot
+accidentally become the full production collector.
+
+The benchmark does **not** publish jobs, does not receive Turso credentials, and
+does not receive Google Sheets credentials. It records collection throughput,
+timestamp/freshness evidence, full SearchBrief evaluation counts, distinct matched
+employers, and distinct practical delivery groups. These results are used to
+choose provider shard counts for the next larger benchmark rather than treating
+the default shard counts as a capacity claim.
