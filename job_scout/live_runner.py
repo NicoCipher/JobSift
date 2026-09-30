@@ -333,7 +333,6 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         repository,
         client_id=brief.client_id,
         destination=destination,
-        sheet_delivery=sheet_contract,
         idempotency_key=idempotency_key,
     )
     if today is not None:
@@ -378,6 +377,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     request = DailyBatchRequest(
         client_id=brief.client_id,
         destination=destination,
+        sheet_delivery=sheet_contract,
         idempotency_key=idempotency_key,
         requested_quota=config.quota,
         max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,
