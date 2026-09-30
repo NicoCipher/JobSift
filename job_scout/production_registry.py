@@ -48,6 +48,8 @@ class ProductionSourceRegistry(BaseModel):
         identities = [target.target_identity for target in self.targets]
         if len(identities) != len(set(identities)):
             raise ValueError("production registry contains duplicate target identities")
+        if identities != sorted(identities):
+            raise ValueError("production registry targets must be sorted by identity")
         expected_counts = dict(sorted(Counter(target.source for target in self.targets).items()))
         if self.target_counts_by_source != expected_counts:
             raise ValueError("production registry source counts do not reconcile")
