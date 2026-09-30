@@ -12,7 +12,6 @@ from job_scout.shard_collection import (
     validate_complete_artifact_set,
 )
 
-
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 
 
