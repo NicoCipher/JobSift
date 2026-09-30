@@ -8,7 +8,7 @@ import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
@@ -16,6 +16,7 @@ from uuid import NAMESPACE_URL, uuid5
 from job_scout.dedupe.resolver import DEDUPE_VERSION
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchItem, DailyBatchResult
 from job_scout.domain.models import Job, JobMatch, MatchDecision
+from job_scout.normalization.company import employer_key
 
 if TYPE_CHECKING:
     from job_scout.storage.sqlite import SQLiteRepository
@@ -63,8 +64,10 @@ class BatchCandidate:
     match: JobMatch
     group_id: str
     evidence_sha256: str
+    employer_key: str
     historical: bool
     delivered: bool
+    employer_recently_delivered: bool = False
 
 
 def posting_evidence(job: Job, match: JobMatch) -> str:
@@ -118,7 +121,13 @@ class DailyBatchStore:
                 )
             candidates.append(
                 BatchCandidate(
-                    job, match, group, posting_evidence(job, match), group_states[group], False
+                    job=job,
+                    match=match,
+                    group_id=group,
+                    evidence_sha256=posting_evidence(job, match),
+                    employer_key=employer_key(job),
+                    historical=group_states[group],
+                    delivered=False,
                 )
             )
         return candidates
@@ -232,19 +241,34 @@ class DailyBatchStore:
             candidates = self._candidates(c, request.client_id, request.candidate_job_ids)
             if self._digest(candidates) != request.evidence_sha256:
                 raise BatchConflict("candidate evidence changed; capture an explicit new scope")
+            recent_employers: set[str] = set()
+            if request.employer_cooldown_days:
+                cutoff = (datetime.now(UTC) - timedelta(days=request.employer_cooldown_days)).isoformat()
+                delivered_jobs = c.execute(
+                    "SELECT j.payload_json FROM group_deliveries d "
+                    "JOIN jobs j ON j.id=d.job_id "
+                    "WHERE d.client_id=? AND d.destination=? AND d.exported_at>=?",
+                    (request.client_id, request.destination, cutoff),
+                ).fetchall()
+                recent_employers = {
+                    employer_key(Job.model_validate_json(row[0])) for row in delivered_jobs
+                }
+
             scoped = [
                 BatchCandidate(
-                    v.job,
-                    v.match,
-                    v.group_id,
-                    v.evidence_sha256,
-                    v.historical,
-                    c.execute(
+                    job=v.job,
+                    match=v.match,
+                    group_id=v.group_id,
+                    evidence_sha256=v.evidence_sha256,
+                    employer_key=v.employer_key,
+                    historical=v.historical,
+                    delivered=c.execute(
                         "SELECT 1 FROM group_deliveries WHERE group_id=? AND client_id=? "
                         "AND destination=?",
                         (v.group_id, request.client_id, request.destination),
                     ).fetchone()
                     is not None,
+                    employer_recently_delivered=v.employer_key in recent_employers,
                 )
                 for v in candidates
             ]
