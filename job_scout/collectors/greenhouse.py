@@ -107,6 +107,7 @@ class GreenhouseCollector:
                 status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
                 jobs=jobs,
                 errors=errors,
+                raw_postings_received=len(payload.jobs),
             )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             return self._failure(target, CollectionStatus.NETWORK_FAILURE, type(exc).__name__)
