@@ -7,7 +7,7 @@ from pathlib import Path
 
 from job_scout.dedupe.resolver import representative_key
 from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest, DailyBatchResult
-from job_scout.domain.models import MatchDecision
+from job_scout.domain.models import MatchDecision, UnknownEligibilityPolicy
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import (
     BatchSheetPublisher,
@@ -38,6 +38,28 @@ def _delivery_priority_key(candidate):
     )
 
 
+def _freshness_disposition(request, candidate) -> str | None:
+    if request.max_posting_age_hours is None:
+        return None
+    posted_at = candidate.job.posted_at
+    if posted_at is None:
+        return (
+            None
+            if request.unknown_posting_age_policy is UnknownEligibilityPolicy.ALLOW
+            else "posting_age_unknown"
+        )
+    evaluated_at = request.freshness_evaluated_at
+    assert evaluated_at is not None
+    evaluated_at = evaluated_at.replace(tzinfo=evaluated_at.tzinfo or UTC)
+    posted_at = posted_at.replace(tzinfo=posted_at.tzinfo or UTC)
+    age_seconds = (evaluated_at.astimezone(UTC) - posted_at.astimezone(UTC)).total_seconds()
+    if age_seconds < -300:
+        return "posting_time_invalid"
+    if age_seconds > request.max_posting_age_hours * 3600:
+        return "stale_posting"
+    return None
+
+
 def _assemble(request, candidates):
     eligible = [
         v
@@ -54,10 +76,48 @@ def _assemble(request, candidates):
         for group, members in groups.items()
         if group not in historical and any(v.delivered for v in members)
     }
-    fresh = {
-        group: min(members, key=lambda v: representative_key(v.job))
+    delivery_fresh_groups = {
+        group: members
         for group, members in groups.items()
         if group not in historical | delivered
+    }
+
+    candidate_freshness = {
+        v.job.id: _freshness_disposition(request, v)
+        for members in delivery_fresh_groups.values()
+        for v in members
+    }
+    qualified_members = {
+        group: [v for v in members if candidate_freshness[v.job.id] is None]
+        for group, members in delivery_fresh_groups.items()
+    }
+    suppressed_reason = {}
+    for group, members in delivery_fresh_groups.items():
+        if qualified_members[group]:
+            continue
+        reasons = {candidate_freshness[v.job.id] for v in members}
+        suppressed_reason[group] = (
+            "posting_time_invalid"
+            if "posting_time_invalid" in reasons
+            else "posting_age_unknown"
+            if "posting_age_unknown" in reasons
+            else "stale_posting"
+        )
+
+    stale_groups = {
+        group for group, reason in suppressed_reason.items() if reason == "stale_posting"
+    }
+    unknown_age_groups = {
+        group for group, reason in suppressed_reason.items() if reason == "posting_age_unknown"
+    }
+    invalid_time_groups = {
+        group for group, reason in suppressed_reason.items() if reason == "posting_time_invalid"
+    }
+
+    fresh = {
+        group: min(members, key=lambda v: representative_key(v.job))
+        for group, members in qualified_members.items()
+        if members
     }
 
     cooldown_groups = {
@@ -105,6 +165,7 @@ def _assemble(request, candidates):
 
     dispositions = {}
     for v in candidates:
+        freshness_reason = candidate_freshness.get(v.job.id)
         dispositions[v.job.id] = (
             v.match.decision.value
             if v.match.decision not in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
@@ -112,6 +173,8 @@ def _assemble(request, candidates):
             if v.group_id in historical
             else "prior_delivery"
             if v.group_id in delivered
+            else freshness_reason
+            if freshness_reason is not None
             else "employer_cooldown"
             if v.group_id in cooldown_groups
             else "company_duplicate_in_batch"
@@ -134,9 +197,12 @@ def _assemble(request, candidates):
         historically_suppressed_groups=len(historical),
         previously_delivered_groups=len(delivered),
         duplicate_postings_collapsed=len(eligible) - len(groups),
-        fresh_eligible_groups=len(fresh),
+        fresh_eligible_groups=len(delivery_fresh_groups),
         fresh_eligible_employers=len(available_employers),
         employer_cooldown_suppressed_groups=len(cooldown_groups),
+        stale_posting_suppressed_groups=len(stale_groups),
+        unknown_age_suppressed_groups=len(unknown_age_groups),
+        invalid_time_suppressed_groups=len(invalid_time_groups),
         company_cap_suppressed_groups=len(company_cap_groups),
         selected_groups=len(selected),
     )
