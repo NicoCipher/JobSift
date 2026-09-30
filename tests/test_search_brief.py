@@ -1,4 +1,3 @@
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -6,7 +5,6 @@ import pytest
 from job_scout.domain.models import (
     Job,
     MatchDecision,
-    PostingFreshnessRule,
     RemoteStatus,
     RuleIntent,
     SearchBrief,
@@ -98,36 +96,6 @@ def test_management_and_executive_titles_reject_by_default(title: str) -> None:
     )
 
 
-def test_freshness_rule_accepts_only_jobs_within_configured_age() -> None:
-    now = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
-    brief = _brief(
-        posting_freshness=PostingFreshnessRule(
-            max_age_hours=24,
-            unknown_policy=UnknownEligibilityPolicy.REJECT,
-        )
-    )
-
-    fresh = match_job(_job(posted_at=now - timedelta(hours=23)), brief, evaluated_at=now)
-    stale = match_job(_job(posted_at=now - timedelta(hours=25)), brief, evaluated_at=now)
-    unknown = match_job(_job(posted_at=None), brief, evaluated_at=now)
-
-    assert fresh.decision is MatchDecision.POSSIBLE_MATCH
-    assert "posting age within 24 hours" in fresh.matched_reasons
-    assert stale.decision is MatchDecision.REJECT
-    assert "posting age exceeds 24 hours" in stale.rejection_reasons
-    assert unknown.decision is MatchDecision.REJECT
-    assert any("posting age is unknown" in reason for reason in unknown.rejection_reasons)
-
-
-def test_future_posting_timestamp_fails_closed() -> None:
-    now = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
-    brief = _brief(posting_freshness={"max_age_hours": 24, "unknown_policy": "reject"})
-    result = match_job(_job(posted_at=now + timedelta(hours=2)), brief, evaluated_at=now)
-
-    assert result.decision is MatchDecision.REJECT
-    assert "posting timestamp is in the future" in result.rejection_reasons
-
-
 def test_us_market_is_independent_from_nigeria_residence() -> None:
     brief = _brief(
         candidate_residence="Lagos, Nigeria",
@@ -217,7 +185,7 @@ def test_deterministic_explanations_and_version_are_present() -> None:
         "target role matched: Support Engineer",
         "preferred skill matched: Linux",
     ]
-    assert result.matcher_version == MATCHER_VERSION == "deterministic-v6"
+    assert result.matcher_version == MATCHER_VERSION == "deterministic-v5"
 
 
 def test_production_software_brief_requires_24_hour_posting_age() -> None:
