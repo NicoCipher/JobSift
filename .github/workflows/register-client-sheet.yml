@@ -1,0 +1,89 @@
+name: Register Client Sheet
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: JobSift client ID
+        required: true
+        type: string
+      destination_id:
+        description: Stable destination ID (for example primary-jobs)
+        required: true
+        type: string
+      display_name:
+        description: Human-readable destination name
+        required: true
+        type: string
+      spreadsheet:
+        description: Client Google Sheet URL or spreadsheet ID
+        required: true
+        type: string
+      tab:
+        description: Exact worksheet/tab name
+        required: true
+        type: string
+      mapping_json:
+        description: JSON mapping from JobSift fields to client headers
+        required: true
+        default: '{"Job Link":"Job Link","Job Title":"Job Title","Company Name":"Company Name"}'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate credentials
+        shell: bash
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+
+      - name: Write Google service account credentials
+        shell: bash
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+
+      - name: Register client destination
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/google-service-account.json
+          CLIENT_ID: ${{ inputs.client_id }}
+          DESTINATION_ID: ${{ inputs.destination_id }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
+          SPREADSHEET: ${{ inputs.spreadsheet }}
+          TAB_NAME: ${{ inputs.tab }}
+          MAPPING_JSON: ${{ inputs.mapping_json }}
+        shell: bash
+        run: |
+          job-scout destination register-google-sheet \
+            --database "$JOBSIFT_DATABASE" \
+            --client "$CLIENT_ID" \
+            --destination-id "$DESTINATION_ID" \
+            --display-name "$DISPLAY_NAME" \
+            --spreadsheet "$SPREADSHEET" \
+            --tab "$TAB_NAME" \
+            --mapping-json "$MAPPING_JSON"
