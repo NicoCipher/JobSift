@@ -82,11 +82,6 @@ def _job(
     )
 
 
-def _clock(values: list[float]):
-    iterator = iter(values)
-    return lambda: next(iterator)
-
-
 def _artifact(
     registry,
     manifest,
@@ -121,7 +116,7 @@ def _artifact(
         shard_id=shard_id,
         collector_factory=Collector,
         now=lambda: NOW,
-        monotonic=_clock([0.0, 0.01]),
+        monotonic=lambda: 0.0,
     )
 
 
