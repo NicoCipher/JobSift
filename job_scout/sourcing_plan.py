@@ -105,7 +105,9 @@ class AshbyPlanTarget(_PlanTarget):
         return f"ashby:{self.board}"
 
     def source_target(self) -> SourceTarget:
-        return SourceTarget(board_id=self.board, company=self.company)
+        return SourceTarget(
+            board_id=self.board, company=self.company, employer_id=self.employer_id
+        )
 
 
 class WorkdayPlanTarget(_PlanTarget):
