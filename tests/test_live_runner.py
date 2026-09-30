@@ -216,6 +216,60 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     assert result["batch_id"] == "batch-1"
     assert result["selected_count"] == 5
 
+def test_release_mode_resolves_managed_campaign_without_sourcing(tmp_path, monkeypatch):
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id=None,
+        sheet_tab=None,
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=True,
+        allow_partial=False,
+        run_once=True,
+        campaign_id="campaign-1",
+    )
+    contract = SimpleNamespace(
+        destination_id="client-jobs",
+        client_id="client",
+        spreadsheet_id="sheet123",
+        worksheet_name="Jobs",
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_runtime_plan",
+        lambda _: (SimpleNamespace(plan_id="pilot"), tmp_path / "brief.json"),
+    )
+    monkeypatch.setattr(
+        live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "SQLiteRepository",
+        lambda _: SimpleNamespace(remote_url=""),
+    )
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
+    monkeypatch.setattr(
+        live_runner,
+        "DeliveryDestinationStore",
+        lambda _: SimpleNamespace(resolve_campaign=lambda **__: contract),
+    )
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+
+    def should_not_source(*args, **kwargs):
+        raise AssertionError("release mode must not source in managed campaign mode")
+
+    monkeypatch.setattr(live_runner, "run_sourcing_plan", should_not_source)
+
+    result = live_runner.run_once(config)
+
+    assert result["action"] == "nothing_to_release"
+    assert result["destination"] == "gsheet-managed://client-jobs"
+
+
 def test_validation_mode_refuses_cloud_repository(tmp_path, monkeypatch):
     config = LiveRunnerConfig(
         plan_path=tmp_path / "plan.json",
