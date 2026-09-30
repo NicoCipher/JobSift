@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -38,6 +39,8 @@ CREATE TABLE IF NOT EXISTS client_sheet_destinations (
 );
 CREATE INDEX IF NOT EXISTS ix_client_sheet_destinations_client
   ON client_sheet_destinations(client_id, status, destination_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_client_sheet_physical_worksheet
+  ON client_sheet_destinations(spreadsheet_id, sheet_id);
 """
 
 
@@ -298,29 +301,60 @@ class ClientSheetDestinationStore:
             created_at=existing.created_at if existing else now,
             updated_at=now,
         )
-        with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "INSERT OR REPLACE INTO client_sheet_destinations "
-                "(client_id,destination_id,display_name,spreadsheet_id,sheet_id,tab_name,"
-                "header_json,header_sha256,column_mapping_json,config_sha256,status,"
-                "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    value.client_id,
-                    value.destination_id,
-                    value.display_name,
-                    value.spreadsheet_id,
-                    value.sheet_id,
-                    value.tab_name,
-                    json.dumps(list(value.header), ensure_ascii=False),
-                    value.header_sha256,
-                    json.dumps(value.column_mapping, sort_keys=True, ensure_ascii=False),
-                    value.config_sha256,
-                    value.status,
-                    value.created_at.isoformat(),
-                    value.updated_at.isoformat(),
-                ),
-            )
+        try:
+            with self.repository.connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                owner = connection.execute(
+                    "SELECT client_id,destination_id FROM client_sheet_destinations "
+                    "WHERE spreadsheet_id=? AND sheet_id=? "
+                    "AND NOT (client_id=? AND destination_id=?)",
+                    (
+                        value.spreadsheet_id,
+                        value.sheet_id,
+                        value.client_id,
+                        value.destination_id,
+                    ),
+                ).fetchone()
+                if owner is not None:
+                    raise BatchConflict(
+                        "Google worksheet is already registered to another JobSift destination"
+                    )
+                connection.execute(
+                    "INSERT INTO client_sheet_destinations "
+                    "(client_id,destination_id,display_name,spreadsheet_id,sheet_id,tab_name,"
+                    "header_json,header_sha256,column_mapping_json,config_sha256,status,"
+                    "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(client_id,destination_id) DO UPDATE SET "
+                    "display_name=excluded.display_name,"
+                    "spreadsheet_id=excluded.spreadsheet_id,"
+                    "sheet_id=excluded.sheet_id,"
+                    "tab_name=excluded.tab_name,"
+                    "header_json=excluded.header_json,"
+                    "header_sha256=excluded.header_sha256,"
+                    "column_mapping_json=excluded.column_mapping_json,"
+                    "config_sha256=excluded.config_sha256,"
+                    "status=excluded.status,"
+                    "updated_at=excluded.updated_at",
+                    (
+                        value.client_id,
+                        value.destination_id,
+                        value.display_name,
+                        value.spreadsheet_id,
+                        value.sheet_id,
+                        value.tab_name,
+                        json.dumps(list(value.header), ensure_ascii=False),
+                        value.header_sha256,
+                        json.dumps(value.column_mapping, sort_keys=True, ensure_ascii=False),
+                        value.config_sha256,
+                        value.status,
+                        value.created_at.isoformat(),
+                        value.updated_at.isoformat(),
+                    ),
+                )
+        except sqlite3.IntegrityError as error:
+            raise BatchConflict(
+                "Google worksheet is already registered to another JobSift destination"
+            ) from error
         return value
 
     def disable(self, client_id: str, destination_id: str) -> ClientSheetDestination:
