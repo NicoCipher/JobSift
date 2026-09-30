@@ -147,7 +147,7 @@ def test_batch_freshness_gate_suppresses_stale_unknown_and_future_postings(repo,
     assert result.counts.stale_posting_suppressed_groups == 1
     assert result.counts.unknown_age_suppressed_groups == 1
     assert result.counts.invalid_time_suppressed_groups == 1
-    assert DailyBatchStore(repo).export_rows(result.batch_id)[0]["Job ID"] == jobs[0].id
+    assert result.items[0].representative_job_id == jobs[0].id
 
     with repo.connect() as connection:
         dispositions = {
