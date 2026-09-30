@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
+
 from job_scout import live_runner
 from job_scout.live_runner import LiveRunnerConfig, _candidate_job_ids
 from job_scout.sourcing_plan import SourcingPlan
@@ -210,4 +212,97 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     assert result["action"] == "discarded_prepared"
     assert result["batch_id"] == "batch-1"
     assert result["selected_count"] == 5
+
+def test_validation_mode_refuses_cloud_repository(tmp_path, monkeypatch):
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "validation.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id="sheet123",
+        sheet_tab="Sheet1",
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        validation_only=True,
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_runtime_plan",
+        lambda _: (SimpleNamespace(plan_id="pilot"), tmp_path / "brief.json"),
+    )
+    monkeypatch.setattr(
+        live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "SQLiteRepository",
+        lambda _: SimpleNamespace(remote_url="libsql://production"),
+    )
+
+    with pytest.raises(ValueError, match="local-only repository"):
+        live_runner.run_once(config)
+
+
+def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatch):
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text("{}", encoding="utf-8")
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "validation.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id="sheet123",
+        sheet_tab="Sheet1",
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        validation_only=True,
+    )
+    repository = SimpleNamespace(remote_url="")
+    store = SimpleNamespace(evidence_digest=lambda *_: "a" * 64)
+    plan = SimpleNamespace(plan_id="pilot")
+    brief = SimpleNamespace(
+        client_id="client",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+    )
+    report = SimpleNamespace(
+        status="success",
+        started_at=datetime(2026, 9, 30, 9, 0, tzinfo=UTC),
+        completed_at=datetime(2026, 9, 30, 9, 1, tzinfo=UTC),
+        targets=[],
+    )
+
+    monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "run_sourcing_plan", lambda *_, **__: report)
+    monkeypatch.setattr(live_runner, "_candidate_job_ids", lambda *_, **__: ("job-1",))
+    monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
+    monkeypatch.setattr(live_runner, "prepare_daily_batch", lambda **_: object())
+    monkeypatch.setattr(
+        live_runner,
+        "finalize_daily_batch",
+        lambda **_: (_ for _ in ()).throw(AssertionError("validation must never release")),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda store, batch, *, action, sourcing=None: {"action": action},
+    )
+
+    assert live_runner.run_once(config) == {"action": "validated"}
 

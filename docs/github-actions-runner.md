@@ -22,6 +22,11 @@ SQLite-compatible state. No always-on server or persistent Render disk is requir
 - Manual discard mode can remove only an unreleased `prepared` batch. It refuses
   delivered batches and any batch with an export journal, so uncertain Sheet I/O
   can never be erased.
+- Manual validation mode runs the real sourcing plan and SearchBrief against a
+  fresh local SQLite database with Turso disabled. It returns a `validated`
+  result, cannot release or discard, does not alter production delivery history,
+  and performs no Google Sheets write. Use it for same-day policy/source checks
+  without bypassing the production one-batch-per-day guard.
 - GitHub Actions concurrency allows only one production run at a time.
 - The stable Taiwo client ID and Turso database preserve historical/delivery
   suppression across ephemeral GitHub runners.
@@ -96,7 +101,9 @@ target count grows; change it only with an explicit completeness policy.
 
 1. Configure the secrets and variables above.
 2. Open Actions > Live JobSift > Run workflow.
-3. Keep `release=false` and quota `5`.
+3. For a production prepare, keep `release=false`, `discard=false`,
+   `validate=false`, and quota `5`. For a same-day safety check after changing
+   policy or sources, use `validate=true` with both release and discard false.
 4. Inspect the run's final JSON payload and its selected job links.
 5. If any frozen link is wrong, run the workflow with `discard=true`,
    `release=false`, then prepare a replacement batch.

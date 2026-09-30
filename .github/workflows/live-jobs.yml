@@ -13,6 +13,11 @@ on:
         required: true
         default: false
         type: boolean
+      validate:
+        description: Run isolated sourcing validation only; never touch Turso or Sheets
+        required: true
+        default: false
+        type: boolean
       quota:
         description: Maximum links to prepare when there is no unresolved batch
         required: true
@@ -68,11 +73,13 @@ jobs:
       - name: Validate runtime configuration
         shell: bash
         run: |
-          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
-          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
           test -n "$JOBSIFT_SHEET_ID" || { echo "Missing JOBSIFT_SHEET_ID repository variable"; exit 1; }
           test -n "$JOBSIFT_SHEET_TAB" || { echo "Missing JOBSIFT_SHEET_TAB repository variable"; exit 1; }
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.validate }}" != "true" ]]; then
+            test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+            test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          fi
 
       - name: Configure run mode
         shell: bash
@@ -82,12 +89,23 @@ jobs:
               echo "release and discard cannot both be true"
               exit 1
             fi
+            if [[ "${{ inputs.validate }}" == "true" && ( "${{ inputs.release }}" == "true" || "${{ inputs.discard }}" == "true" ) ]]; then
+              echo "validation cannot be combined with release or discard"
+              exit 1
+            fi
             echo "JOBSIFT_AUTO_RELEASE=${{ inputs.release }}" >> "$GITHUB_ENV"
             echo "JOBSIFT_DISCARD_PREPARED=${{ inputs.discard }}" >> "$GITHUB_ENV"
+            echo "JOBSIFT_VALIDATION_ONLY=${{ inputs.validate }}" >> "$GITHUB_ENV"
             echo "JOBSIFT_BATCH_QUOTA=${{ inputs.quota }}" >> "$GITHUB_ENV"
+            if [[ "${{ inputs.validate }}" == "true" ]]; then
+              echo "JOBSIFT_DATABASE=/tmp/jobsift-validation.sqlite3" >> "$GITHUB_ENV"
+              echo "TURSO_DATABASE_URL=" >> "$GITHUB_ENV"
+              echo "TURSO_AUTH_TOKEN=" >> "$GITHUB_ENV"
+            fi
           else
             echo "JOBSIFT_AUTO_RELEASE=false" >> "$GITHUB_ENV"
             echo "JOBSIFT_DISCARD_PREPARED=false" >> "$GITHUB_ENV"
+            echo "JOBSIFT_VALIDATION_ONLY=false" >> "$GITHUB_ENV"
             echo "JOBSIFT_BATCH_QUOTA=5" >> "$GITHUB_ENV"
           fi
 
