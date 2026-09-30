@@ -82,10 +82,9 @@ class LiveRunnerConfig:
         destination_id = os.getenv("JOBSIFT_DESTINATION_ID", "").strip() or None
         spreadsheet_id = os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
         sheet_tab = os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
-        if (destination_id is None or validation_only) and not (spreadsheet_id and sheet_tab):
+        if (spreadsheet_id is None) != (sheet_tab is None):
             raise ValueError(
-                "JOBSIFT_SHEET_ID and JOBSIFT_SHEET_TAB are required until a "
-                "production client destination is registered"
+                "JOBSIFT_SHEET_ID and JOBSIFT_SHEET_TAB must be configured together"
             )
         return cls(
             plan_path=Path(
@@ -262,14 +261,39 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
     destination_record = None
-    if config.destination_id is not None and not config.validation_only:
-        destination_record = ClientSheetDestinationStore(repository).get(
-            brief.client_id, config.destination_id
+    if config.validation_only:
+        destination = (
+            sheet_destination(config.spreadsheet_id, config.sheet_tab)
+            if config.spreadsheet_id is not None and config.sheet_tab is not None
+            else sheet_destination("validation", "Validation")
         )
-        destination = destination_record.logical_uri
     else:
-        assert config.spreadsheet_id is not None and config.sheet_tab is not None
-        destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
+        destination_store = ClientSheetDestinationStore(repository)
+        if config.destination_id is not None:
+            destination_record = destination_store.get(
+                brief.client_id, config.destination_id
+            )
+        else:
+            ready_destinations = tuple(
+                value
+                for value in destination_store.list(brief.client_id)
+                if value.status == "ready"
+            )
+            if len(ready_destinations) == 1:
+                destination_record = ready_destinations[0]
+            elif len(ready_destinations) > 1:
+                raise ValueError(
+                    "multiple ready client destinations exist; set JOBSIFT_DESTINATION_ID"
+                )
+
+        if destination_record is not None:
+            destination = destination_record.logical_uri
+        elif config.spreadsheet_id is not None and config.sheet_tab is not None:
+            destination = sheet_destination(config.spreadsheet_id, config.sheet_tab)
+        else:
+            raise ValueError(
+                "no ready client destination and no legacy Google Sheet fallback configured"
+            )
 
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
