@@ -24,7 +24,7 @@ def config(instance: str = "global", site: str = "acme") -> LeverTargetConfig:
 
 def target(instance: str = "global", site: str = "acme") -> SourceTarget:
     lever = config(instance, site)
-    return SourceTarget(board_id=lever.board_id, company="Acme", lever=lever)
+    return SourceTarget(board_id=lever.board_id, company="Acme", employer_id="acme", lever=lever)
 
 
 def raw_job(identifier: str = "provider-1", **changes: object) -> dict[str, object]:
@@ -84,6 +84,7 @@ def test_global_api_host_identity_and_urls() -> None:
     job = result.jobs[0]
     assert job.source_board_id == "global:acme"
     assert job.source_job_id == "provider-1"
+    assert job.employer_id == "acme"
     assert job.id == str(uuid.uuid5(uuid.NAMESPACE_URL, "lever:global:acme:provider-1"))
     assert str(job.job_url) == "https://jobs.lever.co/acme/provider-1"
     assert str(job.canonical_url) == "https://jobs.lever.co/acme/provider-1"
