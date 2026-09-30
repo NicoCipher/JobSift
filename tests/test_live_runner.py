@@ -96,6 +96,9 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
             fresh_eligible_employers=2,
             company_cap_suppressed_groups=0,
             employer_cooldown_suppressed_groups=0,
+            stale_posting_suppressed_groups=0,
+            unknown_age_suppressed_groups=0,
+            invalid_time_suppressed_groups=0,
         ),
     )
     store = SimpleNamespace(
@@ -276,6 +279,10 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         delivery_policy=SimpleNamespace(
             max_jobs_per_employer_per_batch=1,
             employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(
+            max_age_hours=24,
+            unknown_policy="reject",
         ),
     )
     report = SimpleNamespace(
