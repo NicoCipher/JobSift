@@ -60,6 +60,12 @@ def _json_datetime(value: datetime) -> str:
     return normalized.isoformat().replace("+00:00", "Z")
 
 
+def _job_json(job: Job) -> dict[str, object]:
+    payload = job.model_dump(mode="json")
+    payload["eligible_countries"] = sorted(job.eligible_countries)
+    return payload
+
+
 def _fresh_24h(job: Job, evaluated_at: datetime) -> bool:
     if job.posted_at is None:
         return False
@@ -78,6 +84,7 @@ class ShardTargetResult(BaseModel):
     started_at: datetime
     completed_at: datetime
     runtime_ms: int = Field(ge=0)
+    raw_postings_received: int = Field(ge=0)
     jobs: list[Job] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
@@ -87,7 +94,15 @@ class ShardTargetResult(BaseModel):
             raise ValueError("target completion precedes start")
         if self.status is not CollectionStatus.SUCCESS and not self.errors:
             raise ValueError("non-success target collection requires an error")
+        if self.raw_postings_received < len(self.jobs):
+            raise ValueError("raw posting count cannot be lower than normalized jobs")
         return self
+
+
+def _target_json(target: ShardTargetResult) -> dict[str, object]:
+    payload = target.model_dump(mode="json")
+    payload["jobs"] = [_job_json(job) for job in target.jobs]
+    return payload
 
 
 class ShardCollectionMetrics(BaseModel):
@@ -138,7 +153,7 @@ class ShardCollectionArtifact(BaseModel):
             targets_succeeded=succeeded,
             targets_partial=partial,
             targets_failed=failed,
-            raw_postings_received=len(jobs),
+            raw_postings_received=sum(target.raw_postings_received for target in self.targets),
             postings_with_trustworthy_timestamps=sum(job.posted_at is not None for job in jobs),
             postings_at_most_24h_old_at_collection=sum(
                 _fresh_24h(job, self.completed_at) for job in jobs
@@ -149,6 +164,7 @@ class ShardCollectionArtifact(BaseModel):
         if self.metrics != expected:
             raise ValueError("shard collection metrics do not reconcile")
         payload = self.model_dump(mode="json", exclude={"artifact_sha256"})
+        payload["targets"] = [_target_json(target) for target in self.targets]
         if self.artifact_sha256 != sha256_json(payload):
             raise ValueError("shard collection artifact hash is invalid")
         return self
@@ -174,7 +190,7 @@ def _build_artifact(
         targets_succeeded=succeeded,
         targets_partial=partial,
         targets_failed=failed,
-        raw_postings_received=len(jobs),
+        raw_postings_received=sum(target.raw_postings_received for target in targets),
         postings_with_trustworthy_timestamps=sum(job.posted_at is not None for job in jobs),
         postings_at_most_24h_old_at_collection=sum(_fresh_24h(job, completed_at) for job in jobs),
         target_runtime_p50_ms=_percentile(runtimes, 0.50),
@@ -190,7 +206,7 @@ def _build_artifact(
         "started_at": _json_datetime(started_at),
         "completed_at": _json_datetime(completed_at),
         "metrics": metrics.model_dump(mode="json"),
-        "targets": [target.model_dump(mode="json") for target in targets],
+        "targets": [_target_json(target) for target in targets],
     }
     return ShardCollectionArtifact(**payload, artifact_sha256=sha256_json(payload))
 
@@ -232,6 +248,11 @@ def collect_shard(
             result = collector.collect(target.source_target())
             completed_at = now()
             runtime_ms = max(0, round((monotonic() - timer_start) * 1000))
+            raw_postings_received = result.raw_postings_received
+            if raw_postings_received is None:
+                if result.status in {CollectionStatus.SUCCESS, CollectionStatus.PARTIAL}:
+                    raise ValueError("collector did not report raw provider posting count")
+                raw_postings_received = 0
             results.append(
                 ShardTargetResult(
                     target_identity=identity,
@@ -240,6 +261,7 @@ def collect_shard(
                     started_at=started_at,
                     completed_at=completed_at,
                     runtime_ms=runtime_ms,
+                    raw_postings_received=raw_postings_received,
                     jobs=result.jobs,
                     errors=result.errors,
                 )
