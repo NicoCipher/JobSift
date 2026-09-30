@@ -320,8 +320,15 @@ class SQLiteRepository:
                         "WHERE i.representative_job_id=? LIMIT 1",
                         (job.id,),
                     ).fetchone()
+                    candidate_batch = connection.execute(
+                        "SELECT 1 FROM daily_batch_candidates c JOIN daily_batches b "
+                        "ON b.batch_id=c.batch_id "
+                        "WHERE c.job_id=? LIMIT 1",
+                        (job.id,),
+                    ).fetchone()
                 else:
                     selected_batch = None
+                    candidate_batch = None
 
                 delivered = connection.execute(
                     "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1", (job.id,)
@@ -329,7 +336,10 @@ class SQLiteRepository:
                 exported = connection.execute(
                     "SELECT 1 FROM exports WHERE job_id=? LIMIT 1", (job.id,)
                 ).fetchone()
-                keep_identity_row = any(value is not None for value in (selected_batch, delivered, exported))
+                keep_identity_row = any(
+                    value is not None
+                    for value in (selected_batch, candidate_batch, delivered, exported)
+                )
 
                 connection.execute(
                     "INSERT OR REPLACE INTO job_identity_ledger "
