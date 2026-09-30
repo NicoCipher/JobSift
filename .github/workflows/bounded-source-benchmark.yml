@@ -1,6 +1,11 @@
 name: Bounded Source Benchmark
 
 on:
+  push:
+    branches:
+      - benchmark/bounded-run
+    paths:
+      - ".github/benchmark-run.json"
   workflow_dispatch:
     inputs:
       greenhouse_targets:
