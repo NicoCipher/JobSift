@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from job_scout.domain.models import UnknownEligibilityPolicy
+
 
 class BatchConflict(ValueError):
     """A key, evidence scope, or destination cannot safely be reused."""
@@ -23,6 +25,9 @@ class DailyBatchRequest(BatchModel):
     requested_quota: int = Field(strict=True, ge=1)
     max_jobs_per_employer_per_batch: int | None = Field(default=None, ge=1, le=1000)
     employer_cooldown_days: int = Field(default=0, ge=0, le=3650)
+    max_posting_age_hours: int | None = Field(default=None, ge=1, le=24 * 30)
+    unknown_posting_age_policy: UnknownEligibilityPolicy = UnknownEligibilityPolicy.REVIEW
+    freshness_evaluated_at: datetime | None = None
     evidence_scope_id: str
     evaluation_id: str
     candidate_job_ids: tuple[str, ...]
@@ -55,6 +60,8 @@ class DailyBatchRequest(BatchModel):
             raise ValueError("revision attribution requires both revision ID and artifact hash")
         if self.brief_revision_id is not None and not self.brief_revision_id.strip():
             raise ValueError("revision ID must not be blank")
+        if self.max_posting_age_hours is not None and self.freshness_evaluated_at is None:
+            raise ValueError("posting freshness requires an explicit evaluation timestamp")
         return self
 
 
@@ -70,6 +77,9 @@ class DailyBatchCounts(BatchModel):
     fresh_eligible_groups: int = Field(ge=0)
     fresh_eligible_employers: int = Field(default=0, ge=0)
     employer_cooldown_suppressed_groups: int = Field(default=0, ge=0)
+    stale_posting_suppressed_groups: int = Field(default=0, ge=0)
+    unknown_age_suppressed_groups: int = Field(default=0, ge=0)
+    invalid_time_suppressed_groups: int = Field(default=0, ge=0)
     company_cap_suppressed_groups: int = Field(default=0, ge=0)
     selected_groups: int = Field(ge=0)
 
@@ -93,6 +103,9 @@ class DailyBatchCounts(BatchModel):
             or self.selected_groups > self.fresh_eligible_groups
             or (
                 self.employer_cooldown_suppressed_groups
+                + self.stale_posting_suppressed_groups
+                + self.unknown_age_suppressed_groups
+                + self.invalid_time_suppressed_groups
                 + self.company_cap_suppressed_groups
                 > self.fresh_eligible_groups
             )
