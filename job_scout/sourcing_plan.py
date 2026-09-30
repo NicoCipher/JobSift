@@ -496,7 +496,8 @@ def evaluate_inventory_run(
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
             "SELECT DISTINCT j.id,j.payload_json FROM inventory_run_jobs r "
-            "JOIN jobs j ON j.id=r.job_id WHERE r.run_id=? ORDER BY j.id",
+            "JOIN jobs j ON j.id=r.job_id "
+            "WHERE r.run_id=? AND j.lifecycle!='closed' ORDER BY j.id",
             (run_id,),
         )
         for row in cursor:
