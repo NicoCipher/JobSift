@@ -210,6 +210,7 @@ def _batch_payload(
     retention=None,
 ) -> dict[str, object]:
     rows = store.export_rows(batch.batch_id)
+    sheet_delivery = getattr(batch.request, "sheet_delivery", None)
     payload: dict[str, object] = {
         "action": action,
         "batch_id": batch.batch_id,
@@ -225,15 +226,9 @@ def _batch_payload(
         "invalid_time_suppressed_groups": batch.counts.invalid_time_suppressed_groups,
         "completeness": batch.request.completeness,
         "error": batch.error,
-        "campaign_id": (
-            batch.request.sheet_delivery.campaign_id
-            if batch.request.sheet_delivery is not None
-            else None
-        ),
+        "campaign_id": sheet_delivery.campaign_id if sheet_delivery is not None else None,
         "destination_id": (
-            batch.request.sheet_delivery.destination_id
-            if batch.request.sheet_delivery is not None
-            else None
+            sheet_delivery.destination_id if sheet_delivery is not None else None
         ),
         "selected_jobs": [
             {
