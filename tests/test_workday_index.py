@@ -215,18 +215,24 @@ class _FakeScanner:
         return None
 
 
-def _target_result(target_identity: str, postings: list[WorkdayIndexPosting]):
+def _target_result(
+    target_identity: str,
+    postings: list[WorkdayIndexPosting],
+    *,
+    status: CollectionStatus = CollectionStatus.SUCCESS,
+    errors: list[str] | None = None,
+):
     return WorkdayIndexTargetResult(
         target_identity=target_identity,
-        status=CollectionStatus.SUCCESS,
+        status=status,
         started_at=NOW,
         completed_at=NOW,
         runtime_ms=10,
         broad_total=len(postings),
         provider_rows_seen=len(postings),
-        coverage_mode="broad",
+        coverage_mode="broad" if status is CollectionStatus.SUCCESS else "capped_partial",
         postings=postings,
-        errors=[],
+        errors=errors or ([] if status is CollectionStatus.SUCCESS else ["incomplete coverage"]),
     )
 
 
@@ -289,12 +295,171 @@ def test_complete_index_artifacts_analyze_role_hydration_candidates(tmp_path: Pa
     )
 
     assert plan.target_count == 2
+    assert report.analysis_version == "workday-index-analysis-v2"
+    assert report.coverage_complete is True
     assert report.targets_scanned == 2
+    assert report.targets_succeeded == 2
+    assert report.targets_partial == 0
+    assert report.targets_failed == 0
     assert report.unique_postings == 4
     assert report.role_title_candidates == 3
     assert report.recent_or_uncertain_role_title_candidates == 2
     assert report.definitely_older_than_72h == 1
     assert report.targets_with_hydration_candidates == 2
+    assert report.hydration_candidates_on_complete_targets == 2
+    assert report.hydration_candidates_on_incomplete_targets == 0
+    assert report.incomplete_targets == []
 
     for artifact in artifacts:
         WorkdayIndexArtifact.model_validate(artifact.model_dump(mode="json"))
+
+
+
+def test_scanner_continues_after_invalid_external_path_and_marks_partial() -> None:
+    valid_first_page = [
+        {
+            "title": f"Role {number}",
+            "externalPath": f"/job/Remote/Role_{number}",
+            "postedOn": "Posted Today",
+        }
+        for number in range(1, 20)
+    ]
+    valid_first_page.insert(
+        7,
+        {
+            "title": "Malformed",
+            "externalPath": "https://example.test/not-a-workday-path",
+            "postedOn": "Posted Today",
+        },
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        rows = (
+            valid_first_page
+            if payload["offset"] == 0
+            else [
+                {
+                    "title": "Final Role",
+                    "externalPath": "/job/Remote/Final_R21",
+                    "postedOn": "Posted Today",
+                }
+            ]
+        )
+        return httpx.Response(
+            200,
+            json={"total": 21, "facets": [], "jobPostings": rows},
+            request=request,
+        )
+
+    scanner = WorkdayIndexScanner(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        delay=0,
+    )
+    result = scanner.scan(_registry().targets[0])
+
+    assert result.status is CollectionStatus.PARTIAL
+    assert result.provider_rows_seen == 21
+    assert len(result.postings) == 20
+    assert result.postings[-1].external_path == "/job/Remote/Final_R21"
+    assert any("1 rows have invalid externalPath" in error for error in result.errors)
+    assert any("retrieved 20 valid rows" in error for error in result.errors)
+
+
+def test_scanner_accepts_live_exact_coverage_above_historical_cap(monkeypatch) -> None:
+    rows = [
+        {
+            "title": f"Role {number}",
+            "externalPath": f"/job/Remote/Role_{number}",
+            "postedOn": "Posted Today",
+        }
+        for number in range(5)
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"total": 5, "facets": [], "jobPostings": rows},
+            request=request,
+        )
+
+    monkeypatch.setattr("job_scout.workday_index.CAP_TOTAL", 3)
+    scanner = WorkdayIndexScanner(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        delay=0,
+    )
+    result = scanner.scan(_registry().targets[0])
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert result.coverage_mode == "broad"
+    assert result.broad_total == 5
+    assert len(result.postings) == 5
+    assert result.errors == []
+
+
+def test_analysis_surfaces_incomplete_target_candidate_counts() -> None:
+    parent = _registry()
+    _, registry, manifest = build_index_plan(parent, target_count=2, shard_count=2)
+    target_ids = [target.target_identity for target in registry.targets]
+    results = {
+        target_ids[0]: _target_result(
+            target_ids[0],
+            [
+                WorkdayIndexPosting(
+                    external_path="/job/Remote/Backend_R1",
+                    title="Backend Engineer",
+                    posted_on="Posted Today",
+                )
+            ],
+        ),
+        target_ids[1]: _target_result(
+            target_ids[1],
+            [
+                WorkdayIndexPosting(
+                    external_path="/job/Remote/Frontend_R2",
+                    title="Frontend Developer",
+                    posted_on="Posted Yesterday",
+                )
+            ],
+            status=CollectionStatus.PARTIAL,
+            errors=["one malformed provider row"],
+        ),
+    }
+    artifacts = [
+        scan_index_shard(
+            registry=registry,
+            manifest=manifest,
+            shard_id=shard.shard_id,
+            scanner_factory=lambda results=results: _FakeScanner(results),
+        )
+        for shard in manifest.shards
+    ]
+
+    report = analyze_index(
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        brief=SearchBrief(
+            client_id="software-client",
+            target_roles=["Backend Engineer", "Frontend Developer"],
+        ),
+    )
+
+    assert report.coverage_complete is False
+    assert report.targets_succeeded == 1
+    assert report.targets_partial == 1
+    assert report.targets_failed == 0
+    assert report.recent_or_uncertain_role_title_candidates == 2
+    assert report.hydration_candidates_on_complete_targets == 1
+    assert report.hydration_candidates_on_incomplete_targets == 1
+    assert report.incomplete_targets == [
+        {
+            "target_identity": target_ids[1],
+            "status": "partial",
+            "broad_total": 1,
+            "coverage_mode": "capped_partial",
+            "valid_postings_indexed": 1,
+            "provider_rows_seen": 1,
+            "errors": ["one malformed provider row"],
+        }
+    ]
