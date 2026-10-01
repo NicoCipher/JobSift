@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -12,6 +13,7 @@ from job_scout.delivery_profiles import (
 from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.models import Job
 from job_scout.normalization.core import content_fingerprint
+from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -48,7 +50,7 @@ def register(repo: SQLiteRepository, *, client: str = "client-a", destination: s
     )
 
 
-def make_job(job_id: str = "job-1") -> Job:
+def make_job(job_id: str = "job-1", *, apply_url: str | None = None) -> Job:
     now = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
     description = "Build production software."
     return Job(
@@ -61,6 +63,7 @@ def make_job(job_id: str = "job-1") -> Job:
         employer_id="acme",
         description_text=description,
         job_url=f"https://example.com/{job_id}",
+        apply_url=apply_url,
         canonical_url=f"https://example.com/{job_id}",
         posted_at=now,
         discovered_at=now,
@@ -234,6 +237,86 @@ def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
             ),
         )
     assert store.delivered_today(profile) == 1
+
+
+def test_quota_counts_exported_apply_url_once_after_sheet_reconciliation(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    profile_store = ClientDeliveryProfileStore(repo)
+    profile = profile_store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    posting = make_job(
+        "job-apply",
+        apply_url="https://apply.example.com/jobs/job-apply",
+    )
+    repo.upsert_job(posting)
+    group_id = repo.delivery_group_id(posting.id)
+    batch_store = DailyBatchStore(repo)
+    now = datetime.now(UTC).isoformat()
+
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(posting.apply_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                posting.id,
+                now,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,delivered_at,request_json,"
+            "counts_json,dedupe_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "batch-apply",
+                "client-a",
+                destination.logical_uri,
+                "scope-apply",
+                1,
+                1,
+                0,
+                "delivered",
+                now,
+                now,
+                "{}",
+                "{}",
+                "test",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batch_items VALUES (?,?,?,?,?,?,?)",
+            (
+                "batch-apply",
+                1,
+                group_id,
+                posting.id,
+                "a" * 64,
+                "test",
+                json.dumps({"Job Link": str(posting.apply_url)}),
+            ),
+        )
+
+    # Reconciliation observes the exact apply URL written to the Sheet, while
+    # the delivery journal points at the same posting whose canonical URL is
+    # different. The quota must still count one delivered link, not two.
+    assert batch_store.get("batch-apply").status == "delivered"
+    assert profile_store.delivered_today(profile) == 1
 
 
 def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
