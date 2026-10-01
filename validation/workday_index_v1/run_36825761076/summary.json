@@ -7,7 +7,8 @@
   "result_artifact": {
     "id": 11144853988,
     "name": "jobsift-workday-index-result-36825761076",
-    "digest": "sha256:7a8b618b4c0968e84b144da4431d88ed12571ea0c3ab76a5bd3b072f84542bb9"
+    "digest": "sha256:7a8b618b4c0968e84b144da4431d88ed12571ea0c3ab76a5bd3b072f84542bb9",
+    "report_json_sha256": "798115d0bc96d7b7dac3098a50efa0fbe76bb4023a8e9530083f40c4ad807a5b"
   },
   "plan": {
     "target_count": 100,
