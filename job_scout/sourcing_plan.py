@@ -516,12 +516,6 @@ def evaluate_inventory_run(
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     repository._scoped_match_row(match, match_scope_id),
                 )
-            if match_scope_id is not None:
-                connection.execute(
-                    "INSERT OR REPLACE INTO scoped_job_matches "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    repository._scoped_match_row(match, match_scope_id),
-                )
             evaluated += 1
             if match.decision in {
                 MatchDecision.STRONG_MATCH,
@@ -585,6 +579,12 @@ def evaluate_recent_inventory(
                 "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 repository._match_row(match),
             )
+            if match_scope_id is not None:
+                connection.execute(
+                    "INSERT OR REPLACE INTO scoped_job_matches "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    repository._scoped_match_row(match, match_scope_id),
+                )
             evaluated += 1
             if match.decision in {
                 MatchDecision.STRONG_MATCH,
