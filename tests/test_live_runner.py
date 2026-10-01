@@ -485,7 +485,7 @@ def test_retention_runs_before_client_evaluation(tmp_path, monkeypatch):
         return {"deleted_jobs": 0, "compacted_jobs": 1}
 
     repository.prune_stale_inventory = prune
-    store = SimpleNamespace(evidence_digest=lambda *_: "a" * 64)
+    store = SimpleNamespace(evidence_digest=lambda *_, **__: "a" * 64)
     plan = SimpleNamespace(plan_id="pilot")
     brief = SimpleNamespace(
         client_id="client",
@@ -564,7 +564,7 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         remote_url="",
         prune_stale_inventory=lambda **_: {"deleted_jobs": 0, "compacted_jobs": 0},
     )
-    store = SimpleNamespace(evidence_digest=lambda *_: "a" * 64)
+    store = SimpleNamespace(evidence_digest=lambda *_, **__: "a" * 64)
     plan = SimpleNamespace(plan_id="pilot")
     brief = SimpleNamespace(
         client_id="client",
