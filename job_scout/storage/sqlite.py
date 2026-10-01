@@ -125,6 +125,20 @@ CREATE TABLE IF NOT EXISTS historical_job_links (
 );
 CREATE INDEX IF NOT EXISTS ix_historical_url ON historical_job_links(client_id, normalized_url);
 CREATE INDEX IF NOT EXISTS ix_historical_identity ON historical_job_links(client_id, source, source_board_id, source_job_id);
+CREATE TABLE IF NOT EXISTS destination_observed_links (
+  client_id TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  normalized_url TEXT NOT NULL,
+  source TEXT,
+  source_board_id TEXT,
+  source_job_id TEXT,
+  first_observed_at TEXT NOT NULL,
+  PRIMARY KEY(client_id, destination, normalized_url)
+);
+CREATE INDEX IF NOT EXISTS ix_destination_observed_url
+  ON destination_observed_links(client_id, normalized_url);
+CREATE INDEX IF NOT EXISTS ix_destination_observed_identity
+  ON destination_observed_links(client_id, source, source_board_id, source_job_id);
 CREATE TABLE IF NOT EXISTS historical_blacklist_evidence (
   id INTEGER PRIMARY KEY AUTOINCREMENT, import_id TEXT NOT NULL REFERENCES historical_imports(id),
   client_id TEXT NOT NULL, value TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('company','note')),
@@ -499,9 +513,24 @@ class SQLiteRepository:
         ).fetchone()
         if identity is not None:
             return True
+        historical_url = connection.execute(
+            "SELECT 1 FROM historical_job_links "
+            "WHERE client_id=? AND normalized_url=? LIMIT 1",
+            (client_id, str(job.canonical_url)),
+        ).fetchone()
+        if historical_url is not None:
+            return True
+        observed_identity = connection.execute(
+            "SELECT 1 FROM destination_observed_links WHERE client_id=? "
+            "AND source=? AND source_board_id=? AND source_job_id=? LIMIT 1",
+            (client_id, job.source, job.source_board_id, job.source_job_id),
+        ).fetchone()
+        if observed_identity is not None:
+            return True
         return (
             connection.execute(
-                "SELECT 1 FROM historical_job_links WHERE client_id=? AND normalized_url=? LIMIT 1",
+                "SELECT 1 FROM destination_observed_links "
+                "WHERE client_id=? AND normalized_url=? LIMIT 1",
                 (client_id, str(job.canonical_url)),
             ).fetchone()
             is not None
@@ -574,6 +603,51 @@ class SQLiteRepository:
                 ],
             )
             return len(values), 0
+
+    def observe_destination_links(
+        self,
+        *,
+        client_id: str,
+        destination: str,
+        links: Iterable[str],
+    ) -> tuple[int, int]:
+        """Persist links already visible in a client destination as prior surfacing."""
+        from job_scout.history import source_identity
+        from job_scout.normalization.core import canonicalize_url
+
+        unique: dict[str, tuple[str | None, str | None, str | None]] = {}
+        for raw in links:
+            value = str(raw).strip()
+            if not value:
+                continue
+            normalized = canonicalize_url(value)
+            if not normalized.startswith(("http://", "https://")):
+                raise ValueError("destination Job Link contains an invalid URL")
+            unique.setdefault(normalized, source_identity(value))
+
+        if not unique:
+            return 0, 0
+        now = datetime.now(UTC).isoformat()
+        inserted = 0
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for normalized, identity in sorted(unique.items()):
+                source, board, job_id = identity
+                inserted += connection.execute(
+                    "INSERT OR IGNORE INTO destination_observed_links "
+                    "(client_id,destination,normalized_url,source,source_board_id,"
+                    "source_job_id,first_observed_at) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        client_id,
+                        destination,
+                        normalized,
+                        source,
+                        board,
+                        job_id,
+                        now,
+                    ),
+                ).rowcount
+        return inserted, len(unique)
 
     @staticmethod
     def _match_row(match: JobMatch) -> tuple[object, ...]:
