@@ -9,7 +9,13 @@ from job_scout.domain.daily_batch import BatchConflict
 from job_scout.live_runner import LiveRunnerConfig
 
 
-def config(tmp_path: Path, *, profile_managed: bool = True) -> LiveRunnerConfig:
+def config(
+    tmp_path: Path,
+    *,
+    profile_managed: bool = True,
+    auto_release: bool = False,
+    source_before_delivery: bool = True,
+) -> LiveRunnerConfig:
     return LiveRunnerConfig(
         plan_path=tmp_path / "plan.json",
         database_path=tmp_path / "jobs.db",
@@ -21,10 +27,11 @@ def config(tmp_path: Path, *, profile_managed: bool = True) -> LiveRunnerConfig:
         quota=5,
         interval_seconds=86400,
         timezone="Africa/Lagos",
-        auto_release=False,
+        auto_release=auto_release,
         allow_partial=False,
         run_once=True,
         profile_managed=profile_managed,
+        source_before_delivery=source_before_delivery,
     )
 
 
@@ -156,7 +163,7 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
 
     def prepare(*, repository, request):
         captured["request"] = request
-        return SimpleNamespace(batch_id="batch-1")
+        return SimpleNamespace(batch_id="batch-1", selected_count=1)
 
     monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
     monkeypatch.setattr(
@@ -413,7 +420,7 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
 
     def prepare(*, repository, request):
         captured.append(request.idempotency_key)
-        return SimpleNamespace(batch_id=f"batch-{len(captured)}")
+        return SimpleNamespace(batch_id=f"batch-{len(captured)}", selected_count=1)
 
     monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
     monkeypatch.setattr(
@@ -438,3 +445,126 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
     assert captured[0] != captured[1]
     assert "delivered-0" not in captured[0]
     assert "delivered-0" not in captured[1]
+
+
+def test_legacy_release_detects_existing_paused_profile(tmp_path, monkeypatch):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=100,
+        status="paused",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+    base(monkeypatch, tmp_path, profile, delivered=0)
+    unresolved = SimpleNamespace(batch_id="batch-1", selected_count=1)
+    monkeypatch.setattr(
+        live_runner, "_unresolved_batch", lambda *_, **__: unresolved
+    )
+    monkeypatch.setattr(live_runner, "GoogleSheetsGateway", lambda: object())
+
+    def blocked_guard(*_args, **_kwargs):
+        raise BatchConflict("client delivery profile is paused")
+
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 0,
+            guard_batch_release=blocked_guard,
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "finalize_daily_batch",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("legacy release must not bypass a paused profile")
+        ),
+    )
+
+    result = live_runner.run_once(
+        config(tmp_path, profile_managed=False, auto_release=True)
+    )
+
+    assert result["action"] == "profile_paused"
+
+
+def test_empty_review_batch_is_discarded_so_next_scope_can_run(tmp_path, monkeypatch):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=5,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+    repository, _, _, _ = base(monkeypatch, tmp_path, profile, delivered=0)
+    repository.prune_stale_inventory = lambda **_: {"deleted_jobs": 0}
+
+    brief = SimpleNamespace(
+        client_id="client-a",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(max_age_hours=24, unknown_policy="reject"),
+    )
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    evaluation = SimpleNamespace(
+        run_id="inventory-1",
+        evaluated_at=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+        total_matched=0,
+        total_rejected=0,
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "evaluate_recent_inventory",
+        lambda **_: (evaluation, ()),
+    )
+
+    discarded = []
+    store = SimpleNamespace(
+        evidence_digest=lambda *_, **__: "b" * 64,
+        discard_prepared=lambda batch_id: discarded.append(batch_id),
+    )
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "prepare_daily_batch",
+        lambda **_: SimpleNamespace(
+            batch_id="empty-batch",
+            selected_count=0,
+            shortfall=5,
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda _store, _batch, *, action, **_kwargs: {
+            "action": action,
+            "batch_status": "prepared",
+            "selected_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 0,
+        ),
+    )
+
+    result = live_runner.run_once(
+        config(tmp_path, source_before_delivery=False)
+    )
+
+    assert result == {
+        "action": "no_eligible_jobs",
+        "batch_status": "discarded_empty",
+        "selected_count": 0,
+    }
+    assert discarded == ["empty-batch"]
