@@ -74,7 +74,13 @@ class BatchCandidate:
 def posting_evidence(job: Job, match: JobMatch) -> str:
     payload = job.model_dump(mode="json")
     payload["eligible_countries"] = sorted(payload["eligible_countries"])
-    return digest([payload, match.model_dump(mode="json")])
+    match_payload = match.model_dump(mode="json")
+    # Re-evaluating the same semantic match at a later time must not invalidate
+    # an already prepared batch for another destination. The batch request
+    # separately freezes its evaluation scope/time; delivery evidence should
+    # change only when the posting or match result changes.
+    match_payload.pop("evaluated_at", None)
+    return digest([payload, match_payload])
 
 
 class DailyBatchStore:
@@ -177,8 +183,20 @@ class DailyBatchStore:
         with self.repository.connect() as c:
             return self._load(c, batch_id)
 
+    def export_journal(self, batch_id: str) -> tuple[str | None, str | None]:
+        """Return the frozen destination digests for release/recovery checks."""
+        with self.repository.connect() as c:
+            row = c.execute(
+                "SELECT export_before_sha256,export_after_sha256 "
+                "FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+        if row is None:
+            raise BatchConflict("batch not found")
+        return row["export_before_sha256"], row["export_after_sha256"]
+
     def discard_prepared(self, batch_id: str) -> DailyBatchResult:
-        """Delete only an unreleased prepared snapshot; never erase uncertain delivery state."""
+        """Delete only an unpublished snapshot; never erase uncertain delivery state."""
         with self.repository.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row = c.execute(
@@ -188,11 +206,11 @@ class DailyBatchStore:
             if row is None:
                 raise BatchConflict("batch not found")
             if (
-                row["status"] != "prepared"
+                row["status"] not in {"prepared", "failed"}
                 or row["delivered_at"] is not None
                 or row["export_after_sha256"] is not None
             ):
-                raise BatchConflict("only an unreleased prepared batch can be discarded")
+                raise BatchConflict("only an unpublished batch can be discarded")
             result = self._load(c, batch_id)
             c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
             c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
