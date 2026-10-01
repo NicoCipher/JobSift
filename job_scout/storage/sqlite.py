@@ -307,6 +307,50 @@ class SQLiteRepository:
     def _aware(value: datetime) -> datetime:
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
+    def record_pruned_identities(
+        self,
+        jobs: Iterable[Job],
+        *,
+        pruned_at: datetime | None = None,
+    ) -> int:
+        """Persist minimal identity without storing a full stale job payload."""
+        values = list(jobs)
+        if not values:
+            return 0
+        current = self._aware(pruned_at or datetime.now(UTC)).isoformat()
+        rows = [
+            (
+                job.source,
+                job.source_board_id,
+                job.source_job_id,
+                str(job.canonical_url),
+                job.employer_id,
+                job.company,
+                job.discovered_at.isoformat(),
+                job.last_seen_at.isoformat(),
+                current,
+                0,
+            )
+            for job in values
+        ]
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                "INSERT INTO job_identity_ledger "
+                "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+                "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+                "canonical_url=excluded.canonical_url,"
+                "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
+                "company=excluded.company,"
+                "last_seen_at=excluded.last_seen_at,"
+                "pruned_at=excluded.pruned_at,"
+                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                rows,
+            )
+        return len(rows)
+
     def prune_stale_inventory(
         self,
         *,
