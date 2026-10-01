@@ -7,47 +7,29 @@ on:
         description: Control action
         required: true
         type: choice
-        default: set
+        default: status
         options:
-          - set
+          - status
+          - list
           - pause
           - resume
-          - list
+          - set-quota
+          - set-mode
+          - set-timezone
           - run-now
           - release-batch
           - discard-batch
-      client_id:
-        description: Logical client ID (not a spreadsheet ID)
+      profile_id:
+        description: Opaque delivery profile ID shown by profile setup/status
         required: false
-        type: string
-      destination_id:
-        description: Registered logical Sheet destination ID
-        required: false
-        type: string
-      batch_id:
-        description: Prepared batch ID for release/discard
-        required: false
-        type: string
-      plan:
-        description: Registered sourcing-plan file
-        required: false
-        default: config/sourcing_plans/taiwo_software_remote_us_v2.json
         type: string
       daily_quota:
-        description: Maximum links for this destination per client-local day
+        description: New daily quota for Set quota
         required: false
         default: "100"
         type: string
-      status:
-        description: Profile state when using Set
-        required: false
-        default: active
-        type: choice
-        options:
-          - active
-          - paused
       delivery_mode:
-        description: Review prepares a batch; Auto publishes it
+        description: New delivery mode for Set mode
         required: false
         default: review
         type: choice
@@ -55,9 +37,13 @@ on:
           - review
           - auto
       timezone:
-        description: IANA timezone used for the daily quota
+        description: IANA timezone for Set timezone
         required: false
         default: Africa/Lagos
+        type: string
+      batch_id:
+        description: Prepared batch ID for release/discard
+        required: false
         type: string
 
 permissions:
@@ -106,52 +92,65 @@ jobs:
         shell: bash
         run: |
           operation="${{ inputs.operation }}"
+          profile_id="${{ inputs.profile_id }}"
           case "$operation" in
-            set)
-              test -n "${{ inputs.client_id }}" || { echo "client_id is required"; exit 1; }
-              test -n "${{ inputs.destination_id }}" || { echo "destination_id is required"; exit 1; }
-              python -m job_scout.cli delivery-profile set \
+            list)
+              python -m job_scout.cli delivery-profile list \
+                --database "$JOBSIFT_DATABASE"
+              ;;
+            status)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile status \
                 --database "$JOBSIFT_DATABASE" \
-                --client "${{ inputs.client_id }}" \
-                --destination-id "${{ inputs.destination_id }}" \
-                --plan "${{ inputs.plan }}" \
-                --daily-quota "${{ inputs.daily_quota }}" \
-                --status "${{ inputs.status }}" \
-                --delivery-mode "${{ inputs.delivery_mode }}" \
-                --timezone "${{ inputs.timezone }}"
+                --profile-id "$profile_id"
               ;;
             pause|resume)
-              test -n "${{ inputs.client_id }}" || { echo "client_id is required"; exit 1; }
-              test -n "${{ inputs.destination_id }}" || { echo "destination_id is required"; exit 1; }
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile "$operation" \
                 --database "$JOBSIFT_DATABASE" \
-                --client "${{ inputs.client_id }}" \
-                --destination-id "${{ inputs.destination_id }}"
+                --profile-id "$profile_id"
               ;;
-            list)
-              if [ -n "${{ inputs.client_id }}" ]; then
-                python -m job_scout.cli delivery-profile list \
-                  --database "$JOBSIFT_DATABASE" \
-                  --client "${{ inputs.client_id }}"
-              else
-                python -m job_scout.cli delivery-profile list \
-                  --database "$JOBSIFT_DATABASE"
-              fi
+            set-quota)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set-quota \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --daily-quota "${{ inputs.daily_quota }}"
+              ;;
+            set-mode)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set-mode \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --delivery-mode "${{ inputs.delivery_mode }}"
+              ;;
+            set-timezone)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set-timezone \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --timezone "${{ inputs.timezone }}"
               ;;
             run-now)
-              python -m job_scout.profile_delivery_runner
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              JOBSIFT_PROFILE_CONTROL_ID="$profile_id" \
+                python -m job_scout.profile_delivery_runner
               ;;
             release-batch)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile release-batch \
                 --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
                 --batch-id "${{ inputs.batch_id }}" \
                 --confirm-batch-id "${{ inputs.batch_id }}"
               ;;
             discard-batch)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile discard-batch \
                 --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
                 --batch-id "${{ inputs.batch_id }}"
               ;;
           esac
