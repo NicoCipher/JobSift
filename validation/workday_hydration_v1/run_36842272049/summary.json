@@ -1,0 +1,107 @@
+{
+  "summary_version": "workday-hydration-yield-summary-v2",
+  "job": "JOB-37",
+  "benchmark_run_id": 36842272049,
+  "benchmark_head_sha": "5941778d05b3e0acefcd4b8695346cd082e99b5f",
+  "artifact_id": 11152345381,
+  "artifact_digest": "sha256:9e06acf9bccbd0099d540b4d6d9ec4e6a782f585721561582aed7d93f3c1fdbd",
+  "report_json_sha256": "505be769299cec7470f50edb1160323feb4ff50649f3c18bdef146f07552ffcd",
+  "source_index_run_id": 36825761076,
+  "candidate_manifest_sha256": "d3ba8f46d83f65e88944f7f465a87053c90b1b081762edb24a80e07463c957ab",
+  "historical_evidence_sha256": "ab706e17b55cb2ec3a5ca979600ac6a97f14a10bfe64b7210ded1852c48faa8c",
+  "index_evidence": {
+    "complete_targets": 92,
+    "partial_targets": 8,
+    "trusted_candidates": 140,
+    "excluded_partial_target_candidates": 158
+  },
+  "run": {
+    "duration_seconds": 43.173,
+    "candidate_bearing_targets": 24
+  },
+  "hydration": {
+    "candidate_paths_attempted": 140,
+    "successful_detail_paths": 139,
+    "hydration_failures": 1,
+    "failure_classes": {
+      "http_403": 1
+    },
+    "hydrated_unique_jobs": 139,
+    "provider_identity_collapses": 0,
+    "failure": {
+      "target_identity": "workday:autodesk.wd1.myworkdayjobs.com:autodesk:Ext",
+      "external_path": "/job/Parsberg-DEU/Backend-Developer---Fusion-Sustainability-Insights_26WD101347",
+      "classification": "HTTP 403 detail response"
+    }
+  },
+  "freshness": {
+    "policy_max_age_hours": 24,
+    "unknown_policy": "reject",
+    "authoritative_source": "Workday jobPostingInfo.startDate",
+    "fresh_postings": 2,
+    "stale_postings": 137,
+    "unknown_or_invalid_posting_time": 0
+  },
+  "matching": {
+    "strong_match": 6,
+    "needs_review": 65,
+    "reject": 68,
+    "automatic_match_eligible_postings": 6,
+    "automatic_match_eligible_groups": 6
+  },
+  "history_and_dedupe": {
+    "historically_surfaced_postings": 2,
+    "historically_suppressed_match_eligible_groups": 0,
+    "prior_delivery_suppressed_groups": 0,
+    "practical_duplicate_postings_collapsed": 0
+  },
+  "per_candidate_evidence": {
+    "rows": 140,
+    "complete": true,
+    "artifact_path": "report.json",
+    "required_fields": [
+      "target_identity",
+      "external_path",
+      "authoritative_source_job_id",
+      "posting_age_evidence",
+      "match_decision",
+      "historically_surfaced",
+      "delivery_group_id",
+      "suppression_outcome",
+      "final_deliverable"
+    ]
+  },
+  "fresh_posting_outcomes": [
+    {
+      "company": "Resmed",
+      "title": "Student Software Engineer",
+      "age_hours_at_evaluation": 9.38,
+      "decision": "reject",
+      "suppression_outcome": "reject",
+      "reason": "Australia does not match the US target market"
+    },
+    {
+      "company": "swa",
+      "title": "Summer 2027 Software Engineer Internship",
+      "age_hours_at_evaluation": 9.38,
+      "decision": "needs_review",
+      "suppression_outcome": "needs_review",
+      "reason": "US target role matched but remote status is unknown"
+    }
+  ],
+  "strong_match_staleness_hours_at_evaluation": [
+    33.38,
+    33.38,
+    57.38,
+    57.38,
+    57.38,
+    81.38
+  ],
+  "final": {
+    "fresh_unique_delivery_groups": 0,
+    "fresh_unique_employers": 0,
+    "max_jobs_per_employer_per_batch": 1,
+    "delivery_policy_eligible_count": 0
+  },
+  "conclusion": "The 140-candidate trusted complete-target Workday cohort provides zero automatic deliveries under the current <=24h freshness rule and unchanged SearchBrief. All 140 candidates have per-candidate evidence in the frozen report artifact. The 158 candidates from partial targets remain excluded from capacity evidence."
+}
