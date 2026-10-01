@@ -13,8 +13,10 @@ import re
 import time
 import uuid
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -76,6 +78,13 @@ class _RequestFailure:
     status_code: int | None = None
 
 
+@dataclass(frozen=True)
+class _DetailResult:
+    path: str
+    job: Job | None
+    error: str | None
+
+
 @dataclass
 class _QueryResult:
     paths: list[str]
@@ -95,13 +104,26 @@ class WorkdayCollector:
 
     source = "workday"
 
-    def __init__(self, client: httpx.Client | None = None, *, delay: float = 0.5) -> None:
+    def __init__(
+        self,
+        client: httpx.Client | None = None,
+        *,
+        delay: float = 0.5,
+        detail_concurrency: int = 1,
+    ) -> None:
+        if (
+            isinstance(detail_concurrency, bool)
+            or not isinstance(detail_concurrency, int)
+            or not 1 <= detail_concurrency <= 8
+        ):
+            raise ValueError("detail_concurrency must be an integer from 1 to 8")
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(20.0),
             headers={"Accept": "application/json", "User-Agent": USER_AGENT},
             transport=httpx.HTTPTransport(retries=2),
         )
         self.delay = delay
+        self.detail_concurrency = detail_concurrency
         self.last_counts: dict[str, int | str | bool] = {}
 
     def collect(self, target: SourceTarget) -> CollectionResult:
@@ -362,6 +384,31 @@ class WorkdayCollector:
             return None, "jobFamilyGroup partition counts do not establish coverage beyond the cap"
         return partitions, None
 
+    def _resolve_detail(
+        self,
+        config: WorkdayTargetConfig,
+        target: SourceTarget,
+        path: str,
+    ) -> _DetailResult:
+        response, failure = self._request("get", f"{self._base(config)}{quote(path, safe='/')}")
+        if response is None:
+            assert failure is not None
+            result = _DetailResult(path, None, f"detail {path}: {failure.message}")
+        elif response.status_code != 200:
+            result = _DetailResult(path, None, f"detail {path}: HTTP {response.status_code}")
+        else:
+            try:
+                body = response.json()
+                if not isinstance(body, dict):
+                    raise TypeError("response is not an object")
+                job = self._normalize(body, target, config, path)
+            except (TypeError, ValueError, ValidationError) as exc:
+                result = _DetailResult(path, None, f"detail {path}: {type(exc).__name__}")
+            else:
+                result = _DetailResult(path, job, None)
+        self._pause()
+        return result
+
     def _resolve_details(
         self,
         config: WorkdayTargetConfig,
@@ -371,30 +418,30 @@ class WorkdayCollector:
         jobs: dict[str, Job] = {}
         path_ids: dict[str, str] = {}
         errors: list[str] = []
-        for path in paths:
-            self.last_counts["detail_attempts"] = int(self.last_counts["detail_attempts"]) + 1
-            response, failure = self._request("get", f"{self._base(config)}{quote(path, safe='/')}")
-            if response is None:
-                assert failure is not None
-                errors.append(f"detail {path}: {failure.message}")
-                self._pause()
-                continue
-            if response.status_code != 200:
-                errors.append(f"detail {path}: HTTP {response.status_code}")
-                self._pause()
-                continue
-            try:
-                body = response.json()
-                if not isinstance(body, dict):
-                    raise TypeError("response is not an object")
-                job = self._normalize(body, target, config, path)
-            except (TypeError, ValueError, ValidationError) as exc:
-                errors.append(f"detail {path}: {type(exc).__name__}")
-                self._pause()
-                continue
-            path_ids[path] = job.source_job_id
-            jobs.setdefault(job.source_job_id, job)
-            self._pause()
+        self.last_counts["detail_attempts"] = (
+            int(self.last_counts["detail_attempts"]) + len(paths)
+        )
+        resolver = partial(self._resolve_detail, config, target)
+        if self.detail_concurrency == 1 or len(paths) <= 1:
+            results = map(resolver, paths)
+            for detail in results:
+                if detail.error is not None:
+                    errors.append(detail.error)
+                    continue
+                assert detail.job is not None
+                path_ids[detail.path] = detail.job.source_job_id
+                jobs.setdefault(detail.job.source_job_id, detail.job)
+        else:
+            with ThreadPoolExecutor(max_workers=self.detail_concurrency) as executor:
+                # executor.map yields in input order, preserving deterministic
+                # provider-ID dedupe and error ordering while requests run concurrently.
+                for detail in executor.map(resolver, paths):
+                    if detail.error is not None:
+                        errors.append(detail.error)
+                        continue
+                    assert detail.job is not None
+                    path_ids[detail.path] = detail.job.source_job_id
+                    jobs.setdefault(detail.job.source_job_id, detail.job)
         return list(jobs.values()), errors, path_ids
 
     @staticmethod

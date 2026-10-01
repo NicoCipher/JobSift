@@ -166,3 +166,29 @@ timestamp/freshness evidence, full SearchBrief evaluation counts, distinct match
 employers, and distinct practical delivery groups. These results are used to
 choose provider shard counts for the next larger benchmark rather than treating
 the default shard counts as a capacity claim.
+
+
+### First bounded benchmark evidence
+
+GitHub Actions run `36782209908` executed the first 35-target / 8-worker
+benchmark from the production-approved registry. Seven of eight shard artifacts
+completed. The remaining shard, `workday-001`, hit the 30-minute job guard and
+did not publish an artifact, so authoritative fan-in rejected the seven-artifact
+set as incomplete. No benchmark inventory was accepted and no delivery occurred.
+
+The completed non-Workday targets (30/30 successful) produced 815 normalized/raw
+postings with trustworthy timestamps, of which 14 were at most 24 hours old at
+collection: Greenhouse 526 / 9 fresh, Ashby 219 / 4 fresh, Lever 70 / 1 fresh.
+
+The completed Workday shard covered three targets and produced 613 postings, 28
+at most 24 hours old. Its target runtimes were approximately 340 seconds for 330
+Allegion postings, 226 seconds for 269 Yale postings, and 13 seconds for 14
+Bullhorn postings. The timed-out Workday shard included the production-approved
+Genuine Parts board with health evidence of 2,000 current postings. This exposed
+serial Workday detail reads as the first measured scaling bottleneck.
+
+The next benchmark keeps Workday search pagination and coverage validation
+serial but tests a bounded detail-read concurrency of four. The normal
+`WorkdayCollector` default remains one; benchmark concurrency is explicitly
+frozen into the benchmark plan, capped at eight, and therefore cannot silently
+change ordinary collector behavior.

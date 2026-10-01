@@ -159,6 +159,7 @@ def test_benchmark_plan_builds_provider_isolated_matrix() -> None:
 
     assert plan.total_targets == 8
     assert plan.total_shards == 4
+    assert plan.workday_detail_concurrency == 1
     assert len(plan.matrix["include"]) == 4
     assert {row["source"] for row in plan.matrix["include"]} == set(_all(1))
     assert manifest.registry_id == subset.registry_id
@@ -340,3 +341,25 @@ def test_benchmark_match_yield_applies_production_freshness_policy(tmp_path: Pat
     assert report.evaluation.invalid_time_suppressions == 0
     assert report.distinct_matched_employers == 2
     assert report.distinct_matched_delivery_groups == 2
+
+
+def test_benchmark_plan_records_bounded_workday_detail_concurrency() -> None:
+    plan, _, _ = build_benchmark_plan(
+        _registry(),
+        target_limits_by_source=_all(1),
+        shard_counts_by_source=_all(1),
+        workday_detail_concurrency=4,
+    )
+
+    assert plan.workday_detail_concurrency == 4
+
+
+@pytest.mark.parametrize("value", [0, 9, True])
+def test_benchmark_plan_rejects_unsafe_workday_detail_concurrency(value) -> None:
+    with pytest.raises(ValueError, match="Workday detail concurrency"):
+        build_benchmark_plan(
+            _registry(),
+            target_limits_by_source=_all(1),
+            shard_counts_by_source=_all(1),
+            workday_detail_concurrency=value,
+        )
