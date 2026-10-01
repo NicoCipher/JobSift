@@ -561,6 +561,7 @@ class WorkdayIndexScanner:
             else:
                 assert partitions is not None
                 partition_complete = True
+                seen_partition_paths: set[str] = set()
                 for partition in partitions:
                     result = self._query(
                         target,
@@ -568,6 +569,17 @@ class WorkdayIndexScanner:
                         scope=f"jobFamilyGroup:{partition.identifier}",
                     )
                     provider_rows_seen += result.provider_rows_seen
+                    partition_paths = {
+                        posting.external_path for posting in result.postings
+                    }
+                    overlap = seen_partition_paths & partition_paths
+                    if overlap:
+                        partition_complete = False
+                        errors.append(
+                            "jobFamilyGroup partitions overlap by externalPath: "
+                            f"{len(overlap)} duplicate path(s)"
+                        )
+                    seen_partition_paths.update(partition_paths)
                     self._merge(merged, result.postings, errors)
                     errors.extend(result.errors)
                     if result.total != partition.advertised_count or not result.complete:
