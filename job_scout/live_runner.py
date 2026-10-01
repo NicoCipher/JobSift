@@ -345,6 +345,31 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         repository, client_id=brief.client_id, destination=destination
     )
     if unresolved is not None:
+        # The legacy Live JobSift release workflow predates delivery profiles.
+        # If it is releasing a batch for a destination that now has a profile,
+        # adopt that profile for this release so pause/quota/reconciliation
+        # controls cannot be bypassed by the older entrypoint.
+        if (
+            profile is None
+            and config.auto_release
+            and getattr(unresolved.request, "destination_id", None) is not None
+        ):
+            legacy_profile_store = ClientDeliveryProfileStore(repository)
+            try:
+                legacy_profile = legacy_profile_store.get(
+                    unresolved.request.client_id,
+                    unresolved.request.destination_id,
+                )
+            except BatchConflict:
+                legacy_profile = None
+            if legacy_profile is not None:
+                profile_store = legacy_profile_store
+                profile = legacy_profile
+                profile_timezone = profile.timezone
+                delivered_today = profile_store.delivered_today(profile)
+                effective_quota = max(0, profile.daily_quota - delivered_today)
+                profile_auto_release = profile.delivery_mode == "auto"
+
         if config.discard_prepared:
             discarded = store.discard_prepared(unresolved.batch_id)
             return {
@@ -571,6 +596,41 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     )
     batch = prepare_daily_batch(repository=repository, request=request)
     action = "validated" if config.validation_only else "prepared"
+
+    # A review-mode scope with zero selected jobs is not something an operator
+    # can meaningfully approve. Do not leave it as an unresolved prepared batch,
+    # otherwise it blocks later hourly inventory scopes that may contain fresh
+    # matches.
+    if (
+        profile is not None
+        and not config.validation_only
+        and profile.delivery_mode == "review"
+        and batch.selected_count == 0
+    ):
+        empty_payload = _batch_payload(
+            store,
+            batch,
+            action="empty_review_scope",
+            sourcing=report,
+            evaluation=evaluation,
+            retention=retention,
+        )
+        store.discard_prepared(batch.batch_id)
+        empty_payload["batch_status"] = "discarded"
+        if profile_store is not None:
+            delivered_after = profile_store.delivered_today(profile)
+            empty_payload["delivery_profile"] = {
+                "client_id": profile.client_id,
+                "destination_id": profile.destination_id,
+                "daily_quota": profile.daily_quota,
+                "status": profile.status,
+                "delivery_mode": profile.delivery_mode,
+                "timezone": profile.timezone,
+                "delivered_today": delivered_after,
+                "remaining_today": max(0, profile.daily_quota - delivered_after),
+            }
+        return empty_payload
+
     if profile_auto_release and profile_store is not None and profile is not None:
         current_profile = profile_store.get(profile.client_id, profile.destination_id)
         profile = current_profile

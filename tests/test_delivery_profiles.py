@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -12,6 +13,7 @@ from job_scout.delivery_profiles import (
 from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.models import Job
 from job_scout.normalization.core import content_fingerprint
+from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -48,7 +50,7 @@ def register(repo: SQLiteRepository, *, client: str = "client-a", destination: s
     )
 
 
-def make_job(job_id: str = "job-1") -> Job:
+def make_job(job_id: str = "job-1", *, apply_url: str | None = None) -> Job:
     now = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
     description = "Build production software."
     return Job(
@@ -61,6 +63,7 @@ def make_job(job_id: str = "job-1") -> Job:
         employer_id="acme",
         description_text=description,
         job_url=f"https://example.com/{job_id}",
+        apply_url=apply_url,
         canonical_url=f"https://example.com/{job_id}",
         posted_at=now,
         discovered_at=now,
@@ -163,17 +166,21 @@ def test_delivered_today_is_scoped_to_destination_and_profile_timezone(tmp_path)
 
     posting = make_job()
     repo.upsert_job(posting)
-    group_id = repo.delivery_group_id(posting.id)
 
     # 23:30 UTC on Sep 30 is 00:30 Oct 1 in Lagos and must count for Oct 1.
+    # Quota is defined by the destination link that was actually observed.
     with repo.connect() as connection:
         connection.execute(
-            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            "INSERT INTO destination_observed_links "
+            "(client_id,destination,normalized_url,source,source_board_id,"
+            "source_job_id,first_observed_at) VALUES (?,?,?,?,?,?,?)",
             (
-                group_id,
                 "client-a",
                 destination.logical_uri,
-                posting.id,
+                str(posting.canonical_url),
+                posting.source,
+                posting.source_board_id,
+                posting.source_job_id,
                 "2026-09-30T23:30:00+00:00",
             ),
         )
@@ -233,6 +240,255 @@ def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
                 datetime.now(UTC).isoformat(),
             ),
         )
+    assert store.delivered_today(profile) == 1
+
+
+def test_quota_counts_exported_apply_url_once_after_sheet_reconciliation(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    profile_store = ClientDeliveryProfileStore(repo)
+    profile = profile_store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    posting = make_job(
+        "job-apply",
+        apply_url="https://apply.example.com/jobs/job-apply",
+    )
+    repo.upsert_job(posting)
+    group_id = repo.delivery_group_id(posting.id)
+    DailyBatchStore(repo)
+    now = datetime.now(UTC).isoformat()
+
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(posting.apply_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                posting.id,
+                now,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,delivered_at,request_json,"
+            "counts_json,dedupe_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "batch-apply",
+                "client-a",
+                destination.logical_uri,
+                "scope-apply",
+                1,
+                1,
+                0,
+                "delivered",
+                now,
+                now,
+                "{}",
+                "{}",
+                "test",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batch_items VALUES (?,?,?,?,?,?,?)",
+            (
+                "batch-apply",
+                1,
+                group_id,
+                posting.id,
+                "a" * 64,
+                "test",
+                json.dumps({"Job Link": str(posting.apply_url)}),
+            ),
+        )
+
+    # Reconciliation observes the exact apply URL written to the Sheet, while
+    # the delivery journal points at the same posting whose canonical URL is
+    # different. The quota must still count one delivered link, not two.
+    assert profile_store.delivered_today(profile) == 1
+
+
+def test_quota_uses_current_group_after_frozen_group_merge(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    posting = make_job("merged-group-job")
+    repo.upsert_job(posting)
+    current_group = repo.delivery_group_id(posting.id)
+    DailyBatchStore(repo)
+    now = datetime.now(UTC).isoformat()
+
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(posting.canonical_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                current_group,
+                "client-a",
+                destination.logical_uri,
+                posting.id,
+                now,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,delivered_at,request_json,"
+            "counts_json,dedupe_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "batch-merged-group",
+                "client-a",
+                destination.logical_uri,
+                "scope-merged-group",
+                1,
+                1,
+                0,
+                "delivered",
+                now,
+                now,
+                "{}",
+                "{}",
+                "test",
+            ),
+        )
+        # Simulate a batch frozen before its original delivery group was merged
+        # into the posting's current group.
+        connection.execute(
+            "INSERT INTO daily_batch_items VALUES (?,?,?,?,?,?,?)",
+            (
+                "batch-merged-group",
+                1,
+                "obsolete-frozen-group",
+                posting.id,
+                "a" * 64,
+                "test",
+                json.dumps({"Job Link": str(posting.canonical_url)}),
+            ),
+        )
+
+    assert store.delivered_today(profile) == 1
+
+
+def test_legacy_delivery_quota_survives_later_apply_url_change(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    original = make_job("legacy-job")
+    repo.upsert_job(original)
+    group_id = repo.delivery_group_id(original.id)
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(original.canonical_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                original.id,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    # A later collection learns a new apply URL. The historical Sheet row still
+    # contains the canonical URL that was actually exported.
+    refreshed = make_job(
+        "legacy-job",
+        apply_url="https://apply.example.com/jobs/legacy-job",
+    )
+    repo.upsert_job(refreshed)
+
+    assert store.delivered_today(profile) == 1
+
+
+def test_legacy_exported_apply_url_remains_one_quota_link_after_url_changes(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    original = make_job(
+        "legacy-apply-job",
+        apply_url="https://external.example/apply/old-token",
+    )
+    repo.upsert_job(original)
+    group_id = repo.delivery_group_id(original.id)
+
+    # This is the URL that actually exists on the client Sheet.
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(original.apply_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                original.id,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    # A later provider refresh changes the apply URL. Quota accounting must not
+    # invent the new URL or count the one Sheet row twice.
+    refreshed = make_job(
+        "legacy-apply-job",
+        apply_url="https://external.example/apply/new-token",
+    )
+    repo.upsert_job(refreshed)
+
     assert store.delivered_today(profile) == 1
 
 
