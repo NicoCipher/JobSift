@@ -7,8 +7,8 @@ import hashlib
 import json
 import os
 from collections import Counter
-from functools import partial
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -152,8 +152,12 @@ def build_benchmark_plan(
 ) -> tuple[BenchmarkPlan, ProductionSourceRegistry, CollectionShardManifest]:
     limits = _exact_provider_map(target_limits_by_source, label="target limits")
     shards = _exact_provider_map(shard_counts_by_source, label="shard counts")
-    if not 1 <= workday_detail_concurrency <= 8:
-        raise ValueError("Workday detail concurrency must be from 1 to 8")
+    if (
+        isinstance(workday_detail_concurrency, bool)
+        or not isinstance(workday_detail_concurrency, int)
+        or not 1 <= workday_detail_concurrency <= 8
+    ):
+        raise ValueError("Workday detail concurrency must be an integer from 1 to 8")
     subset = select_registry_subset(registry, target_limits_by_source=limits)
     for source in PROVIDERS:
         if shards[source] > subset.target_counts_by_source[source]:
