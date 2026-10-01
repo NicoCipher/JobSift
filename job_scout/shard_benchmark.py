@@ -7,12 +7,14 @@ import hashlib
 import json
 import os
 from collections import Counter
+from functools import partial
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from job_scout.collectors.workday import WorkdayCollector
 from job_scout.domain.models import Job, MatchDecision, SearchBrief
 from job_scout.posting_freshness import posting_freshness_disposition
 from job_scout.production_registry import (
@@ -23,7 +25,11 @@ from job_scout.production_registry import (
     sha256_json,
 )
 from job_scout.search_brief import load_search_brief
-from job_scout.shard_collection import ShardCollectionArtifact, collect_shard
+from job_scout.shard_collection import (
+    ShardCollectionArtifact,
+    collect_shard,
+    default_collector_factory,
+)
 from job_scout.shard_fanin import FanInReport, persist_shard_artifacts
 from job_scout.sourcing_plan import evaluate_inventory_run
 from job_scout.storage.inventory_runs import InventoryRunStore
@@ -47,6 +53,7 @@ class BenchmarkPlan(BaseModel):
     target_counts_by_source: dict[str, int]
     total_targets: int = Field(ge=1, le=MAX_BOUNDED_TARGETS)
     total_shards: int = Field(ge=1)
+    workday_detail_concurrency: int = Field(ge=1, le=8)
     matrix: dict[str, list[dict[str, str]]]
 
 
@@ -141,9 +148,12 @@ def build_benchmark_plan(
     *,
     target_limits_by_source: dict[str, int],
     shard_counts_by_source: dict[str, int],
+    workday_detail_concurrency: int = 1,
 ) -> tuple[BenchmarkPlan, ProductionSourceRegistry, CollectionShardManifest]:
     limits = _exact_provider_map(target_limits_by_source, label="target limits")
     shards = _exact_provider_map(shard_counts_by_source, label="shard counts")
+    if not 1 <= workday_detail_concurrency <= 8:
+        raise ValueError("Workday detail concurrency must be from 1 to 8")
     subset = select_registry_subset(registry, target_limits_by_source=limits)
     for source in PROVIDERS:
         if shards[source] > subset.target_counts_by_source[source]:
@@ -166,9 +176,20 @@ def build_benchmark_plan(
         target_counts_by_source=subset.target_counts_by_source,
         total_targets=len(subset.targets),
         total_shards=len(manifest.shards),
+        workday_detail_concurrency=workday_detail_concurrency,
         matrix=matrix,
     )
     return plan, subset, manifest
+
+
+def _benchmark_collector_factory(source: str, *, workday_detail_concurrency: int):
+    if source == "workday":
+        return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
+    return default_collector_factory(source)
+
+
+def _load_benchmark_plan(path: Path) -> BenchmarkPlan:
+    return BenchmarkPlan.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def _matched_stats(
@@ -305,10 +326,12 @@ def main() -> None:
     plan.add_argument("--output-dir", required=True, type=Path)
     plan.add_argument("--limit", action="append", required=True, default=[])
     plan.add_argument("--shards", action="append", required=True, default=[])
+    plan.add_argument("--workday-detail-concurrency", type=int, default=1)
 
     collect = commands.add_parser("collect")
     collect.add_argument("--registry", required=True, type=Path)
     collect.add_argument("--manifest", required=True, type=Path)
+    collect.add_argument("--benchmark-plan", required=True, type=Path)
     collect.add_argument("--shard-id", required=True)
     collect.add_argument("--output", required=True, type=Path)
 
@@ -328,6 +351,7 @@ def main() -> None:
                 registry,
                 target_limits_by_source=_assignments(args.limit, label="target limits"),
                 shard_counts_by_source=_assignments(args.shards, label="shard counts"),
+                workday_detail_concurrency=args.workday_detail_concurrency,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
@@ -341,10 +365,20 @@ def main() -> None:
             args.manifest.read_text(encoding="utf-8")
         )
         if args.command == "collect":
+            benchmark_plan = _load_benchmark_plan(args.benchmark_plan)
+            if (
+                benchmark_plan.benchmark_registry_id != registry.registry_id
+                or benchmark_plan.shard_manifest_sha256 != manifest.manifest_sha256
+            ):
+                raise ValueError("benchmark plan does not match registry/manifest")
             artifact = collect_shard(
                 registry=registry,
                 manifest=manifest,
                 shard_id=args.shard_id,
+                collector_factory=partial(
+                    _benchmark_collector_factory,
+                    workday_detail_concurrency=benchmark_plan.workday_detail_concurrency,
+                ),
             )
             _write_json(args.output, artifact)
             print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))
