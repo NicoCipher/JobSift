@@ -342,7 +342,7 @@ def test_profile_runner_recovers_unresolved_export_before_quota_reached(
 
     result = live_runner.run_once(config(tmp_path))
 
-    assert result == {"action": "resumed_release", "batch_status": "delivered"}
+    assert result == {"action": "recovered_release", "batch_status": "delivered"}
     assert calls == [("guard", "batch-1"), ("finalize", "batch-1")]
 
 
