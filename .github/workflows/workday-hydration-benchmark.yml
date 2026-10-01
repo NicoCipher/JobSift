@@ -6,7 +6,8 @@ on:
     paths:
       - "job_scout/workday_hydration_benchmark.py"
       - "tests/test_workday_hydration_benchmark.py"
-      - "validation/workday_hydration_v1/**"
+      - "validation/workday_hydration_v1/candidates_run_36825761076.json.gz"
+      - "validation/workday_hydration_v1/historical_candidate_suppression_run_36839426729.json"
       - ".github/workflows/workday-hydration-benchmark.yml"
   push:
     branches:

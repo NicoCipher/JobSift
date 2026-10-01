@@ -315,6 +315,7 @@ def run_hydration_benchmark(
         "match_decisions": dict(sorted(match_decisions.items())),
         "semantic_match_postings": len(semantic_jobs),
         "semantic_match_groups": len(semantic_groups),
+        "historically_surfaced_postings": sum(historical_by_job.values()),
         "historically_suppressed_groups": len(historical_groups),
         "prior_delivery_suppressed_groups": 0,
         "prior_delivery_evidence": (
