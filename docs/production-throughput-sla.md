@@ -192,3 +192,33 @@ serial but tests a bounded detail-read concurrency of four. The normal
 `WorkdayCollector` default remains one; benchmark concurrency is explicitly
 frozen into the benchmark plan, capped at eight, and therefore cannot silently
 change ordinary collector behavior.
+
+
+### Successful 35-target benchmark with bounded Workday concurrency
+
+GitHub Actions run `36807915457` repeated the same deterministic 35-target
+sample with Workday detail concurrency frozen at four. All 35 targets completed,
+all eight shard artifacts were present, authoritative fan-in succeeded, and no
+Turso or Google Sheets credentials were used.
+
+The run collected 4,199 unique normalized postings. All had trustworthy posting
+timestamps, but only 26 were at most 24 hours old at collection. Client
+evaluation found 23 semantic remote-US software matches before freshness; all 23
+were older than 24 hours, so the final freshness-eligible match count was zero.
+The 26 fresh postings all failed the title-target rule. This sample therefore
+does **not** support a 150-deliverable-jobs/day capacity claim.
+
+Workday concurrency materially improved the measured bottleneck. On the same
+three-target shard, Allegion fell from about 340 seconds to 94 seconds, Yale from
+about 226 seconds to 64 seconds, and Bullhorn from about 13 seconds to 4 seconds.
+The previously timed-out Workday shard also completed: the Genuine Parts board
+recovered 2,750 postings (showing that its health count of 2,000 was a provider
+cap, not an exact inventory count) and completed in about 986 seconds with zero
+collector errors.
+
+The immutable aggregate evidence for this run is stored under
+`validation/bounded_benchmark_v1/run_36807915457/summary.json`. The next
+capacity test should expand the deterministic sample while increasing Workday
+shard count to reflect measured target-size skew; it must continue to report
+fresh full-brief matches and distinct eligible employers rather than raw ATS
+volume.
