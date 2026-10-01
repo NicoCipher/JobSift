@@ -318,6 +318,51 @@ def test_quota_counts_exported_apply_url_once_after_sheet_reconciliation(tmp_pat
     assert profile_store.delivered_today(profile) == 1
 
 
+def test_legacy_delivery_quota_survives_later_apply_url_change(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    original = make_job("legacy-job")
+    repo.upsert_job(original)
+    group_id = repo.delivery_group_id(original.id)
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(original.canonical_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                original.id,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    # A later collection learns a new apply URL. The historical Sheet row still
+    # contains the canonical URL that was actually exported.
+    refreshed = make_job(
+        "legacy-job",
+        apply_url="https://apply.example.com/jobs/legacy-job",
+    )
+    repo.upsert_job(refreshed)
+
+    assert store.delivered_today(profile) == 1
+
+
 def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     register(
