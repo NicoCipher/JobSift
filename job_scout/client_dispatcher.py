@@ -100,32 +100,44 @@ def reconcile_sheet_history(
             )
         )
 
-    payload = {
-        "client_id": profile.client_id,
-        "profile_id": profile.profile_id,
-        "destination_id": profile.destination_id,
-        "links": [
-            {
-                "url": record.normalized_url,
-                "row": record.source_row,
-                "status": record.operator_status,
-            }
-            for record in records
-        ],
-    }
-    digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    inserted, already_present = repository.import_historical_records(
-        client_id=profile.client_id,
-        workbook_sha256=digest,
-        records=records,
-        importer_version="client-sheet-reconciliation-v1",
-    )
+    with repository.connect() as connection:
+        existing = {
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT normalized_url FROM historical_job_links "
+                "WHERE client_id=?",
+                (profile.client_id,),
+            ).fetchall()
+        }
+    new_records = [record for record in records if record.normalized_url not in existing]
+    inserted = 0
+    if new_records:
+        payload = {
+            "client_id": profile.client_id,
+            "profile_id": profile.profile_id,
+            "destination_id": profile.destination_id,
+            "links": [
+                {
+                    "url": record.normalized_url,
+                    "row": record.source_row,
+                    "status": record.operator_status,
+                }
+                for record in new_records
+            ],
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        inserted, _ = repository.import_historical_records(
+            client_id=profile.client_id,
+            workbook_sha256=digest,
+            records=new_records,
+            importer_version="client-sheet-reconciliation-v1",
+        )
     return {
         "sheet_links": len(records),
         "history_inserted": inserted,
-        "history_already_present": already_present,
+        "history_already_present": len(records) - inserted,
     }
 
 
