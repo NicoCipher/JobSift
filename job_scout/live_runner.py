@@ -324,15 +324,30 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     effective_quota = config.quota
     profile_auto_release = False
     profile_timezone = config.timezone
-    if config.profile_managed:
-        if config.validation_only:
-            raise ValueError("profile-managed delivery cannot run in validation mode")
-        if destination_record is None:
-            raise ValueError(
-                "profile-managed delivery requires a registered client destination"
+    if config.profile_managed and config.validation_only:
+        raise ValueError("profile-managed delivery cannot run in validation mode")
+    if config.profile_managed and destination_record is None:
+        raise ValueError(
+            "profile-managed delivery requires a registered client destination"
+        )
+
+    # A registered destination may already be governed by a delivery profile
+    # even when the legacy Live JobSift workflow did not opt into profile mode.
+    # Detect that persisted control plane before any release path so pause/quota
+    # guards cannot be bypassed by an older entrypoint.
+    if not config.validation_only and destination_record is not None:
+        candidate_profile_store = ClientDeliveryProfileStore(repository)
+        try:
+            profile = candidate_profile_store.get(
+                brief.client_id, destination_record.destination_id
             )
-        profile_store = ClientDeliveryProfileStore(repository)
-        profile = profile_store.get(brief.client_id, destination_record.destination_id)
+        except BatchConflict:
+            if config.profile_managed:
+                raise
+        else:
+            profile_store = candidate_profile_store
+
+    if profile is not None and profile_store is not None:
         if profile.sourcing_plan_id != plan.plan_id:
             raise ValueError(
                 "delivery profile sourcing plan does not match the active runner plan"
@@ -571,6 +586,23 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     )
     batch = prepare_daily_batch(repository=repository, request=request)
     action = "validated" if config.validation_only else "prepared"
+    if (
+        profile is not None
+        and not profile_auto_release
+        and not config.auto_release
+        and batch.selected_count == 0
+    ):
+        payload = _batch_payload(
+            store,
+            batch,
+            action="no_eligible_jobs",
+            sourcing=report,
+            evaluation=evaluation,
+            retention=retention,
+        )
+        store.discard_prepared(batch.batch_id)
+        payload["batch_status"] = "discarded_empty"
+        return payload
     if profile_auto_release and profile_store is not None and profile is not None:
         current_profile = profile_store.get(profile.client_id, profile.destination_id)
         profile = current_profile
