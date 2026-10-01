@@ -215,6 +215,43 @@ class WorkdayCollector:
             raw_postings_received=len(unique_paths),
         )
 
+    def hydrate_paths(self, target: SourceTarget, paths: list[str]) -> CollectionResult:
+        """Hydrate explicit Workday list paths without re-running board discovery."""
+        self.last_counts = {
+            "broad_total": 0,
+            "paths_discovered": 0,
+            "detail_attempts": 0,
+            "normalized": 0,
+            "quarantined": 0,
+            "partition_count": 0,
+            "coverage_mode": "path_hydration",
+        }
+        config, configuration_error = self._configuration(target)
+        if configuration_error:
+            return self._failure(target, CollectionStatus.INVALID_TARGET, configuration_error)
+        assert config is not None
+
+        unique_paths = list(dict.fromkeys(paths))
+        invalid_paths = [path for path in unique_paths if not self._valid_external_path(path)]
+        if invalid_paths:
+            return self._failure(
+                target,
+                CollectionStatus.INVALID_TARGET,
+                f"path hydration contains {len(invalid_paths)} invalid externalPath values",
+            )
+
+        self.last_counts["paths_discovered"] = len(unique_paths)
+        jobs, errors, _ = self._resolve_details(config, target, unique_paths)
+        self.last_counts.update(normalized=len(jobs), quarantined=len(errors))
+        return CollectionResult(
+            source=self.source,
+            target=target,
+            status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
+            jobs=jobs,
+            errors=errors,
+            raw_postings_received=len(unique_paths),
+        )
+
     def _configuration(self, target: SourceTarget) -> tuple[WorkdayTargetConfig | None, str | None]:
         config = target.workday
         if config is None:

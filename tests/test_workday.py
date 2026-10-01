@@ -496,3 +496,40 @@ def test_bounded_detail_concurrency_preserves_deterministic_output_order() -> No
     assert [job.source_job_id for job in result.jobs] == [
         f"R{number}" for number in range(1, 9)
     ]
+def test_path_hydration_skips_board_search_and_dedupes_requested_paths() -> None:
+    first = "/job/Remote/Software-Engineer_R1"
+    second = "/job/Remote/Backend-Engineer_R2"
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        assert request.method == "GET"
+        path = request.url.path.split(CONFIG.site, 1)[-1]
+        return httpx.Response(200, json=detail(path), request=request)
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        delay=0,
+        detail_concurrency=2,
+    ).hydrate_paths(TARGET, [first, second, first])
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert result.raw_postings_received == 2
+    assert {job.source_job_id for job in result.jobs} == {"R1", "R2"}
+    assert len(requests) == 2
+    assert all(method == "GET" for method, _ in requests)
+
+
+def test_path_hydration_rejects_invalid_paths_without_network() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        pytest.fail("invalid hydration input must not reach the network")
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        delay=0,
+    ).hydrate_paths(TARGET, ["https://example.test/job/R1"])
+
+    assert result.status is CollectionStatus.INVALID_TARGET
+    assert result.jobs == []
+    assert result.errors == ["path hydration contains 1 invalid externalPath values"]
+
