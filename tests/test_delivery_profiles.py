@@ -1,5 +1,3 @@
-from datetime import UTC, datetime
-
 import pytest
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
