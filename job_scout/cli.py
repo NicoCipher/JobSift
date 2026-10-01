@@ -136,6 +136,16 @@ def main() -> None:
         command.add_argument("--database", default="jobs.sqlite3")
         command.add_argument("--client", required=True)
         command.add_argument("--destination-id", required=True)
+    for name in ("release-batch", "discard-batch"):
+        command = delivery_profile_commands.add_parser(name)
+        command.add_argument("--database", default="jobs.sqlite3")
+        command.add_argument("--batch-id", required=True)
+        if name == "release-batch":
+            command.add_argument(
+                "--confirm-batch-id",
+                required=True,
+                help="Repeat the reviewed batch ID to authorize Sheet delivery",
+            )
 
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
@@ -316,11 +326,18 @@ def main() -> None:
                 values = store.list(args.client)
                 print(
                     json.dumps(
-                        [value.model_dump(mode="json") for value in values],
+                        [
+                            {
+                                **value.model_dump(mode="json"),
+                                "delivered_today": store.delivered_today(value),
+                                "remaining_today": store.remaining_today(value),
+                            }
+                            for value in values
+                        ],
                         sort_keys=True,
                     )
                 )
-            else:
+            elif args.delivery_profile_command in {"pause", "resume"}:
                 status = (
                     "paused"
                     if args.delivery_profile_command == "pause"
@@ -330,6 +347,36 @@ def main() -> None:
                     args.client, args.destination_id, status
                 )
                 print(json.dumps(value.model_dump(mode="json"), sort_keys=True))
+            else:
+                batch_store = DailyBatchStore(repository)
+                result = batch_store.get(args.batch_id)
+                if args.delivery_profile_command == "release-batch":
+                    if args.confirm_batch_id != args.batch_id:
+                        parser.error("confirmation must match the reviewed batch ID")
+                    result = finalize_daily_batch(
+                        repository=repository, batch_id=result.batch_id
+                    )
+                else:
+                    result = batch_store.discard_prepared(result.batch_id)
+                print(
+                    json.dumps(
+                        {
+                            "batch_id": result.batch_id,
+                            "client_id": result.request.client_id,
+                            "destination_id": result.request.destination_id,
+                            "status": result.status,
+                            "selected_count": result.selected_count,
+                            "shortfall": result.shortfall,
+                            "error": result.error,
+                        },
+                        sort_keys=True,
+                    )
+                )
+                if (
+                    args.delivery_profile_command == "release-batch"
+                    and result.status != "delivered"
+                ):
+                    parser.exit(1)
         except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
             parser.error(f"unable to manage delivery profile: {exc}")
         return
