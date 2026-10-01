@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from job_scout import live_runner
 from job_scout.live_runner import LiveRunnerConfig
+from job_scout.domain.daily_batch import BatchConflict
 
 
 def config(tmp_path: Path, *, profile_managed: bool = True) -> LiveRunnerConfig:
@@ -57,6 +58,7 @@ def base(monkeypatch, tmp_path, profile, *, delivered=0):
             delivered_today=lambda *_args, **_kwargs: delivered,
         ),
     )
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
     return repository, plan, brief, destination
 
 
@@ -196,6 +198,22 @@ def test_auto_release_does_not_exceed_current_remaining_quota(tmp_path, monkeypa
     monkeypatch.setattr(
         live_runner, "_unresolved_batch", lambda *_, **__: unresolved
     )
+    monkeypatch.setattr(live_runner, "GoogleSheetsGateway", lambda: object())
+
+    def blocked_guard(*_args, **_kwargs):
+        raise BatchConflict(
+            "prepared batch exceeds the profile's current remaining daily quota"
+        )
+
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 90,
+            guard_batch_release=blocked_guard,
+        ),
+    )
     monkeypatch.setattr(
         live_runner,
         "finalize_daily_batch",
@@ -218,6 +236,60 @@ def test_auto_release_does_not_exceed_current_remaining_quota(tmp_path, monkeypa
         "action": "release_blocked_quota",
         "selected_count": 20,
     }
+
+
+def test_profile_runner_recovers_unresolved_export_before_quota_reached(
+    tmp_path, monkeypatch
+):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="auto",
+        timezone="Africa/Lagos",
+    )
+    base(monkeypatch, tmp_path, profile, delivered=100)
+    unresolved = SimpleNamespace(batch_id="batch-1", selected_count=1)
+    recovered = SimpleNamespace(batch_id="batch-1", selected_count=1, status="delivered")
+    monkeypatch.setattr(
+        live_runner, "_unresolved_batch", lambda *_, **__: unresolved
+    )
+    monkeypatch.setattr(live_runner, "GoogleSheetsGateway", lambda: object())
+    calls = []
+
+    def guard(_profile, batch_id, *, gateway):
+        calls.append(("guard", batch_id))
+        return unresolved, {"observed_links": 1}, 0
+
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 100,
+            guard_batch_release=guard,
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "finalize_daily_batch",
+        lambda **kwargs: calls.append(("finalize", kwargs["batch_id"])) or recovered,
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda _store, batch, *, action, **_kwargs: {
+            "action": action,
+            "batch_status": batch.status,
+        },
+    )
+
+    result = live_runner.run_once(config(tmp_path))
+
+    assert result == {"action": "resumed_release", "batch_status": "delivered"}
+    assert calls == [("guard", "batch-1"), ("finalize", "batch-1")]
 
 
 def test_profile_idempotency_changes_with_inventory_evaluation_scope(
