@@ -7,10 +7,8 @@ import hashlib
 import json
 from collections import Counter
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 
-from job_scout.collectors.workday import WorkdayCollector
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -26,9 +24,9 @@ from job_scout.shard_collection import (
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
 
-PROVIDERS = ("greenhouse", "ashby", "workday", "lever")
-DEFAULT_LIMITS = {"greenhouse": 35, "ashby": 35, "workday": 20, "lever": 10}
-DEFAULT_SHARDS = {"greenhouse": 5, "ashby": 5, "workday": 4, "lever": 2}
+PROVIDERS = ("greenhouse", "ashby", "lever")
+DEFAULT_LIMITS = {"greenhouse": 45, "ashby": 40, "lever": 15}
+DEFAULT_SHARDS = {"greenhouse": 2, "ashby": 2, "lever": 2}
 
 
 def _stable_targets(registry: ProductionSourceRegistry, source: str):
@@ -56,7 +54,7 @@ def build_refresh_registry(
     slot: int,
     target_counts: dict[str, int] | None = None,
 ) -> ProductionSourceRegistry:
-    """Choose one deterministic circular window per provider for a 30-minute slot."""
+    """Choose one deterministic circular window per fast ATS provider for an hourly slot."""
     if slot < 0:
         raise ValueError("rotation slot must be non-negative")
     counts = dict(target_counts or DEFAULT_LIMITS)
@@ -88,13 +86,7 @@ def build_refresh_registry(
 def _slot(value: int | None) -> int:
     if value is not None:
         return value
-    return int(datetime.now(UTC).timestamp() // 1800)
-
-
-def _collector_factory(source: str, *, workday_detail_concurrency: int):
-    if source == "workday":
-        return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
-    return default_collector_factory(source)
+    return int(datetime.now(UTC).timestamp() // 3600)
 
 
 def _write_json(path: Path, value) -> None:
@@ -110,7 +102,6 @@ def plan(
     registry_path: Path,
     output_dir: Path,
     slot: int | None = None,
-    workday_detail_concurrency: int = 4,
 ) -> dict[str, object]:
     parent = load_production_registry(registry_path)
     rotation_slot = _slot(slot)
@@ -135,7 +126,6 @@ def plan(
         "manifest_sha256": manifest.manifest_sha256,
         "target_counts_by_source": selected.target_counts_by_source,
         "total_targets": len(selected.targets),
-        "workday_detail_concurrency": workday_detail_concurrency,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_json(output_dir / "registry.json", selected.model_dump(mode="json"))
@@ -151,7 +141,6 @@ def collect(
     manifest_path: Path,
     shard_id: str,
     output_path: Path,
-    workday_detail_concurrency: int = 4,
 ) -> ShardCollectionArtifact:
     registry = ProductionSourceRegistry.model_validate_json(
         registry_path.read_text(encoding="utf-8")
@@ -163,10 +152,6 @@ def collect(
         registry=registry,
         manifest=manifest,
         shard_id=shard_id,
-        collector_factory=partial(
-            _collector_factory,
-            workday_detail_concurrency=workday_detail_concurrency,
-        ),
     )
     _write_json(output_path, artifact.model_dump(mode="json"))
     return artifact
@@ -209,14 +194,12 @@ def main() -> None:
     plan_cmd.add_argument("--registry", required=True, type=Path)
     plan_cmd.add_argument("--output-dir", required=True, type=Path)
     plan_cmd.add_argument("--slot", type=int)
-    plan_cmd.add_argument("--workday-detail-concurrency", type=int, default=4)
 
     collect_cmd = commands.add_parser("collect")
     collect_cmd.add_argument("--registry", required=True, type=Path)
     collect_cmd.add_argument("--manifest", required=True, type=Path)
     collect_cmd.add_argument("--shard-id", required=True)
     collect_cmd.add_argument("--output", required=True, type=Path)
-    collect_cmd.add_argument("--workday-detail-concurrency", type=int, default=4)
 
     fan_cmd = commands.add_parser("fan-in")
     fan_cmd.add_argument("--database", required=True, type=Path)
@@ -231,7 +214,6 @@ def main() -> None:
             registry_path=args.registry,
             output_dir=args.output_dir,
             slot=args.slot,
-            workday_detail_concurrency=args.workday_detail_concurrency,
         )
     elif args.command == "collect":
         result = collect(
@@ -239,7 +221,6 @@ def main() -> None:
             manifest_path=args.manifest,
             shard_id=args.shard_id,
             output_path=args.output,
-            workday_detail_concurrency=args.workday_detail_concurrency,
         ).model_dump(mode="json")
     else:
         result = fan_in(
