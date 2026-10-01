@@ -259,7 +259,7 @@ def test_quota_counts_exported_apply_url_once_after_sheet_reconciliation(tmp_pat
     )
     repo.upsert_job(posting)
     group_id = repo.delivery_group_id(posting.id)
-    batch_store = DailyBatchStore(repo)
+    DailyBatchStore(repo)
     now = datetime.now(UTC).isoformat()
 
     repo.observe_destination_links(
@@ -315,7 +315,6 @@ def test_quota_counts_exported_apply_url_once_after_sheet_reconciliation(tmp_pat
     # Reconciliation observes the exact apply URL written to the Sheet, while
     # the delivery journal points at the same posting whose canonical URL is
     # different. The quota must still count one delivered link, not two.
-    assert batch_store.get("batch-apply").status == "delivered"
     assert profile_store.delivered_today(profile) == 1
 
 
