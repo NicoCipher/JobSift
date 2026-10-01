@@ -181,6 +181,7 @@ def main() -> None:
             registry=registry,
             manifest=manifest,
             artifacts=artifacts,
+            payload_retention_hours=args.retention_hours,
         )
         retention = repository.prune_stale_inventory(
             retention_hours=args.retention_hours
