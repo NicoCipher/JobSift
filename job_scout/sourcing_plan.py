@@ -552,7 +552,8 @@ def evaluate_recent_inventory(
     cutoff = evaluation_time - timedelta(hours=retention_hours)
     matched = 0
     rejected = 0
-    job_ids: list[str] = []
+    evaluated = 0
+    candidate_job_ids: list[str] = []
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
@@ -570,12 +571,13 @@ def evaluate_recent_inventory(
                 "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 repository._match_row(match),
             )
-            job_ids.append(job.id)
+            evaluated += 1
             if match.decision in {
                 MatchDecision.STRONG_MATCH,
                 MatchDecision.POSSIBLE_MATCH,
             }:
                 matched += 1
+                candidate_job_ids.append(job.id)
             else:
                 rejected += 1
 
@@ -585,11 +587,11 @@ def evaluate_recent_inventory(
             run_id=scope_id,
             client_id=brief.client_id,
             evaluated_at=evaluation_time,
-            total_evaluated=len(job_ids),
+            total_evaluated=evaluated,
             total_matched=matched,
             total_rejected=rejected,
         ),
-        tuple(job_ids),
+        tuple(candidate_job_ids),
     )
 
 
