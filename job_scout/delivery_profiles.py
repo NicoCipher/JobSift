@@ -285,28 +285,33 @@ class ClientDeliveryProfileStore:
         *,
         now: datetime | None = None,
     ) -> int:
+        """Count links actually placed on this client Sheet during the local day.
+
+        Reconciliation is authoritative for legacy/manual rows. Modern delivered
+        batches also contribute their immutable frozen Job Link immediately so
+        post-delivery status does not wait for the next Sheet read. We never
+        reconstruct an old export URL from mutable current job data.
+        """
         destination = ClientSheetDestinationStore(self.repository).get(
             profile.client_id, profile.destination_id, require_ready=False
         )
         start, end = self._day_window(profile, now)
         with self.repository.connect() as connection:
-            observed_rows = connection.execute(
-                "SELECT normalized_url,source,source_board_id,source_job_id "
-                "FROM destination_observed_links "
-                "WHERE client_id=? AND destination=? "
-                "AND first_observed_at>=? AND first_observed_at<?",
-                (
-                    profile.client_id,
-                    destination.logical_uri,
-                    start.isoformat(),
-                    end.isoformat(),
-                ),
-            ).fetchall()
+            links = {
+                row["normalized_url"]
+                for row in connection.execute(
+                    "SELECT normalized_url FROM destination_observed_links "
+                    "WHERE client_id=? AND destination=? "
+                    "AND first_observed_at>=? AND first_observed_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall()
+            }
 
-            # A delivered batch freezes the exact Job Link and practical delivery
-            # group. Use that immutable evidence to associate a reconciled Sheet
-            # URL with its delivery identity even if the current posting changes.
-            frozen_groups: dict[str, str] = {}
             has_batches = (
                 connection.execute(
                     "SELECT 1 FROM sqlite_master "
@@ -316,79 +321,24 @@ class ClientDeliveryProfileStore:
             )
             if has_batches:
                 for row in connection.execute(
-                    "SELECT g.group_id AS current_group_id,i.export_row_json "
-                    "FROM daily_batch_items i "
+                    "SELECT i.export_row_json FROM daily_batch_items i "
                     "JOIN daily_batches b ON b.batch_id=i.batch_id "
-                    "LEFT JOIN posting_delivery_groups g "
-                    "ON g.job_id=i.representative_job_id "
                     "WHERE b.client_id=? AND b.destination=? "
-                    "AND b.status='delivered'",
-                    (profile.client_id, destination.logical_uri),
+                    "AND b.status='delivered' "
+                    "AND b.delivered_at>=? AND b.delivered_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
                 ).fetchall():
                     export = json.loads(row["export_row_json"])
                     link = str(export.get("Job Link", "")).strip()
-                    if link and row["current_group_id"] is not None:
-                        frozen_groups[canonicalize_url(link)] = row["current_group_id"]
+                    if link:
+                        links.add(canonicalize_url(link))
 
-            identities: set[tuple[str, str]] = set()
-            for row in observed_rows:
-                normalized_url = row["normalized_url"]
-                group_id = frozen_groups.get(normalized_url)
-
-                if (
-                    group_id is None
-                    and row["source"]
-                    and row["source_board_id"]
-                    and row["source_job_id"]
-                ):
-                    match = connection.execute(
-                        "SELECT g.group_id FROM jobs j "
-                        "JOIN posting_delivery_groups g ON g.job_id=j.id "
-                        "WHERE j.source=? AND j.source_board_id=? "
-                        "AND j.source_job_id=? LIMIT 1",
-                        (
-                            row["source"],
-                            row["source_board_id"],
-                            row["source_job_id"],
-                        ),
-                    ).fetchone()
-                    if match is not None:
-                        group_id = match["group_id"]
-
-                if group_id is None:
-                    match = connection.execute(
-                        "SELECT g.group_id FROM delivery_keys k "
-                        "JOIN posting_delivery_groups g ON g.job_id=k.job_id "
-                        "WHERE k.kind='url' AND k.value=? "
-                        "ORDER BY g.group_id LIMIT 1",
-                        (normalized_url,),
-                    ).fetchone()
-                    if match is not None:
-                        group_id = match["group_id"]
-
-                identities.add(
-                    ("group", group_id)
-                    if group_id is not None
-                    else ("url", normalized_url)
-                )
-
-            # Journaled deliveries count immediately, before the next Sheet
-            # reconciliation. Once their row is observed, both sides collapse to
-            # the same practical delivery-group identity instead of two URLs.
-            for row in connection.execute(
-                "SELECT group_id FROM group_deliveries "
-                "WHERE client_id=? AND destination=? "
-                "AND exported_at>=? AND exported_at<?",
-                (
-                    profile.client_id,
-                    destination.logical_uri,
-                    start.isoformat(),
-                    end.isoformat(),
-                ),
-            ).fetchall():
-                identities.add(("group", row["group_id"]))
-
-        return len(identities)
+        return len(links)
 
     def reconcile_destination_sheet(
         self,
