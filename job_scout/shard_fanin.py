@@ -130,10 +130,10 @@ def _prepare_jobs(
                     raise ValueError(
                         f"job provenance does not match target: {target_result.target_identity}"
                     )
-                if job.company != expected.company:
-                    raise ValueError(
-                        f"job company does not match target: {target_result.target_identity}"
-                    )
+                # company_hint is discovery/display metadata, not provider identity.
+                # Providers may return a legal/hiring-organization name that differs
+                # from the configured hint. Provenance is bound by source + board
+                # + provider job identity and the validated shard target membership.
                 identity = (job.source, job.source_board_id, job.source_job_id)
                 payload_hash = sha256_json(_job_payload(job))
                 previous_hash = hashes_by_identity.get(identity)
