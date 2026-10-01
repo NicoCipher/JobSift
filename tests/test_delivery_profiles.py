@@ -438,6 +438,56 @@ def test_legacy_delivery_quota_survives_later_apply_url_change(tmp_path):
     assert store.delivered_today(profile) == 1
 
 
+def test_legacy_exported_apply_url_remains_one_quota_link_after_url_changes(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    original = make_job(
+        "legacy-apply-job",
+        apply_url="https://external.example/apply/old-token",
+    )
+    repo.upsert_job(original)
+    group_id = repo.delivery_group_id(original.id)
+
+    # This is the URL that actually exists on the client Sheet.
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(original.apply_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                original.id,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    # A later provider refresh changes the apply URL. Quota accounting must not
+    # invent the new URL or count the one Sheet row twice.
+    refreshed = make_job(
+        "legacy-apply-job",
+        apply_url="https://external.example/apply/new-token",
+    )
+    repo.upsert_job(refreshed)
+
+    assert store.delivered_today(profile) == 1
+
+
 def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     register(
