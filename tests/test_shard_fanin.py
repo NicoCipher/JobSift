@@ -90,6 +90,7 @@ def _artifact(
     *,
     duplicate_jobs: bool = False,
     partial_board: str | None = None,
+    stale_board: str | None = None,
     wrong_board: bool = False,
     provider_company: str | None = None,
 ) -> ShardCollectionArtifact:
@@ -105,6 +106,8 @@ def _artifact(
                 board="wrong" if wrong_board else None,
                 company=provider_company,
             )
+            if target.board_id == stale_board:
+                job = job.model_copy(update={"posted_at": NOW - timedelta(hours=96)})
             jobs = [job, job.model_copy(deep=True)] if duplicate_jobs else [job]
             partial = target.board_id == partial_board
             return CollectionResult(
@@ -247,6 +250,69 @@ def test_fan_in_fails_closed_on_job_target_provenance_before_mutation(
     assert _inventory_table_exists(repository) is False
     with repository.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_fan_in_retention_routes_expired_payloads_directly_to_identity_ledger(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000", stale_board="a"),
+        _artifact(registry, manifest, "greenhouse-001", stale_board="a"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    report = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        payload_retention_hours=72,
+        now=lambda: PERSISTED,
+    )
+
+    assert report.status == "success"
+    assert report.metrics.normalized_job_records == 2
+    assert report.metrics.unique_normalized_jobs == 2
+    assert report.metrics.inventory_memberships == 1
+
+    with repository.connect() as connection:
+        jobs = connection.execute(
+            "SELECT source_job_id,payload_json FROM jobs ORDER BY source_job_id"
+        ).fetchall()
+        ledger = connection.execute(
+            "SELECT source_job_id FROM job_identity_ledger ORDER BY source_job_id"
+        ).fetchall()
+        memberships = connection.execute(
+            "SELECT job_id FROM inventory_run_jobs WHERE run_id=?",
+            (report.run_id,),
+        ).fetchall()
+
+    assert [row["source_job_id"] for row in jobs] == ["job-b"]
+    assert [row["source_job_id"] for row in ledger] == ["job-a"]
+    assert len(memberships) == 1
+
+
+def test_fan_in_rejects_invalid_payload_retention_before_mutating_inventory(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 1})
+    artifact = _artifact(registry, manifest, "greenhouse-000")
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    with pytest.raises(ValueError, match="payload_retention_hours must be at least 1"):
+        persist_shard_artifacts(
+            repository=repository,
+            registry=registry,
+            manifest=manifest,
+            artifacts=[artifact],
+            payload_retention_hours=0,
+            now=lambda: PERSISTED,
+        )
+
+    assert _inventory_table_exists(repository) is False
 
 
 def test_fan_in_marks_complete_artifact_set_partial_when_one_target_is_partial(
