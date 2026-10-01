@@ -105,7 +105,7 @@ def _client_for_index() -> httpx.Client:
                 return httpx.Response(
                     200,
                     json={
-                        "total": 2000,
+                        "total": 3,
                         "facets": [
                             {
                                 "facetParameter": "jobFamilyGroup",
@@ -122,12 +122,26 @@ def _client_for_index() -> httpx.Client:
                                 "locationsText": "Remote",
                                 "postedOn": "Posted Today",
                                 "bulletFields": ["R1"],
-                            }
+                            },
+                            {
+                                "title": "Frontend Engineer",
+                                "externalPath": "/job/Remote/Frontend_R2",
+                                "locationsText": "Remote",
+                                "postedOn": "Posted Yesterday",
+                                "bulletFields": ["R2"],
+                            },
+                            {
+                                "title": "Warehouse Operator",
+                                "externalPath": "/job/Texas/Warehouse_R3",
+                                "locationsText": "Texas",
+                                "postedOn": "Posted 10 Days Ago",
+                                "bulletFields": ["R3"],
+                            },
                         ],
                     },
                     request=request,
                 )
-            return httpx.Response(200, json={"total": 2000, "jobPostings": []}, request=request)
+            return httpx.Response(200, json={"total": 3, "jobPostings": []}, request=request)
         rows = {
             "eng": [
                 {
@@ -175,19 +189,19 @@ def test_scanner_recovers_capped_external_path_index_without_detail_reads(monkey
     registry = _registry()
     target = registry.targets[0]
     scanner = WorkdayIndexScanner(_client_for_index(), delay=0)
-    monkeypatch.setattr("job_scout.workday_index.CAP_TOTAL", 2000)
+    monkeypatch.setattr("job_scout.workday_index.CAP_TOTAL", 3)
 
     result = scanner.scan(target)
 
-    assert result.status is CollectionStatus.PARTIAL
-    assert result.coverage_mode == "capped_partial"
+    assert result.status is CollectionStatus.SUCCESS
+    assert result.coverage_mode == "job_family_group_partition"
     assert {posting.external_path for posting in result.postings} == {
         "/job/Remote/Backend_R1",
         "/job/Remote/Frontend_R2",
         "/job/Texas/Warehouse_R3",
         "/job/Texas/Accountant_R4",
     }
-    assert all("/wday/cxs/" in str(request.url) for request in scanner.client._transport._pool) if False else True
+    assert result.provider_rows_seen == 7
 
 
 class _FakeScanner:
