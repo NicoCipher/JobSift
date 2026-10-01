@@ -179,3 +179,136 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
     assert captured["request"].destination == destination.logical_uri
     assert captured["request"].requested_quota == 86
     assert result["requested_quota"] == 86
+
+
+def test_auto_release_does_not_exceed_current_remaining_quota(tmp_path, monkeypatch):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="auto",
+        timezone="Africa/Lagos",
+    )
+    base(monkeypatch, tmp_path, profile, delivered=90)
+    unresolved = SimpleNamespace(batch_id="batch-1", selected_count=20)
+    monkeypatch.setattr(
+        live_runner, "_unresolved_batch", lambda *_, **__: unresolved
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "finalize_daily_batch",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("over-quota unresolved batch must not release")
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda _store, batch, *, action, **_kwargs: {
+            "action": action,
+            "selected_count": batch.selected_count,
+        },
+    )
+
+    result = live_runner.run_once(config(tmp_path))
+
+    assert result == {
+        "action": "release_blocked_quota",
+        "selected_count": 20,
+    }
+
+
+def test_profile_idempotency_changes_with_inventory_evaluation_scope(
+    tmp_path, monkeypatch
+):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+    repository, _, _, _ = base(monkeypatch, tmp_path, profile, delivered=0)
+    repository.prune_stale_inventory = lambda **_: {"deleted_jobs": 0}
+    brief = SimpleNamespace(
+        client_id="client-a",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(max_age_hours=24, unknown_policy="reject"),
+    )
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+    seen_keys = []
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_by_idempotency",
+        lambda _repo, *, idempotency_key, **_kwargs: (
+            seen_keys.append(idempotency_key) or None
+        ),
+    )
+    report_id = {"value": "run-a"}
+
+    def collect(*_args, **_kwargs):
+        return SimpleNamespace(
+            run_id=report_id["value"],
+            status="success",
+            completed_at=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+            targets=[],
+            total_received=0,
+            successful_targets=1,
+            partial_targets=0,
+            failed_targets=0,
+        )
+
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", collect)
+    monkeypatch.setattr(
+        live_runner,
+        "evaluate_inventory_run",
+        lambda **kwargs: SimpleNamespace(
+            evaluated_at=kwargs["evaluated_at"],
+            total_matched=0,
+            total_rejected=0,
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "InventoryRunStore",
+        lambda _: SimpleNamespace(active_job_ids=lambda _run: ()),
+    )
+    store = SimpleNamespace(evidence_digest=lambda *_: "b" * 64)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    captured = []
+
+    def prepare(*, repository, request):
+        captured.append(request.idempotency_key)
+        return SimpleNamespace(batch_id=f"batch-{len(captured)}")
+
+    monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda *_args, **kwargs: {"action": kwargs["action"]},
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 0,
+        ),
+    )
+
+    live_runner.run_once(config(tmp_path))
+    report_id["value"] = "run-b"
+    live_runner.run_once(config(tmp_path))
+
+    assert len(captured) == 2
+    assert captured[0] != captured[1]
+    assert "delivered-0" not in captured[0]
+    assert "delivered-0" not in captured[1]
