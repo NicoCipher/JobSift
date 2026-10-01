@@ -31,9 +31,6 @@ on:
           - "100"
           - "150"
           - "200"
-  schedule:
-    - cron: "0 7 * * *"
-
 concurrency:
   group: jobsift-live-production
   cancel-in-progress: false
