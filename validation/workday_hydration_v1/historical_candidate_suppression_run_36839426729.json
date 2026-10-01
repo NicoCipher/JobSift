@@ -1,0 +1,28 @@
+{
+  "client_id": "taiwo_operator_sourcing_v1",
+  "evidence_sha256": "ab706e17b55cb2ec3a5ca979600ac6a97f14a10bfe64b7210ded1852c48faa8c",
+  "evidence_version": "workday-historical-candidate-suppression-v1",
+  "hash_algorithm": "sha256",
+  "historically_surfaced_authoritative_jobs": 2,
+  "hydrated_unique_jobs_observed": 139,
+  "hydration_probe_run_id": 36839426729,
+  "identity_hash_encoding": "canonical-json [source, source_board_id, source_job_id]",
+  "logical_corpus_sha256": "ff97967813ca6052f83c2a1b5045060022967a6765e5b2ef8fe90f374a0ed4e7",
+  "matching_identity_hashes": [
+    "07a67605fdb5a524785b5af8b675d96272293a64637d7b10da062dbeeeb2a681",
+    "1138dcac16354bd479ef46d2355248156ce63255aff067f8d35654bfc3506215"
+  ],
+  "matching_url_hashes": [
+    "8f311ba0f20418ebb268d37f0417eace20f0d2276e8ba69d3647818317cba4d4"
+  ],
+  "privacy_note": "Only hashes intersecting this frozen candidate cohort are retained; raw historical links are not committed.",
+  "source_candidate_manifest_sha256": "d3ba8f46d83f65e88944f7f465a87053c90b1b081762edb24a80e07463c957ab",
+  "source_exact_supported_identity_rows": 5223,
+  "source_index_run_id": 36825761076,
+  "source_logical_rows": 11107,
+  "source_workday_exact_identity_rows": 905,
+  "source_workday_normalized_url_rows": 973,
+  "source_workday_unique_exact_identities": 845,
+  "source_workday_unique_normalized_urls": 919,
+  "url_hash_encoding": "utf8 canonical_url"
+}
