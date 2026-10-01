@@ -241,6 +241,60 @@ class ClientDeliveryProfileStore:
             ).fetchone()
         return int(row[0])
 
+    def reconcile_destination_sheet(
+        self,
+        profile: ClientDeliveryProfile,
+        *,
+        gateway,
+    ) -> dict[str, int]:
+        """Observe every existing Job Link before preparing another delivery."""
+        destination = ClientSheetDestinationStore(self.repository).get(
+            profile.client_id, profile.destination_id
+        )
+        metadata = gateway.sheet_metadata(destination.spreadsheet_id)
+        matches = [
+            item
+            for item in metadata
+            if item.get("sheet_id") == destination.sheet_id
+        ]
+        if len(matches) != 1:
+            raise BatchConflict("registered Google Sheet tab no longer exists")
+        if matches[0].get("title") != destination.tab_name:
+            raise BatchConflict(
+                "Google Sheet tab was renamed; refresh the destination registration"
+            )
+
+        values = gateway.read_table_rows(
+            destination.spreadsheet_id, destination.tab_name
+        )
+        if not values or tuple(values[0]) != destination.header:
+            raise BatchConflict(
+                "Google Sheets header differs from the registered client schema"
+            )
+        width = len(destination.header)
+        if any(len(row) > width for row in values[1:]):
+            raise BatchConflict(
+                "Google Sheets rows exceed the registered header width"
+            )
+        link_header = destination.column_mapping["Job Link"]
+        link_index = destination.header.index(link_header)
+        links = []
+        for row in values[1:]:
+            padded = row + [""] * (width - len(row))
+            value = str(padded[link_index]).strip()
+            if value:
+                links.append(value)
+
+        inserted, observed = self.repository.observe_destination_links(
+            client_id=profile.client_id,
+            destination=destination.logical_uri,
+            links=links,
+        )
+        return {
+            "observed_links": observed,
+            "newly_recorded_links": inserted,
+        }
+
     def remaining_today(
         self,
         profile: ClientDeliveryProfile,
