@@ -8,7 +8,44 @@ import pytest
 from job_scout import live_runner
 from job_scout.live_runner import LiveRunnerConfig, _candidate_job_ids
 from job_scout.sourcing_plan import SourcingPlan
+from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
+
+
+def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    DailyBatchStore(repository)
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
+            "dedupe_version,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "failed-unpublished",
+                "client-a",
+                "client-sheet://jobs",
+                "scope-1",
+                1,
+                0,
+                1,
+                "failed",
+                datetime.now(UTC).isoformat(),
+                "{}",
+                "{}",
+                "test",
+                "posting expired before release",
+            ),
+        )
+
+    assert (
+        live_runner._unresolved_batch(
+            repository,
+            client_id="client-a",
+            destination="client-sheet://jobs",
+        )
+        is None
+    )
 
 
 def test_candidate_job_ids_are_scoped_to_current_run_and_targets(tmp_path):
