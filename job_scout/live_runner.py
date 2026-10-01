@@ -335,7 +335,11 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     # even when the legacy Live JobSift workflow did not opt into profile mode.
     # Detect that persisted control plane before any release path so pause/quota
     # guards cannot be bypassed by an older entrypoint.
-    if not config.validation_only and destination_record is not None:
+    if (
+        not config.validation_only
+        and destination_record is not None
+        and (config.profile_managed or config.auto_release)
+    ):
         candidate_profile_store = ClientDeliveryProfileStore(repository)
         try:
             profile = candidate_profile_store.get(
