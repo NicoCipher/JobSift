@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+
+from job_scout.delivery_destinations import ClientSheetDestinationStore
+from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.domain.daily_batch import BatchConflict
+from job_scout.domain.models import Job
+from job_scout.normalization.core import content_fingerprint
+from job_scout.storage.sqlite import SQLiteRepository
+
+
+class FakeSheet:
+    def __init__(self):
+        self.values = [["JOB TITLE", "COMPANY NAME", "LINKS", "DESCRIPTION"]]
+
+    def sheet_metadata(self, spreadsheet_id):
+        assert spreadsheet_id == "sheet123"
+        return [{"sheet_id": 7, "title": "Sheet1"}]
+
+    def read_rows(self, spreadsheet_id, tab):
+        assert (spreadsheet_id, tab) == ("sheet123", "Sheet1")
+        return [row.copy() for row in self.values]
+
+
+def register(repo: SQLiteRepository, *, client: str = "client-a", destination: str = "jobs"):
+    return ClientSheetDestinationStore(repo).register_google_sheet(
+        client_id=client,
+        destination_id=destination,
+        display_name="Client Jobs",
+        spreadsheet="sheet123",
+        tab_name="Sheet1",
+        column_mapping={
+            "Job Title": "JOB TITLE",
+            "Company Name": "COMPANY NAME",
+            "Job Link": "LINKS",
+            "Job Description": "DESCRIPTION",
+        },
+        gateway=FakeSheet(),
+    )
+
+
+def make_job(job_id: str = "job-1") -> Job:
+    now = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+    description = "Build production software."
+    return Job(
+        id=job_id,
+        source="greenhouse",
+        source_job_id=job_id,
+        source_board_id="acme",
+        title="Software Engineer",
+        company="Acme",
+        employer_id="acme",
+        description_text=description,
+        job_url=f"https://example.com/{job_id}",
+        canonical_url=f"https://example.com/{job_id}",
+        posted_at=now,
+        discovered_at=now,
+        last_seen_at=now,
+        content_fingerprint=content_fingerprint(
+            title="Software Engineer",
+            description=description,
+            location=None,
+            employment_type=None,
+        ),
+    )
+
+
+def test_profile_requires_registered_destination_and_persists_controls(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    store = ClientDeliveryProfileStore(repo)
+
+    with pytest.raises(BatchConflict, match="destination"):
+        store.upsert(
+            client_id="client-a",
+            destination_id="missing",
+            sourcing_plan_id="remote-software-v1",
+            daily_quota=100,
+            status="active",
+            delivery_mode="review",
+            timezone="Africa/Lagos",
+        )
+
+    register(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    assert profile.daily_quota == 100
+    assert profile.status == "active"
+    assert profile.delivery_mode == "review"
+    assert store.get("client-a", "jobs") == profile
+    assert store.active() == (profile,)
+
+
+def test_disabled_destination_cannot_be_activated(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    register(repo)
+    ClientSheetDestinationStore(repo).disable("client-a", "jobs")
+
+    with pytest.raises(BatchConflict, match="ready"):
+        ClientDeliveryProfileStore(repo).upsert(
+            client_id="client-a",
+            destination_id="jobs",
+            sourcing_plan_id="remote-software-v1",
+            daily_quota=50,
+            status="active",
+            delivery_mode="auto",
+            timezone="Africa/Lagos",
+        )
+
+
+def test_pause_preserves_other_profile_controls(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=150,
+        status="active",
+        delivery_mode="auto",
+        timezone="Africa/Lagos",
+    )
+
+    paused = store.set_status("client-a", "jobs", "paused")
+
+    assert paused.status == "paused"
+    assert paused.daily_quota == profile.daily_quota
+    assert paused.delivery_mode == profile.delivery_mode
+    assert paused.sourcing_plan_id == profile.sourcing_plan_id
+    assert store.active() == ()
+
+
+def test_delivered_today_is_scoped_to_destination_and_profile_timezone(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=3,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    posting = make_job()
+    repo.upsert_job(posting)
+    group_id = repo.delivery_group_id(posting.id)
+
+    # 23:30 UTC on Sep 30 is 00:30 Oct 1 in Lagos and must count for Oct 1.
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                posting.id,
+                "2026-09-30T23:30:00+00:00",
+            ),
+        )
+
+    now = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+    assert store.delivered_today(profile, now=now) == 1
+    assert store.remaining_today(profile, now=now) == 2
