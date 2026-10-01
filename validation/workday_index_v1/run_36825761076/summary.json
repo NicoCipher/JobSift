@@ -1,0 +1,290 @@
+{
+  "validation_version": "workday-index-benchmark-evidence-v1",
+  "github_actions_run_id": 36825761076,
+  "github_actions_run_number": 2,
+  "head_sha": "838d0658d3c5785195f8e8f51ac60acdc34e67e7",
+  "base_hardening_sha": "525cfc9a2230df54ea7586c45ce22c2691e1c94d",
+  "result_artifact": {
+    "id": 11144853988,
+    "name": "jobsift-workday-index-result-36825761076",
+    "digest": "sha256:7a8b618b4c0968e84b144da4431d88ed12571ea0c3ab76a5bd3b072f84542bb9"
+  },
+  "plan": {
+    "target_count": 100,
+    "shard_count": 10,
+    "list_only": true,
+    "detail_gets": false,
+    "database": false,
+    "turso": false,
+    "sheets": false,
+    "delivery": false
+  },
+  "analysis": {
+    "analysis_version": "workday-index-analysis-v2",
+    "client_id": "taiwo_operator_sourcing_v1",
+    "coverage_complete": false,
+    "definitely_older_than_72h": 31081,
+    "hydration_candidates_on_complete_targets": 140,
+    "hydration_candidates_on_incomplete_targets": 158,
+    "incomplete_targets": [
+      {
+        "broad_total": 1526,
+        "coverage_mode": "broad",
+        "errors": [
+          "broad offset 200: 1 rows have invalid externalPath",
+          "broad offset 1260: 1 rows have invalid externalPath",
+          "broad: retrieved 1524 valid rows but first page declared 1526"
+        ],
+        "provider_rows_seen": 1526,
+        "status": "partial",
+        "target_identity": "workday:hpe.wd5.myworkdayjobs.com:hpe:wfmathpe",
+        "valid_postings_indexed": 1524
+      },
+      {
+        "broad_total": 2000,
+        "coverage_mode": "capped_partial",
+        "errors": [
+          "broad: duplicate externalPath values across pages",
+          "jobFamilyGroup partition 77166004ab82108dbc36ca9a7bcb5315 did not reconcile with advertised count 466"
+        ],
+        "provider_rows_seen": 4632,
+        "status": "partial",
+        "target_identity": "workday:abbott.wd5.myworkdayjobs.com:abbott:abbottcareers",
+        "valid_postings_indexed": 2632
+      },
+      {
+        "broad_total": 2000,
+        "coverage_mode": "capped_partial",
+        "errors": [
+          "broad offset 280: 1 rows have invalid externalPath",
+          "broad offset 300: 1 rows have invalid externalPath",
+          "broad offset 640: 1 rows have invalid externalPath",
+          "broad offset 940: 1 rows have invalid externalPath",
+          "broad offset 1080: 1 rows have invalid externalPath",
+          "broad: retrieved 1995 valid rows but first page declared 2000",
+          "jobFamilyGroup:1086d369278c10019c4c7d6c71420000 offset 160: 2 rows have invalid externalPath",
+          "jobFamilyGroup:1086d369278c10019c4c7d6c71420000 offset 660: 1 rows have invalid externalPath",
+          "jobFamilyGroup:1086d369278c10019c4c7d6c71420000: retrieved 1409 valid rows but first page declared 1412",
+          "jobFamilyGroup partition 1086d369278c10019c4c7d6c71420000 did not reconcile with advertised count 1412",
+          "jobFamilyGroup:1086d369278c10019c4c4f0bfef90000 offset 80: 1 rows have invalid externalPath",
+          "jobFamilyGroup:1086d369278c10019c4c4f0bfef90000: retrieved 449 valid rows but first page declared 450",
+          "jobFamilyGroup partition 1086d369278c10019c4c4f0bfef90000 did not reconcile with advertised count 450",
+          "jobFamilyGroup:ff21b54cc2e210019c8ba51c160e0000 offset 80: 1 rows have invalid externalPath",
+          "jobFamilyGroup:ff21b54cc2e210019c8ba51c160e0000: retrieved 419 valid rows but first page declared 420",
+          "jobFamilyGroup partition ff21b54cc2e210019c8ba51c160e0000 did not reconcile with advertised count 420"
+        ],
+        "provider_rows_seen": 4753,
+        "status": "partial",
+        "target_identity": "workday:genpt.wd1.myworkdayjobs.com:genpt:Careers",
+        "valid_postings_indexed": 2748
+      },
+      {
+        "broad_total": 979,
+        "coverage_mode": "broad",
+        "errors": [
+          "broad offset 720: 1 rows have invalid externalPath",
+          "broad: retrieved 978 valid rows but first page declared 979"
+        ],
+        "provider_rows_seen": 979,
+        "status": "partial",
+        "target_identity": "workday:kiongroup.wd3.myworkdayjobs.com:kiongroup:kiongroup",
+        "valid_postings_indexed": 978
+      },
+      {
+        "broad_total": 1007,
+        "coverage_mode": "broad",
+        "errors": [
+          "broad offset 700: 1 rows have invalid externalPath",
+          "broad: retrieved 1006 valid rows but first page declared 1007"
+        ],
+        "provider_rows_seen": 1007,
+        "status": "partial",
+        "target_identity": "workday:mastercard.wd1.myworkdayjobs.com:mastercard:corporatecareers",
+        "valid_postings_indexed": 1006
+      },
+      {
+        "broad_total": 1142,
+        "coverage_mode": "broad",
+        "errors": [
+          "broad offset 0: 1 rows have invalid externalPath",
+          "broad: retrieved 1141 valid rows but first page declared 1142"
+        ],
+        "provider_rows_seen": 1142,
+        "status": "partial",
+        "target_identity": "workday:dxctechnology.wd1.myworkdayjobs.com:dxctechnology:dxcjobs",
+        "valid_postings_indexed": 1141
+      },
+      {
+        "broad_total": 2000,
+        "coverage_mode": "capped_partial",
+        "errors": [
+          "broad offset 640: 1 rows have invalid externalPath",
+          "broad: retrieved 1999 valid rows but first page declared 2000",
+          "jobFamilyGroup partition metadata is unsafe for cap recovery"
+        ],
+        "provider_rows_seen": 2000,
+        "status": "partial",
+        "target_identity": "workday:uhaul.wd1.myworkdayjobs.com:uhaul:uhauljobs",
+        "valid_postings_indexed": 1999
+      },
+      {
+        "broad_total": 1942,
+        "coverage_mode": "broad",
+        "errors": [
+          "broad offset 0: 1 rows have invalid externalPath",
+          "broad: retrieved 1941 valid rows but first page declared 1942"
+        ],
+        "provider_rows_seen": 1942,
+        "status": "partial",
+        "target_identity": "workday:parsons.wd5.myworkdayjobs.com:parsons:search",
+        "valid_postings_indexed": 1941
+      }
+    ],
+    "postings_with_age_hint": 35292,
+    "provider_rows_seen": 43245,
+    "recent_or_uncertain_for_72h": 6152,
+    "recent_or_uncertain_role_title_candidates": 298,
+    "registry_id": "ats-active-2026-09-v1-workday-index-877bb55918799c68",
+    "role_title_candidates": 1531,
+    "shard_manifest_sha256": "1267c195593953a47c14bc5cee1555d38fa4e2ab08ea69955632b80dfe9be0a4",
+    "targets_failed": 0,
+    "targets_partial": 8,
+    "targets_scanned": 100,
+    "targets_succeeded": 92,
+    "targets_with_hydration_candidates": 31,
+    "top_targets": [
+      {
+        "hydration_candidates": 66,
+        "target_identity": "workday:nvidia.wd5.myworkdayjobs.com:nvidia:NVIDIAExternalCareerSite",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 66,
+        "target_identity": "workday:mastercard.wd1.myworkdayjobs.com:mastercard:corporatecareers",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 58,
+        "target_identity": "workday:parsons.wd5.myworkdayjobs.com:parsons:search",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 26,
+        "target_identity": "workday:generalmotors.wd5.myworkdayjobs.com:generalmotors:Careers_GM",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 14,
+        "target_identity": "workday:hpe.wd5.myworkdayjobs.com:hpe:wfmathpe",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 14,
+        "target_identity": "workday:dxctechnology.wd1.myworkdayjobs.com:dxctechnology:dxcjobs",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 9,
+        "target_identity": "workday:autodesk.wd1.myworkdayjobs.com:autodesk:Ext",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 7,
+        "target_identity": "workday:swa.wd1.myworkdayjobs.com:swa:external",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 5,
+        "target_identity": "workday:broadridge.wd5.myworkdayjobs.com:broadridge:careers",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 4,
+        "target_identity": "workday:abbott.wd5.myworkdayjobs.com:abbott:abbottcareers",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 3,
+        "target_identity": "workday:epiqsystems.wd503.myworkdayjobs.com:epiqsystems:epiq_careers",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 3,
+        "target_identity": "workday:redhat.wd5.myworkdayjobs.com:redhat:jobs",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 2,
+        "target_identity": "workday:jdpa.wd501.myworkdayjobs.com:jdpa:JDPower",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 2,
+        "target_identity": "workday:cotality.wd115.myworkdayjobs.com:cotality:Global",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 2,
+        "target_identity": "workday:trimble.wd1.myworkdayjobs.com:trimble:trimblecareers",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 2,
+        "target_identity": "workday:trendmicro.wd3.myworkdayjobs.com:trendmicro:External",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:healthcare.wd1.myworkdayjobs.com:healthcare:search",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:draftkings.wd1.myworkdayjobs.com:draftkings:DraftKings",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:fullsteam.wd1.myworkdayjobs.com:fullsteam:external",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:allegion.wd5.myworkdayjobs.com:allegion:careers",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:genpt.wd1.myworkdayjobs.com:genpt:Careers",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:igsenergy.wd1.myworkdayjobs.com:igsenergy:igs",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:kiongroup.wd3.myworkdayjobs.com:kiongroup:kiongroup",
+        "target_status": "partial"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:ttmtech.wd5.myworkdayjobs.com:ttmtech:jobs",
+        "target_status": "success"
+      },
+      {
+        "hydration_candidates": 1,
+        "target_identity": "workday:bcbst.wd1.myworkdayjobs.com:bcbst:External",
+        "target_status": "success"
+      }
+    ],
+    "unique_postings": 37233
+  },
+  "interpretation": [
+    "This run is valid list-index density evidence from the PR #33 analysis-v2 code path, not proof that any job is deliverable.",
+    "Coverage was incomplete on 8 of 100 targets, so hydration decisions must distinguish complete-target candidates from incomplete-target candidates.",
+    "Only authoritative hydrated detail may establish final posting freshness and delivery eligibility.",
+    "PR #34 later added cross-partition externalPath overlap protection; this frozen run predates that additional safeguard."
+  ]
+}
