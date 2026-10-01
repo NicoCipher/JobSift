@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import NAMESPACE_URL, uuid5
@@ -525,6 +525,71 @@ def evaluate_inventory_run(
         total_evaluated=evaluated,
         total_matched=matched,
         total_rejected=rejected,
+    )
+
+
+def evaluate_recent_inventory(
+    *,
+    repository: SQLiteRepository,
+    brief: SearchBrief,
+    retention_hours: int = 72,
+    evaluated_at: datetime | None = None,
+) -> tuple[InventoryEvaluationReport, tuple[str, ...]]:
+    """Evaluate the currently retained shared inventory for one client.
+
+    Collection is intentionally separate. Only active payloads verified inside
+    the retention window participate; posting freshness is still enforced later
+    by daily-batch assembly using the SearchBrief freshness policy.
+    """
+    if retention_hours < 1:
+        raise ValueError("retention_hours must be at least 1")
+    evaluation_time = evaluated_at or datetime.now(UTC)
+    evaluation_time = (
+        evaluation_time.replace(tzinfo=UTC)
+        if evaluation_time.tzinfo is None
+        else evaluation_time.astimezone(UTC)
+    )
+    cutoff = evaluation_time - timedelta(hours=retention_hours)
+    matched = 0
+    rejected = 0
+    job_ids: list[str] = []
+    with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        cursor = connection.execute(
+            "SELECT id,payload_json FROM jobs "
+            "WHERE lifecycle!='closed' AND last_verified_at>=? "
+            "ORDER BY id",
+            (cutoff.isoformat(),),
+        )
+        for row in cursor:
+            job = Job.model_validate_json(row["payload_json"])
+            match = match_job(job, brief).model_copy(
+                update={"evaluated_at": evaluation_time}
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                repository._match_row(match),
+            )
+            job_ids.append(job.id)
+            if match.decision in {
+                MatchDecision.STRONG_MATCH,
+                MatchDecision.POSSIBLE_MATCH,
+            }:
+                matched += 1
+            else:
+                rejected += 1
+
+    scope_id = f"shared-inventory:{cutoff.isoformat()}:{evaluation_time.isoformat()}"
+    return (
+        InventoryEvaluationReport(
+            run_id=scope_id,
+            client_id=brief.client_id,
+            evaluated_at=evaluation_time,
+            total_evaluated=len(job_ids),
+            total_matched=matched,
+            total_rejected=rejected,
+        ),
+        tuple(job_ids),
     )
 
 
