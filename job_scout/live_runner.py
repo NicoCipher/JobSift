@@ -467,6 +467,9 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         if today is not None:
             return _batch_payload(store, today, action="already_ran_today")
 
+    brief_sha = sha256(brief_path.read_bytes()).hexdigest()
+    match_scope_id = brief_sha if profile is not None else None
+
     report = None
     if config.source_before_delivery:
         report = collect_inventory_plan(
@@ -499,6 +502,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             run_id=report.run_id,
             brief=brief,
             evaluated_at=report.completed_at,
+            match_scope_id=match_scope_id,
         )
         candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
         scope = f"{plan.plan_id}:{report.run_id}"
@@ -509,6 +513,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             repository=repository,
             brief=brief,
             retention_hours=config.inventory_retention_hours,
+            match_scope_id=match_scope_id,
         )
         scope = f"{plan.plan_id}:{evaluation.run_id}"
         failures = ()
@@ -528,8 +533,11 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 store, existing_scope, action="already_ran_inventory_scope"
             )
 
-    evidence_sha = store.evidence_digest(brief.client_id, candidate_ids)
-    brief_sha = sha256(brief_path.read_bytes()).hexdigest()
+    evidence_sha = store.evidence_digest(
+        brief.client_id,
+        candidate_ids,
+        match_scope_id=match_scope_id,
+    )
     evaluation_id = (
         f"{scope}:{brief.client_id}:{evaluation.evaluated_at.astimezone(UTC).isoformat()}"
     )
@@ -555,6 +563,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         evaluation_id=evaluation_id,
         candidate_job_ids=candidate_ids,
         evidence_sha256=evidence_sha,
+        match_scope_id=match_scope_id,
         brief_revision_id=brief_path.stem,
         brief_sha256=brief_sha,
         completeness=completeness,
@@ -562,9 +571,31 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     )
     batch = prepare_daily_batch(repository=repository, request=request)
     action = "validated" if config.validation_only else "prepared"
-    if profile_auto_release:
-        batch = finalize_daily_batch(repository=repository, batch_id=batch.batch_id)
-        action = "released" if batch.status == "delivered" else "release_failed"
+    if profile_auto_release and profile_store is not None and profile is not None:
+        current_profile = profile_store.get(profile.client_id, profile.destination_id)
+        profile = current_profile
+        if current_profile.sourcing_plan_id != plan.plan_id:
+            action = "release_blocked_profile"
+        elif current_profile.delivery_mode != "auto":
+            action = "prepared"
+        else:
+            try:
+                batch, _reconciliation, _remaining = profile_store.guard_batch_release(
+                    current_profile,
+                    batch.batch_id,
+                    gateway=GoogleSheetsGateway(),
+                )
+            except BatchConflict as error:
+                action = (
+                    "release_blocked_quota"
+                    if "remaining daily quota" in str(error)
+                    else "release_blocked_profile"
+                )
+            else:
+                batch = finalize_daily_batch(
+                    repository=repository, batch_id=batch.batch_id
+                )
+                action = "released" if batch.status == "delivered" else "release_failed"
     payload = _batch_payload(
         store,
         batch,
