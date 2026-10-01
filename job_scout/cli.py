@@ -15,6 +15,7 @@ from job_scout.delivery_destinations import (
     ClientSheetDestinationStore,
     ClientSheetRegistrationRequest,
 )
+from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
@@ -101,6 +102,40 @@ def main() -> None:
     destination_disable.add_argument("--database", default="jobs.sqlite3")
     destination_disable.add_argument("--client", required=True)
     destination_disable.add_argument("--destination-id", required=True)
+
+    delivery_profile = commands.add_parser(
+        "delivery-profile",
+        help="Manage persistent per-client Sheet quota and delivery controls",
+    )
+    delivery_profile_commands = delivery_profile.add_subparsers(
+        dest="delivery_profile_command", required=True
+    )
+    delivery_profile_set = delivery_profile_commands.add_parser("set")
+    delivery_profile_set.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_set.add_argument("--client", required=True)
+    delivery_profile_set.add_argument("--destination-id", required=True)
+    delivery_profile_set.add_argument(
+        "--plan",
+        required=True,
+        type=Path,
+        help="Registered sourcing-plan JSON for this client",
+    )
+    delivery_profile_set.add_argument("--daily-quota", required=True, type=int)
+    delivery_profile_set.add_argument(
+        "--status", choices=("active", "paused"), default="paused"
+    )
+    delivery_profile_set.add_argument(
+        "--delivery-mode", choices=("review", "auto"), default="review"
+    )
+    delivery_profile_set.add_argument("--timezone", default="Africa/Lagos")
+    delivery_profile_list = delivery_profile_commands.add_parser("list")
+    delivery_profile_list.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_list.add_argument("--client")
+    for name in ("pause", "resume"):
+        command = delivery_profile_commands.add_parser(name)
+        command.add_argument("--database", default="jobs.sqlite3")
+        command.add_argument("--client", required=True)
+        command.add_argument("--destination-id", required=True)
 
     profile = commands.add_parser("profile")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
@@ -250,6 +285,55 @@ def main() -> None:
         except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
             parser.error(f"unable to manage destination: {exc}")
         return
+    if args.command == "delivery-profile":
+        from job_scout.domain.daily_batch import BatchConflict
+
+        try:
+            repository = SQLiteRepository(args.database)
+            store = ClientDeliveryProfileStore(repository)
+            if args.delivery_profile_command == "set":
+                plan_path = args.plan.resolve()
+                plan = load_sourcing_plan(plan_path)
+                brief_path = Path(plan.search_brief)
+                if not brief_path.is_absolute():
+                    brief_path = (plan_path.parent / brief_path).resolve()
+                brief = load_search_brief(brief_path)
+                if brief.client_id != args.client:
+                    parser.error(
+                        "sourcing plan SearchBrief client_id does not match --client"
+                    )
+                value = store.upsert(
+                    client_id=args.client,
+                    destination_id=args.destination_id,
+                    sourcing_plan_id=plan.plan_id,
+                    daily_quota=args.daily_quota,
+                    status=args.status,
+                    delivery_mode=args.delivery_mode,
+                    timezone=args.timezone,
+                )
+                print(json.dumps(value.model_dump(mode="json"), sort_keys=True))
+            elif args.delivery_profile_command == "list":
+                values = store.list(args.client)
+                print(
+                    json.dumps(
+                        [value.model_dump(mode="json") for value in values],
+                        sort_keys=True,
+                    )
+                )
+            else:
+                status = (
+                    "paused"
+                    if args.delivery_profile_command == "pause"
+                    else "active"
+                )
+                value = store.set_status(
+                    args.client, args.destination_id, status
+                )
+                print(json.dumps(value.model_dump(mode="json"), sort_keys=True))
+        except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
+            parser.error(f"unable to manage delivery profile: {exc}")
+        return
+
     if args.command == "batch":
         from job_scout.domain.daily_batch import BatchConflict
 
