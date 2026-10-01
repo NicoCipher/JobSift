@@ -6,7 +6,6 @@ import argparse
 import gzip
 import hashlib
 import json
-import struct
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,50 +52,35 @@ def _url_digest(job: Job) -> bytes:
     return hashlib.sha256(str(job.canonical_url).encode()).digest()
 
 
-def _load_historical_ledger(path: Path, *, client_id: str) -> dict[str, Any]:
+def _load_historical_evidence(path: Path, *, client_id: str) -> dict[str, Any]:
     metadata = _load_json(path)
-    _verify_self_digest(metadata, "ledger_sha256")
-    if metadata.get("ledger_version") != "workday-historical-suppression-hashes-v1":
-        raise ValueError("unsupported historical suppression ledger")
+    _verify_self_digest(metadata, "evidence_sha256")
+    if metadata.get("evidence_version") != "workday-historical-candidate-suppression-v1":
+        raise ValueError("unsupported historical suppression evidence")
     if metadata.get("client_id") != client_id:
         raise ValueError("historical suppression client does not match SearchBrief")
 
-    binary_name = metadata.get("binary_file")
-    binary_sha = metadata.get("binary_sha256")
-    if not isinstance(binary_name, str) or not isinstance(binary_sha, str):
-        raise ValueError("historical suppression binary provenance is invalid")
-    binary = (path.parent / binary_name).read_bytes()
-    if hashlib.sha256(binary).hexdigest() != binary_sha:
-        raise ValueError("historical suppression binary digest does not match")
-    if len(binary) < 12 or binary[:4] != b"JSH2":
-        raise ValueError("historical suppression binary header is invalid")
-
-    identity_count, url_count = struct.unpack(">II", binary[4:12])
-    expected_size = 12 + 32 * (identity_count + url_count)
-    if len(binary) != expected_size:
-        raise ValueError("historical suppression binary size does not reconcile")
-
-    offset = 12
-    identity_hashes = {
-        binary[index : index + 32]
-        for index in range(offset, offset + 32 * identity_count, 32)
-    }
-    offset += 32 * identity_count
-    url_hashes = {
-        binary[index : index + 32]
-        for index in range(offset, offset + 32 * url_count, 32)
-    }
-    if len(identity_hashes) != metadata.get("workday_unique_exact_identity_hashes"):
-        raise ValueError("historical identity hash count does not reconcile")
-    if len(url_hashes) != metadata.get("workday_unique_normalized_url_hashes"):
-        raise ValueError("historical URL hash count does not reconcile")
+    raw_identity_hashes = metadata.get("matching_identity_hashes")
+    raw_url_hashes = metadata.get("matching_url_hashes")
+    if not isinstance(raw_identity_hashes, list) or not isinstance(raw_url_hashes, list):
+        raise ValueError("historical suppression hashes are invalid")
+    try:
+        identity_hashes = {bytes.fromhex(value) for value in raw_identity_hashes}
+        url_hashes = {bytes.fromhex(value) for value in raw_url_hashes}
+    except (TypeError, ValueError) as exc:
+        raise ValueError("historical suppression hashes are not valid SHA-256 hex") from exc
+    if any(len(value) != 32 for value in identity_hashes | url_hashes):
+        raise ValueError("historical suppression hashes are not SHA-256 digests")
+    if len(identity_hashes) != len(raw_identity_hashes):
+        raise ValueError("historical identity hashes contain duplicates")
+    if len(url_hashes) != len(raw_url_hashes):
+        raise ValueError("historical URL hashes contain duplicates")
 
     return {
         "metadata": metadata,
         "identity_hashes": identity_hashes,
         "url_hashes": url_hashes,
     }
-
 
 def _is_historically_surfaced(job: Job, ledger: dict[str, Any]) -> bool:
     return (
@@ -161,10 +145,14 @@ def run_hydration_benchmark(
     brief = load_search_brief(brief_path)
     if candidates_manifest.get("brief_client_id") != brief.client_id:
         raise ValueError("candidate manifest client does not match SearchBrief")
-    historical = _load_historical_ledger(
+    historical = _load_historical_evidence(
         historical_hashes_path,
         client_id=brief.client_id,
     )
+    if historical["metadata"].get("source_candidate_manifest_sha256") != candidates_manifest.get(
+        "manifest_sha256"
+    ):
+        raise ValueError("historical suppression evidence does not match candidate manifest")
 
     registry = load_production_registry(registry_path)
     targets = {target.target_identity: target for target in registry.targets}
@@ -305,10 +293,11 @@ def run_hydration_benchmark(
         "completed_at": datetime.now(UTC).isoformat(),
         "source_index_run_id": candidates_manifest["source_index_run_id"],
         "candidate_manifest_sha256": candidates_manifest["manifest_sha256"],
-        "historical_ledger_sha256": historical["metadata"]["ledger_sha256"],
+        "historical_evidence_sha256": historical["metadata"]["evidence_sha256"],
         "historical_logical_corpus_sha256": historical["metadata"][
             "logical_corpus_sha256"
         ],
+        "historical_probe_run_id": historical["metadata"]["hydration_probe_run_id"],
         "client_id": brief.client_id,
         "posting_age_source": "Workday jobPostingInfo.startDate parsed by production collector",
         "freshness_policy": {
