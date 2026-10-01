@@ -500,12 +500,24 @@ class SQLiteRepository:
                     representatives[group] = job
         return [representatives[group] for group in sorted(representatives)]
 
-    def is_historically_surfaced(self, job: Job, client_id: str) -> bool:
+    def is_historically_surfaced(
+        self,
+        job: Job,
+        client_id: str,
+        destination: str | None = None,
+    ) -> bool:
         with self.connect() as connection:
-            return self._is_historically_surfaced(connection, job, client_id)
+            return self._is_historically_surfaced(
+                connection, job, client_id, destination
+            )
 
     @staticmethod
-    def _is_historically_surfaced(connection: sqlite3.Connection, job: Job, client_id: str) -> bool:
+    def _is_historically_surfaced(
+        connection: sqlite3.Connection,
+        job: Job,
+        client_id: str,
+        destination: str | None = None,
+    ) -> bool:
         identity = connection.execute(
             "SELECT 1 FROM historical_job_links WHERE client_id=? AND source=? "
             "AND source_board_id=? AND source_job_id=? LIMIT 1",
@@ -520,18 +532,27 @@ class SQLiteRepository:
         ).fetchone()
         if historical_url is not None:
             return True
+        if destination is None:
+            return False
         observed_identity = connection.execute(
             "SELECT 1 FROM destination_observed_links WHERE client_id=? "
-            "AND source=? AND source_board_id=? AND source_job_id=? LIMIT 1",
-            (client_id, job.source, job.source_board_id, job.source_job_id),
+            "AND destination=? AND source=? AND source_board_id=? "
+            "AND source_job_id=? LIMIT 1",
+            (
+                client_id,
+                destination,
+                job.source,
+                job.source_board_id,
+                job.source_job_id,
+            ),
         ).fetchone()
         if observed_identity is not None:
             return True
         return (
             connection.execute(
                 "SELECT 1 FROM destination_observed_links "
-                "WHERE client_id=? AND normalized_url=? LIMIT 1",
-                (client_id, str(job.canonical_url)),
+                "WHERE client_id=? AND destination=? AND normalized_url=? LIMIT 1",
+                (client_id, destination, str(job.canonical_url)),
             ).fetchone()
             is not None
         )
