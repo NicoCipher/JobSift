@@ -27,7 +27,7 @@ def destination(repo):
             "Job Title": "JOB TITLE",
             "Company Name": "COMPANY NAME",
             "Job Link": "LINKS",
-            "Description": "DESCRIPTION",
+            "Job Description": "DESCRIPTION",
         },
         gateway=FakeSheet(),
     )
