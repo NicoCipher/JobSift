@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
+import struct
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,6 +39,72 @@ def _verify_self_digest(value: dict[str, Any], field: str) -> None:
         raise ValueError(f"{field} does not match payload")
 
 
+def _identity_digest(job: Job) -> bytes:
+    payload = json.dumps(
+        [job.source, job.source_board_id, job.source_job_id],
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return hashlib.sha256(payload).digest()
+
+
+def _url_digest(job: Job) -> bytes:
+    return hashlib.sha256(str(job.canonical_url).encode()).digest()
+
+
+def _load_historical_ledger(path: Path, *, client_id: str) -> dict[str, Any]:
+    metadata = _load_json(path)
+    _verify_self_digest(metadata, "ledger_sha256")
+    if metadata.get("ledger_version") != "workday-historical-suppression-hashes-v1":
+        raise ValueError("unsupported historical suppression ledger")
+    if metadata.get("client_id") != client_id:
+        raise ValueError("historical suppression client does not match SearchBrief")
+
+    binary_name = metadata.get("binary_file")
+    binary_sha = metadata.get("binary_sha256")
+    if not isinstance(binary_name, str) or not isinstance(binary_sha, str):
+        raise ValueError("historical suppression binary provenance is invalid")
+    binary = (path.parent / binary_name).read_bytes()
+    if hashlib.sha256(binary).hexdigest() != binary_sha:
+        raise ValueError("historical suppression binary digest does not match")
+    if len(binary) < 12 or binary[:4] != b"JSH2":
+        raise ValueError("historical suppression binary header is invalid")
+
+    identity_count, url_count = struct.unpack(">II", binary[4:12])
+    expected_size = 12 + 32 * (identity_count + url_count)
+    if len(binary) != expected_size:
+        raise ValueError("historical suppression binary size does not reconcile")
+
+    offset = 12
+    identity_hashes = {
+        binary[index : index + 32]
+        for index in range(offset, offset + 32 * identity_count, 32)
+    }
+    offset += 32 * identity_count
+    url_hashes = {
+        binary[index : index + 32]
+        for index in range(offset, offset + 32 * url_count, 32)
+    }
+    if len(identity_hashes) != metadata.get("workday_unique_exact_identity_hashes"):
+        raise ValueError("historical identity hash count does not reconcile")
+    if len(url_hashes) != metadata.get("workday_unique_normalized_url_hashes"):
+        raise ValueError("historical URL hash count does not reconcile")
+
+    return {
+        "metadata": metadata,
+        "identity_hashes": identity_hashes,
+        "url_hashes": url_hashes,
+    }
+
+
+def _is_historically_surfaced(job: Job, ledger: dict[str, Any]) -> bool:
+    return (
+        _identity_digest(job) in ledger["identity_hashes"]
+        or _url_digest(job) in ledger["url_hashes"]
+    )
+
+
 def _target_identity(job: Job) -> str:
     return f"workday:{job.source_board_id}"
 
@@ -54,6 +122,7 @@ def run_hydration_benchmark(
     *,
     registry_path: Path,
     candidates_path: Path,
+    historical_hashes_path: Path,
     brief_path: Path,
     database_path: Path,
     detail_concurrency: int = 4,
@@ -76,33 +145,26 @@ def run_hydration_benchmark(
         )
     if candidates_manifest.get("trusted_candidate_count") != len(candidates):
         raise ValueError("candidate manifest count does not reconcile")
-    candidate_keys = []
-    candidate_history: dict[tuple[str, str], bool] = {}
+
+    candidate_keys: list[tuple[str, str]] = []
     for row in candidates:
         if not isinstance(row, dict):
             raise ValueError("candidate manifest contains invalid candidate rows")
         target_identity = row.get("target_identity")
         external_path = row.get("external_path")
-        source_job_id = row.get("source_job_id")
-        historical = row.get("historically_surfaced")
-        if (
-            not isinstance(target_identity, str)
-            or not isinstance(external_path, str)
-            or not isinstance(source_job_id, str)
-            or not isinstance(historical, bool)
-        ):
+        if not isinstance(target_identity, str) or not isinstance(external_path, str):
             raise ValueError("candidate manifest contains invalid candidate rows")
         candidate_keys.append((target_identity, external_path))
-        identity = (target_identity, source_job_id)
-        if identity in candidate_history:
-            raise ValueError("candidate manifest contains duplicate provider identities")
-        candidate_history[identity] = historical
     if len(set(candidate_keys)) != len(candidate_keys):
         raise ValueError("candidate manifest contains duplicate target/path candidates")
 
     brief = load_search_brief(brief_path)
     if candidates_manifest.get("brief_client_id") != brief.client_id:
         raise ValueError("candidate manifest client does not match SearchBrief")
+    historical = _load_historical_ledger(
+        historical_hashes_path,
+        client_id=brief.client_id,
+    )
 
     registry = load_production_registry(registry_path)
     targets = {target.target_identity: target for target in registry.targets}
@@ -116,18 +178,25 @@ def run_hydration_benchmark(
     started_at = datetime.now(UTC)
     hydrated_jobs: list[Job] = []
     target_reports: list[dict[str, Any]] = []
+    total_hydration_errors = 0
     collector = WorkdayCollector(detail_concurrency=detail_concurrency)
     try:
         for target_identity in sorted(grouped_paths):
             paths = grouped_paths[target_identity]
             result = collector.hydrate_paths(targets[target_identity].source_target(), paths)
             hydrated_jobs.extend(result.jobs)
+            error_count = len(result.errors)
+            total_hydration_errors += error_count
             target_reports.append(
                 {
                     "target_identity": target_identity,
                     "candidate_paths": len(paths),
-                    "hydrated_jobs": len(result.jobs),
-                    "hydration_failures": len(paths) - len(result.jobs),
+                    "successful_detail_paths": len(paths) - error_count,
+                    "hydrated_unique_jobs": len(result.jobs),
+                    "hydration_failures": error_count,
+                    "provider_identity_collapses": max(
+                        0, len(paths) - error_count - len(result.jobs)
+                    ),
                     "status": result.status.value,
                     "errors": list(result.errors),
                 }
@@ -151,15 +220,9 @@ def run_hydration_benchmark(
     fresh_by_job = {
         job.id: _freshness_reason(job, brief, evaluated_at) for job in hydrated_jobs
     }
-    historical_by_job: dict[str, bool] = {}
-    for job in hydrated_jobs:
-        identity = (_target_identity(job), job.source_job_id)
-        if identity not in candidate_history:
-            raise ValueError(
-                "hydrated provider identity is not present in the frozen candidate manifest: "
-                f"{identity[0]}:{identity[1]}"
-            )
-        historical_by_job[job.id] = candidate_history[identity]
+    historical_by_job = {
+        job.id: _is_historically_surfaced(job, historical) for job in hydrated_jobs
+    }
 
     group_by_job: dict[str, str] = {}
     with repository.connect() as connection:
@@ -229,6 +292,10 @@ def run_hydration_benchmark(
     unique_hydrated_identity_count = len(
         {(job.source, job.source_board_id, job.source_job_id) for job in hydrated_jobs}
     )
+    successful_detail_paths = len(candidates) - total_hydration_errors
+    provider_identity_collapses = max(
+        0, successful_detail_paths - unique_hydrated_identity_count
+    )
 
     report = {
         "report_version": "workday-hydration-yield-v1",
@@ -238,7 +305,10 @@ def run_hydration_benchmark(
         "completed_at": datetime.now(UTC).isoformat(),
         "source_index_run_id": candidates_manifest["source_index_run_id"],
         "candidate_manifest_sha256": candidates_manifest["manifest_sha256"],
-        "historical_derivation": candidates_manifest.get("history_provenance"),
+        "historical_ledger_sha256": historical["metadata"]["ledger_sha256"],
+        "historical_logical_corpus_sha256": historical["metadata"][
+            "logical_corpus_sha256"
+        ],
         "client_id": brief.client_id,
         "posting_age_source": "Workday jobPostingInfo.startDate parsed by production collector",
         "freshness_policy": {
@@ -247,9 +317,11 @@ def run_hydration_benchmark(
         },
         "candidate_paths_attempted": len(candidates),
         "targets_with_candidates": len(grouped_paths),
-        "hydrated_jobs": len(hydrated_jobs),
-        "hydration_failures": len(candidates) - len(hydrated_jobs),
+        "successful_detail_paths": successful_detail_paths,
+        "hydration_failures": total_hydration_errors,
+        "hydrated_unique_jobs": len(hydrated_jobs),
         "unique_hydrated_provider_identities": unique_hydrated_identity_count,
+        "provider_identity_collapses": provider_identity_collapses,
         "freshness_postings": dict(sorted(freshness_postings.items())),
         "match_decisions": dict(sorted(match_decisions.items())),
         "semantic_match_postings": len(semantic_jobs),
@@ -257,8 +329,8 @@ def run_hydration_benchmark(
         "historically_suppressed_groups": len(historical_groups),
         "prior_delivery_suppressed_groups": 0,
         "prior_delivery_evidence": (
-            "No production JobSift delivery ledger was imported into this isolated "
-            "capacity benchmark; prior delivery suppression is therefore zero."
+            "No production JobSift delivery ledger exists yet; this isolated capacity "
+            "benchmark therefore has zero prior JobSift delivery suppressions."
         ),
         "freshness_group_suppressions": dict(sorted(freshness_group_suppressions.items())),
         "practical_duplicate_postings_collapsed": len(semantic_jobs) - len(semantic_groups),
@@ -280,6 +352,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m job_scout.workday_hydration_benchmark")
     parser.add_argument("--registry", required=True, type=Path)
     parser.add_argument("--candidates", required=True, type=Path)
+    parser.add_argument("--historical-hashes", required=True, type=Path)
     parser.add_argument("--brief", required=True, type=Path)
     parser.add_argument("--database", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -292,6 +365,7 @@ def main() -> None:
         report = run_hydration_benchmark(
             registry_path=args.registry,
             candidates_path=args.candidates,
+            historical_hashes_path=args.historical_hashes,
             brief_path=args.brief,
             database_path=args.database,
             detail_concurrency=args.detail_concurrency,
