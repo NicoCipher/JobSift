@@ -74,6 +74,11 @@ class BatchCandidate:
 def posting_evidence(job: Job, match: JobMatch) -> str:
     payload = job.model_dump(mode="json")
     payload["eligible_countries"] = sorted(payload["eligible_countries"])
+    # Collection bookkeeping is not job content. Hourly refreshes may change
+    # these timestamps while a reviewed batch is waiting without changing the
+    # posting itself.
+    payload.pop("discovered_at", None)
+    payload.pop("last_seen_at", None)
     match_payload = match.model_dump(mode="json")
     # Re-evaluating the same semantic match at a later time must not invalidate
     # an already prepared batch for another destination. The batch request
@@ -89,16 +94,33 @@ class DailyBatchStore:
         with repository.connect() as connection:
             connection.executescript(BATCH_SCHEMA)
 
-    def _candidates(self, c, client_id, job_ids, destination=None):
+    def _candidates(
+        self,
+        c,
+        client_id,
+        job_ids,
+        destination=None,
+        match_scope_id: str | None = None,
+    ):
         candidates = []
         group_states = {}
         for job_id in sorted(job_ids):
-            row = c.execute(
-                "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
-                "JOIN posting_delivery_groups g ON g.job_id=j.id "
-                "JOIN job_matches m ON m.job_id=j.id WHERE j.id=? AND m.client_id=?",
-                (job_id, client_id),
-            ).fetchone()
+            if match_scope_id is None:
+                row = c.execute(
+                    "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
+                    "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                    "JOIN job_matches m ON m.job_id=j.id "
+                    "WHERE j.id=? AND m.client_id=?",
+                    (job_id, client_id),
+                ).fetchone()
+            else:
+                row = c.execute(
+                    "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
+                    "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                    "JOIN scoped_job_matches m ON m.job_id=j.id "
+                    "WHERE j.id=? AND m.client_id=? AND m.match_scope_id=?",
+                    (job_id, client_id, match_scope_id),
+                ).fetchone()
             if row is None:
                 raise BatchConflict(f"missing authoritative posting/match: {job_id}")
             job = Job.model_validate_json(row["payload_json"])
@@ -142,13 +164,26 @@ class DailyBatchStore:
             )
         return candidates
 
-    def evidence_digest(self, client_id: str, job_ids: tuple[str, ...]) -> str:
-        """Capture current authoritative rows, without asserting a legacy brief association."""
+    def evidence_digest(
+        self,
+        client_id: str,
+        job_ids: tuple[str, ...],
+        *,
+        match_scope_id: str | None = None,
+    ) -> str:
+        """Capture current authoritative rows for an explicit match scope when provided."""
         if len(set(job_ids)) != len(job_ids):
             raise BatchConflict("candidate IDs must be unique")
         with self.repository.connect() as c:
             c.execute("BEGIN")
-            return self._digest(self._candidates(c, client_id, job_ids))
+            return self._digest(
+                self._candidates(
+                    c,
+                    client_id,
+                    job_ids,
+                    match_scope_id=match_scope_id,
+                )
+            )
 
     @staticmethod
     def _digest(candidates):
@@ -265,6 +300,7 @@ class DailyBatchStore:
                 request.client_id,
                 request.candidate_job_ids,
                 request.destination,
+                request.match_scope_id,
             )
             if self._digest(candidates) != request.evidence_sha256:
                 raise BatchConflict("candidate evidence changed; capture an explicit new scope")
@@ -368,6 +404,7 @@ class DailyBatchStore:
             result.request.client_id,
             tuple(i.representative_job_id for i in result.items),
             result.request.destination,
+            result.request.match_scope_id,
         )
         expected = {i.representative_job_id: i.evidence_sha256 for i in result.items}
         if len({v.group_id for v in candidates}) != len(candidates):
