@@ -92,3 +92,11 @@ evidence, partial-result semantics, and the frozen evaluation cohort.
 Remote status and work-country eligibility are evaluated independently. A remote vacancy restricted to a different country is not treated as globally eligible.
 
 Under a new `SearchBrief`, target market is evaluated independently from candidate residence. Citizenship and work-authorization wording affects sourcing only when the brief explicitly enables work-eligibility filtering or adds the wording as an avoid term.
+
+
+## Client delivery controls
+
+JobSift can keep a shared fresh inventory warm while routing jobs to independent
+client-owned Google Sheets with per-destination daily quotas, pause/resume, and
+review or automatic delivery. See
+[`docs/client-delivery-controls.md`](docs/client-delivery-controls.md).
