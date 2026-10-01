@@ -366,6 +366,38 @@ class ClientDeliveryProfileStore:
             "newly_recorded_links": inserted,
         }
 
+    def guard_batch_release(
+        self,
+        profile: ClientDeliveryProfile,
+        batch_id: str,
+        *,
+        gateway,
+    ):
+        """Reconcile the destination and enforce current profile controls before release."""
+        if profile.status != "active":
+            raise BatchConflict("delivery profile is paused")
+        destination = ClientSheetDestinationStore(self.repository).get(
+            profile.client_id, profile.destination_id
+        )
+        from job_scout.storage.daily_batches import DailyBatchStore
+
+        batch = DailyBatchStore(self.repository).get(batch_id)
+        if (
+            batch.request.client_id != profile.client_id
+            or batch.request.destination_id != profile.destination_id
+            or batch.request.destination != destination.logical_uri
+        ):
+            raise BatchConflict("batch does not belong to the selected delivery profile")
+        reconciliation = self.reconcile_destination_sheet(profile, gateway=gateway)
+        if batch.status == "delivered":
+            return batch, reconciliation, self.remaining_today(profile)
+        remaining = self.remaining_today(profile)
+        if batch.selected_count > remaining:
+            raise BatchConflict(
+                "prepared batch exceeds the profile's current remaining daily quota"
+            )
+        return batch, reconciliation, remaining
+
     def remaining_today(
         self,
         profile: ClientDeliveryProfile,
