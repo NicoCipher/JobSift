@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from job_scout import sourcing_plan
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
+from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -65,3 +66,44 @@ def test_recent_inventory_returns_only_delivery_eligible_candidate_ids(
     assert report.total_matched == 1
     assert report.total_rejected == 1
     assert candidate_ids == ("eligible",)
+
+def test_recent_inventory_persists_revision_scoped_matches(tmp_path, monkeypatch):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    eligible = posting("eligible", "Software Engineer")
+    repo.upsert_job(eligible)
+    brief = SimpleNamespace(client_id="client-a")
+
+    monkeypatch.setattr(
+        sourcing_plan,
+        "match_job",
+        lambda job, _brief: JobMatch(
+            job_id=job.id,
+            client_id="client-a",
+            decision="strong_match",
+            evaluated_at=datetime.now(UTC),
+            matcher_version="test",
+        ),
+    )
+
+    _report, candidate_ids = sourcing_plan.evaluate_recent_inventory(
+        repository=repo,
+        brief=brief,
+        retention_hours=72,
+        match_scope_id="brief-revision-a",
+    )
+
+    with repo.connect() as connection:
+        row = connection.execute(
+            "SELECT decision FROM scoped_job_matches "
+            "WHERE job_id=? AND client_id=? AND match_scope_id=?",
+            ("eligible", "client-a", "brief-revision-a"),
+        ).fetchone()
+
+    assert row is not None
+    assert row["decision"] == "strong_match"
+    assert DailyBatchStore(repo).evidence_digest(
+        "client-a",
+        candidate_ids,
+        match_scope_id="brief-revision-a",
+    )
+
