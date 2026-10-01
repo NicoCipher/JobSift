@@ -162,6 +162,10 @@ class WorkdayIndexAnalysis(BaseModel):
     registry_id: str
     shard_manifest_sha256: str
     client_id: str
+    targets_attempted: int = Field(ge=0)
+    targets_succeeded: int = Field(ge=0)
+    targets_partial: int = Field(ge=0)
+    targets_failed: int = Field(ge=0)
     targets_scanned: int = Field(ge=0)
     targets_with_hydration_candidates: int = Field(ge=0)
     provider_rows_seen: int = Field(ge=0)
@@ -523,6 +527,7 @@ class WorkdayIndexScanner:
             else:
                 assert partitions is not None
                 partition_complete = True
+                seen_partition_paths: set[str] = set()
                 for partition in partitions:
                     result = self._query(
                         target,
@@ -530,6 +535,17 @@ class WorkdayIndexScanner:
                         scope=f"jobFamilyGroup:{partition.identifier}",
                     )
                     provider_rows_seen += result.provider_rows_seen
+                    partition_paths = {
+                        posting.external_path for posting in result.postings
+                    }
+                    overlap = seen_partition_paths & partition_paths
+                    if overlap:
+                        partition_complete = False
+                        errors.append(
+                            "jobFamilyGroup partitions overlap by externalPath: "
+                            f"{len(overlap)} duplicate path(s)"
+                        )
+                    seen_partition_paths.update(partition_paths)
                     self._merge(merged, result.postings, errors)
                     errors.extend(result.errors)
                     if result.total != partition.advertised_count or not result.complete:
@@ -742,6 +758,16 @@ def analyze_index(
         manifest=manifest,
         artifacts=artifacts,
     )
+    attempted = sum(artifact.metrics.targets_attempted for artifact in artifacts)
+    succeeded = sum(artifact.metrics.targets_succeeded for artifact in artifacts)
+    partial = sum(artifact.metrics.targets_partial for artifact in artifacts)
+    failed = sum(artifact.metrics.targets_failed for artifact in artifacts)
+    if partial or failed or succeeded != attempted:
+        raise ValueError(
+            "Workday index density analysis requires every target to succeed; "
+            f"attempted={attempted}, succeeded={succeeded}, partial={partial}, failed={failed}"
+        )
+
     postings = [
         (target.target_identity, posting)
         for artifact in artifacts
@@ -771,7 +797,11 @@ def analyze_index(
         registry_id=registry.registry_id,
         shard_manifest_sha256=manifest.manifest_sha256,
         client_id=brief.client_id,
-        targets_scanned=sum(len(artifact.targets) for artifact in artifacts),
+        targets_attempted=attempted,
+        targets_succeeded=succeeded,
+        targets_partial=partial,
+        targets_failed=failed,
+        targets_scanned=succeeded,
         targets_with_hydration_candidates=len(candidates_by_target),
         provider_rows_seen=sum(
             artifact.metrics.provider_rows_seen for artifact in artifacts
