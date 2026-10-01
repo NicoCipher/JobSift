@@ -22,6 +22,7 @@ from job_scout.sourcing_plan import (
     SourcingPlan,
     collect_inventory_plan,
     evaluate_inventory_run,
+    evaluate_recent_inventory,
     load_sourcing_plan,
 )
 from job_scout.storage.daily_batches import DailyBatchStore
@@ -75,6 +76,7 @@ class LiveRunnerConfig:
     validation_only: bool = False
     inventory_retention_hours: int = 72
     profile_managed: bool = False
+    source_before_delivery: bool = True
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
@@ -119,6 +121,7 @@ class LiveRunnerConfig:
                 "JOBSIFT_INVENTORY_RETENTION_HOURS", 72
             ),
             profile_managed=_boolean("JOBSIFT_PROFILE_MANAGED"),
+            source_before_delivery=_boolean("JOBSIFT_SOURCE_BEFORE_DELIVERY", True),
         )
 
 
@@ -408,46 +411,58 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     if today is not None:
         return _batch_payload(store, today, action="already_ran_today")
 
-    report = collect_inventory_plan(
-        plan,
-        repository=repository,
-        reports_dir=config.reports_dir.resolve(),
-    )
-    if report.status == "failure":
-        return {
-            "action": "sourcing_failed",
-            "plan_id": plan.plan_id,
-            "status": report.status,
-            "source_failures": list(_source_failures(report)),
-        }
-    if report.status != "success" and not config.allow_partial:
-        return {
-            "action": "partial_sourcing_blocked",
-            "plan_id": plan.plan_id,
-            "status": report.status,
-            "source_failures": list(_source_failures(report)),
-        }
+    report = None
+    if config.source_before_delivery:
+        report = collect_inventory_plan(
+            plan,
+            repository=repository,
+            reports_dir=config.reports_dir.resolve(),
+        )
+        if report.status == "failure":
+            return {
+                "action": "sourcing_failed",
+                "plan_id": plan.plan_id,
+                "status": report.status,
+                "source_failures": list(_source_failures(report)),
+            }
+        if report.status != "success" and not config.allow_partial:
+            return {
+                "action": "partial_sourcing_blocked",
+                "plan_id": plan.plan_id,
+                "status": report.status,
+                "source_failures": list(_source_failures(report)),
+            }
 
     retention = repository.prune_stale_inventory(
         retention_hours=config.inventory_retention_hours
     )
 
-    evaluation = evaluate_inventory_run(
-        repository=repository,
-        run_id=report.run_id,
-        brief=brief,
-        evaluated_at=report.completed_at,
-    )
+    if report is not None:
+        evaluation = evaluate_inventory_run(
+            repository=repository,
+            run_id=report.run_id,
+            brief=brief,
+            evaluated_at=report.completed_at,
+        )
+        candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
+        scope = f"{plan.plan_id}:{report.run_id}"
+        failures = _source_failures(report)
+        completeness = "complete" if report.status == "success" else "partial"
+    else:
+        evaluation, candidate_ids = evaluate_recent_inventory(
+            repository=repository,
+            brief=brief,
+            retention_hours=config.inventory_retention_hours,
+        )
+        scope = f"{plan.plan_id}:{evaluation.run_id}"
+        failures = ()
+        completeness = "complete"
 
-    candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
     evidence_sha = store.evidence_digest(brief.client_id, candidate_ids)
     brief_sha = sha256(brief_path.read_bytes()).hexdigest()
-    scope = f"{plan.plan_id}:{report.run_id}"
     evaluation_id = (
         f"{scope}:{brief.client_id}:{evaluation.evaluated_at.astimezone(UTC).isoformat()}"
     )
-    failures = _source_failures(report)
-    completeness = "complete" if report.status == "success" else "partial"
     request = DailyBatchRequest(
         client_id=brief.client_id,
         destination=destination,
