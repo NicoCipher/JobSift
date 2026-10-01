@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -443,3 +445,54 @@ def test_explicit_target_configuration_is_required(target: SourceTarget, message
 
     assert result.status is CollectionStatus.INVALID_TARGET
     assert message in result.errors[0]
+
+
+@pytest.mark.parametrize("value", [0, 9, True, 1.5])
+def test_detail_concurrency_is_bounded(value) -> None:
+    with pytest.raises(ValueError, match="detail_concurrency"):
+        WorkdayCollector(delay=0, detail_concurrency=value)
+
+
+def test_bounded_detail_concurrency_preserves_deterministic_output_order() -> None:
+    paths = [f"/job/Remote/Support_R{number}" for number in range(1, 9)]
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, max_active
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json={
+                    "total": len(paths),
+                    "facets": [],
+                    "jobPostings": [posting(path) for path in paths],
+                },
+                request=request,
+            )
+        path = request.url.path.split(CONFIG.site, 1)[-1]
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            # Reverse completion order enough to prove executor scheduling does
+            # not leak into normalized artifact ordering.
+            suffix = int(path.rsplit("R", 1)[-1])
+            time.sleep((9 - suffix) * 0.002)
+            return httpx.Response(200, json=detail(path), request=request)
+        finally:
+            with lock:
+                active -= 1
+
+    result = WorkdayCollector(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        delay=0,
+        detail_concurrency=4,
+    ).collect(TARGET)
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert 2 <= max_active <= 4
+    assert [job.source_job_id for job in result.jobs] == [
+        f"R{number}" for number in range(1, 9)
+    ]
