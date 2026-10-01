@@ -7,6 +7,7 @@ profiles decide how much of the fresh shared inventory may be delivered.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Literal
@@ -15,7 +16,10 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
+from job_scout.dedupe.resolver import select_preferred_url
 from job_scout.domain.daily_batch import BatchConflict
+from job_scout.domain.models import Job
+from job_scout.normalization.core import canonicalize_url
 
 PROFILE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS client_delivery_profiles (
@@ -288,29 +292,89 @@ class ClientDeliveryProfileStore:
         )
         start, end = self._day_window(profile, now)
         with self.repository.connect() as connection:
-            row = connection.execute(
-                "SELECT COUNT(*) FROM ("
-                "SELECT normalized_url AS url FROM destination_observed_links "
-                "WHERE client_id=? AND destination=? "
-                "AND first_observed_at>=? AND first_observed_at<? "
-                "UNION "
-                "SELECT j.canonical_url AS url FROM group_deliveries d "
-                "JOIN jobs j ON j.id=d.job_id "
-                "WHERE d.client_id=? AND d.destination=? "
-                "AND d.exported_at>=? AND d.exported_at<?"
-                ")",
-                (
-                    profile.client_id,
-                    destination.logical_uri,
-                    start.isoformat(),
-                    end.isoformat(),
-                    profile.client_id,
-                    destination.logical_uri,
-                    start.isoformat(),
-                    end.isoformat(),
-                ),
-            ).fetchone()
-        return int(row[0])
+            links = {
+                row["normalized_url"]
+                for row in connection.execute(
+                    "SELECT normalized_url FROM destination_observed_links "
+                    "WHERE client_id=? AND destination=? "
+                    "AND first_observed_at>=? AND first_observed_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall()
+            }
+
+            has_batches = (
+                connection.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type='table' AND name='daily_batches'"
+                ).fetchone()
+                is not None
+            )
+            if has_batches:
+                # Count the exact frozen Job Link that was exported, not the
+                # posting's canonical_url. apply_url may intentionally differ,
+                # and reconciliation records the exported link from the Sheet.
+                for row in connection.execute(
+                    "SELECT i.export_row_json FROM daily_batches b "
+                    "JOIN daily_batch_items i ON i.batch_id=b.batch_id "
+                    "WHERE b.client_id=? AND b.destination=? "
+                    "AND b.status='delivered' "
+                    "AND b.delivered_at>=? AND b.delivered_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall():
+                    export = json.loads(row["export_row_json"])
+                    link = str(export.get("Job Link", "")).strip()
+                    if link:
+                        links.add(canonicalize_url(link))
+
+                legacy_rows = connection.execute(
+                    "SELECT j.payload_json FROM group_deliveries d "
+                    "JOIN jobs j ON j.id=d.job_id "
+                    "WHERE d.client_id=? AND d.destination=? "
+                    "AND d.exported_at>=? AND d.exported_at<? "
+                    "AND NOT EXISTS ("
+                    "SELECT 1 FROM daily_batches b "
+                    "JOIN daily_batch_items i ON i.batch_id=b.batch_id "
+                    "WHERE b.client_id=d.client_id "
+                    "AND b.destination=d.destination "
+                    "AND b.status='delivered' "
+                    "AND i.representative_job_id=d.job_id"
+                    ")",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall()
+            else:
+                legacy_rows = connection.execute(
+                    "SELECT j.payload_json FROM group_deliveries d "
+                    "JOIN jobs j ON j.id=d.job_id "
+                    "WHERE d.client_id=? AND d.destination=? "
+                    "AND d.exported_at>=? AND d.exported_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall()
+
+            for row in legacy_rows:
+                job = Job.model_validate_json(row["payload_json"])
+                links.add(canonicalize_url(select_preferred_url(job)))
+
+        return len(links)
 
     def reconcile_destination_sheet(
         self,
