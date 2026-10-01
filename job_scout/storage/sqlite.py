@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS job_matches (
   matcher_version TEXT NOT NULL,
   PRIMARY KEY(job_id, client_id)
 );
+CREATE TABLE IF NOT EXISTS scoped_job_matches (
+  job_id TEXT NOT NULL REFERENCES jobs(id),
+  client_id TEXT NOT NULL,
+  match_scope_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  score INTEGER,
+  matched_reasons_json TEXT NOT NULL,
+  rejection_reasons_json TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  matcher_version TEXT NOT NULL,
+  PRIMARY KEY(job_id, client_id, match_scope_id)
+);
+CREATE INDEX IF NOT EXISTS ix_scoped_job_matches_client_scope
+  ON scoped_job_matches(client_id, match_scope_id, job_id);
 CREATE TABLE IF NOT EXISTS collection_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source TEXT NOT NULL, target TEXT NOT NULL, started_at TEXT NOT NULL,
@@ -396,6 +410,9 @@ class SQLiteRepository:
                     ),
                 )
                 connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
+                connection.execute(
+                    "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)
+                )
 
                 if keep_identity_row:
                     compact = job.model_copy(
@@ -684,6 +701,31 @@ class SQLiteRepository:
             match.evaluated_at.isoformat(),
             match.matcher_version,
         )
+
+    @staticmethod
+    def _scoped_match_row(match: JobMatch, match_scope_id: str) -> tuple[object, ...]:
+        scope = match_scope_id.strip()
+        if not scope:
+            raise ValueError("match_scope_id must not be blank")
+        return (
+            match.job_id,
+            match.client_id,
+            scope,
+            match.decision.value,
+            match.score,
+            json.dumps(match.matched_reasons),
+            json.dumps(match.rejection_reasons),
+            match.evaluated_at.isoformat(),
+            match.matcher_version,
+        )
+
+    def save_scoped_match(self, match: JobMatch, match_scope_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO scoped_job_matches "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._scoped_match_row(match, match_scope_id),
+            )
 
     def save_match(self, match: JobMatch) -> None:
         with self.connect() as connection:
