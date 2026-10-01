@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import struct
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -20,7 +23,7 @@ from job_scout.production_registry import ProductionSourceRegistry, sha256_json
 
 
 def _write_json(path: Path, value: dict) -> None:
-    path.write_text(__import__("json").dumps(value, indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
 def _registry() -> ProductionSourceRegistry:
@@ -47,7 +50,13 @@ def _registry() -> ProductionSourceRegistry:
     )
 
 
-def _job(source_id: str, *, url: str, posted_at: datetime, company: str = "Alpha") -> Job:
+def _job(
+    source_id: str,
+    *,
+    url: str,
+    posted_at: datetime,
+    company: str = "Alpha",
+) -> Job:
     return Job(
         id=source_id,
         source="workday",
@@ -68,18 +77,58 @@ def _job(source_id: str, *, url: str, posted_at: datetime, company: str = "Alpha
     )
 
 
-def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
+def _write_historical_ledger(path: Path, historical_job: Job) -> Path:
+    identity_hash = benchmark._identity_digest(historical_job)
+    binary = b"JSH2" + struct.pack(">II", 1, 0) + identity_hash
+    binary_path = path / "historical.bin"
+    binary_path.write_bytes(binary)
+    metadata = {
+        "ledger_version": "workday-historical-suppression-hashes-v1",
+        "client_id": "client",
+        "source_logical_rows": 1,
+        "source_exact_supported_identity_rows": 1,
+        "source_workday_exact_identity_rows": 1,
+        "workday_unique_exact_identity_hashes": 1,
+        "workday_unique_normalized_url_hashes": 0,
+        "logical_corpus_sha256": "a" * 64,
+        "binary_file": binary_path.name,
+        "binary_sha256": hashlib.sha256(binary).hexdigest(),
+        "hash_algorithm": "sha256",
+        "identity_hash_encoding": (
+            "canonical-json [source, source_board_id, source_job_id]"
+        ),
+        "url_hash_encoding": "utf8 canonical_url",
+    }
+    metadata["ledger_sha256"] = sha256_json(metadata)
+    metadata_path = path / "historical.json"
+    _write_json(metadata_path, metadata)
+    return metadata_path
+
+
+def test_job37_full_accounting_uses_authoritative_identity_history_and_dedupe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = datetime.now(UTC)
     jobs = [
-        _job("HIST", url="https://example.test/jobs/historical", posted_at=now - timedelta(hours=2)),
+        _job(
+            "HIST",
+            url="https://example.test/jobs/historical",
+            posted_at=now - timedelta(hours=2),
+            company="History Co",
+        ),
         _job("A", url="https://example.test/jobs/shared", posted_at=now - timedelta(hours=2)),
         _job("B", url="https://example.test/jobs/shared", posted_at=now - timedelta(hours=3)),
-        _job("STALE", url="https://example.test/jobs/stale", posted_at=now - timedelta(hours=30)),
+        _job(
+            "STALE",
+            url="https://example.test/jobs/stale",
+            posted_at=now - timedelta(hours=30),
+            company="Stale Co",
+        ),
     ]
 
     class FakeCollector:
+        client = None
+
         def __init__(self, *, detail_concurrency: int) -> None:
             assert detail_concurrency == 4
 
@@ -92,9 +141,6 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
                 jobs=jobs,
                 raw_postings_received=4,
             )
-
-        def close(self) -> None:
-            return None
 
     monkeypatch.setattr(benchmark, "WorkdayCollector", FakeCollector)
 
@@ -111,10 +157,10 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
         "candidates": [
             {
                 "target_identity": target_identity,
-                "external_path": f"/job/Test/Role_{value}",
-                "source_job_id": value,
-                "historically_surfaced": value == "HIST",
-                "historical_match_basis": "exact_identity" if value == "HIST" else None,
+                "external_path": f"/job/Test/Role_{value}-list-alias",
+                "source_job_id": f"{value}-list-alias",
+                "historically_surfaced": False,
+                "historical_match_basis": None,
             }
             for value in ("HIST", "A", "B", "STALE")
         ],
@@ -122,6 +168,8 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
     candidate_payload["manifest_sha256"] = sha256_json(candidate_payload)
     candidates_path = tmp_path / "candidates.json"
     _write_json(candidates_path, candidate_payload)
+
+    historical_path = _write_historical_ledger(tmp_path, jobs[0])
 
     brief = SearchBrief(
         client_id="client",
@@ -138,14 +186,17 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
     report = benchmark.run_hydration_benchmark(
         registry_path=registry_path,
         candidates_path=candidates_path,
+        historical_hashes_path=historical_path,
         brief_path=brief_path,
         database_path=tmp_path / "job37.sqlite3",
         expected_candidates=4,
     )
 
     assert report["candidate_paths_attempted"] == 4
-    assert report["hydrated_jobs"] == 4
+    assert report["successful_detail_paths"] == 4
     assert report["hydration_failures"] == 0
+    assert report["hydrated_unique_jobs"] == 4
+    assert report["provider_identity_collapses"] == 0
     assert report["semantic_match_postings"] == 4
     assert report["semantic_match_groups"] == 3
     assert report["practical_duplicate_postings_collapsed"] == 1
