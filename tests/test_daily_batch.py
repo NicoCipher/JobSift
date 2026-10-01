@@ -163,6 +163,38 @@ def test_batch_freshness_gate_suppresses_stale_unknown_and_future_postings(repo,
     assert dispositions[jobs[3].id] == "posting_time_invalid"
 
 
+def test_release_rechecks_freshness_after_review_delay(repo, tmp_path, monkeypatch):
+    job = posting(1, posted_at=NOW - timedelta(hours=23))
+    seed(repo, [job])
+    destination = tmp_path / "out.csv"
+    prepared = prepare(
+        repo,
+        request(
+            repo,
+            destination,
+            [job],
+            quota=1,
+            max_posting_age_hours=24,
+            unknown_posting_age_policy="reject",
+            freshness_evaluated_at=NOW,
+        ),
+    )
+    assert prepared.selected_count == 1
+
+    class LaterDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = NOW + timedelta(hours=2)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr("job_scout.storage.daily_batches.datetime", LaterDateTime)
+    released = finalize(repo, prepared)
+
+    assert released.status == "failed"
+    assert "no longer delivery-fresh" in (released.error or "")
+    assert not destination.exists()
+
+
 def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
     job = posting(1)
     seed(repo, [job])
