@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import hashlib
-import struct
 
 import pytest
 
@@ -106,37 +104,24 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
 
     target_identity = registry.targets[0].target_identity
     candidate_payload = {
-        "manifest_version": "workday-hydration-candidates-v1",
+        "manifest_version": "workday-hydration-candidates-v2",
         "source_index_run_id": 1,
         "brief_client_id": "client",
         "trusted_candidate_count": 4,
         "candidates": [
-            {"target_identity": target_identity, "external_path": f"/job/Test/{value}"}
+            {
+                "target_identity": target_identity,
+                "external_path": f"/job/Test/Role_{value}",
+                "source_job_id": value,
+                "historically_surfaced": value == "HIST",
+                "historical_match_basis": "exact_identity" if value == "HIST" else None,
+            }
             for value in ("HIST", "A", "B", "STALE")
         ],
     }
     candidate_payload["manifest_sha256"] = sha256_json(candidate_payload)
     candidates_path = tmp_path / "candidates.json"
     _write_json(candidates_path, candidate_payload)
-
-    identity_hash = sha256_json(
-        ["workday", "alpha.wd1.myworkdayjobs.com:alpha:External", "HIST"]
-    )
-    identity_raw = bytes.fromhex(identity_hash)
-    binary = b"JSH1" + struct.pack(">II", 1, 0) + identity_raw
-    binary_path = tmp_path / "historical.bin"
-    binary_path.write_bytes(binary)
-    historical_payload = {
-        "ledger_version": "workday-historical-suppression-hashes-v1",
-        "client_id": "client",
-        "workday_unique_exact_identities": 1,
-        "workday_unique_normalized_urls": 0,
-        "binary_file": binary_path.name,
-        "binary_sha256": hashlib.sha256(binary).hexdigest(),
-    }
-    historical_payload["ledger_sha256"] = sha256_json(historical_payload)
-    historical_path = tmp_path / "historical.json"
-    _write_json(historical_path, historical_payload)
 
     brief = SearchBrief(
         client_id="client",
@@ -153,7 +138,6 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
     report = benchmark.run_hydration_benchmark(
         registry_path=registry_path,
         candidates_path=candidates_path,
-        historical_hashes_path=historical_path,
         brief_path=brief_path,
         database_path=tmp_path / "job37.sqlite3",
         expected_candidates=4,
@@ -174,7 +158,7 @@ def test_job37_full_accounting_uses_history_freshness_and_practical_dedupe(
 
 def test_job37_rejects_tampered_candidate_manifest(tmp_path: Path) -> None:
     payload = {
-        "manifest_version": "workday-hydration-candidates-v1",
+        "manifest_version": "workday-hydration-candidates-v2",
         "source_index_run_id": 1,
         "brief_client_id": "client",
         "trusted_candidate_count": 1,
