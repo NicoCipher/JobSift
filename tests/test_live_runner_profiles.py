@@ -524,6 +524,7 @@ def test_empty_review_batch_is_discarded_so_next_scope_can_run(tmp_path, monkeyp
         "evaluate_recent_inventory",
         lambda **_: (evaluation, ()),
     )
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
 
     discarded = []
     store = SimpleNamespace(
