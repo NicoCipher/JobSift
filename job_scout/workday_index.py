@@ -670,11 +670,16 @@ def scan_index_shard(
         "targets": results,
     }
     serialized = {
-        key: value.model_dump(mode="json") if isinstance(value, BaseModel) else value
-        for key, value in payload.items()
+        "artifact_version": "workday-list-index-v1",
+        "registry_id": registry.registry_id,
+        "registry_sha256": registry_sha,
+        "shard_manifest_sha256": manifest.manifest_sha256,
+        "shard_id": shard_id,
+        "started_at": started_at.isoformat().replace("+00:00", "Z"),
+        "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
+        "metrics": payload["metrics"].model_dump(mode="json"),
+        "targets": [result.model_dump(mode="json") for result in results],
     }
-    serialized["targets"] = [result.model_dump(mode="json") for result in results]
-    serialized["metrics"] = payload["metrics"].model_dump(mode="json")
     artifact = WorkdayIndexArtifact(
         **payload,
         artifact_sha256=sha256_json(serialized),
@@ -766,7 +771,7 @@ def analyze_index(
         registry_id=registry.registry_id,
         shard_manifest_sha256=manifest.manifest_sha256,
         client_id=brief.client_id,
-        targets_scanned=len({target for target, _ in postings}),
+        targets_scanned=sum(len(artifact.targets) for artifact in artifacts),
         targets_with_hydration_candidates=len(candidates_by_target),
         provider_rows_seen=sum(
             artifact.metrics.provider_rows_seen for artifact in artifacts
