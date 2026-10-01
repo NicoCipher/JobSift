@@ -46,6 +46,7 @@ jobs:
           python -m job_scout.workday_hydration_benchmark \
             --registry config/source_registries/production_active_v1.json \
             --candidates validation/workday_hydration_v1/candidates_run_36825761076.json.gz \
+            --historical-hashes validation/workday_hydration_v1/historical_candidate_suppression_run_36839426729.json \
             --brief config/search_briefs/taiwo_software_remote_us_v1.json \
             --database job37-result/jobs.sqlite3 \
             --output job37-result/report.json \
