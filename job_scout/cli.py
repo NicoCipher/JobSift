@@ -480,10 +480,17 @@ def main() -> None:
                 store = DailyBatchStore(repository)
                 result = store.get(args.batch_id)
                 if result.request.destination_id is not None:
-                    raise BatchConflict(
-                        "profile-attributed client Sheet batches must be released "
-                        "through delivery-profile release-batch"
+                    profiles = ClientDeliveryProfileStore(repository).list(
+                        result.request.client_id
                     )
+                    if any(
+                        profile.destination_id == result.request.destination_id
+                        for profile in profiles
+                    ):
+                        raise BatchConflict(
+                            "profile-attributed client Sheet batches must be released "
+                            "through delivery-profile release-batch"
+                        )
                 result = finalize_daily_batch(repository=repository, batch_id=result.batch_id)
                 rows = store.export_rows(result.batch_id)
             print(
