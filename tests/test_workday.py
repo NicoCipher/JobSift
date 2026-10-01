@@ -507,15 +507,17 @@ def test_path_hydration_skips_board_search_and_dedupes_requested_paths() -> None
         path = request.url.path.split(CONFIG.site, 1)[-1]
         return httpx.Response(200, json=detail(path), request=request)
 
-    result = WorkdayCollector(
+    collector = WorkdayCollector(
         httpx.Client(transport=httpx.MockTransport(handler)),
         delay=0,
         detail_concurrency=2,
-    ).hydrate_paths(TARGET, [first, second, first])
+    )
+    result = collector.hydrate_paths(TARGET, [first, second, first])
 
     assert result.status is CollectionStatus.SUCCESS
     assert result.raw_postings_received == 2
     assert {job.source_job_id for job in result.jobs} == {"R1", "R2"}
+    assert collector.last_path_ids == {first: "R1", second: "R2"}
     assert len(requests) == 2
     assert all(method == "GET" for method, _ in requests)
 
