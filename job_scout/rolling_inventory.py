@@ -19,7 +19,6 @@ from job_scout.production_registry import (
 from job_scout.shard_collection import (
     ShardCollectionArtifact,
     collect_shard,
-    default_collector_factory,
 )
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
