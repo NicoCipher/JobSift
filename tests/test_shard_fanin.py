@@ -61,6 +61,7 @@ def _job(
     *,
     suffix: str = "",
     board: str | None = None,
+    company: str | None = None,
 ) -> Job:
     source_id = f"job-{target.board_id}{suffix}"
     return Job(
@@ -69,7 +70,7 @@ def _job(
         source_job_id=source_id,
         source_board_id=board or target.board_id,
         title="Software Engineer",
-        company=target.company,
+        company=company or target.company,
         description_text="Build reliable software systems.",
         job_url=f"https://example.test/{target.board_id}/{source_id}",
         canonical_url=f"https://example.test/{target.board_id}/{source_id}",
@@ -90,6 +91,7 @@ def _artifact(
     duplicate_jobs: bool = False,
     partial_board: str | None = None,
     wrong_board: bool = False,
+    provider_company: str | None = None,
 ) -> ShardCollectionArtifact:
     class Collector:
         client = None
@@ -98,7 +100,11 @@ def _artifact(
             self.source = source
 
         def collect(self, target: SourceTarget) -> CollectionResult:
-            job = _job(target, board="wrong" if wrong_board else None)
+            job = _job(
+                target,
+                board="wrong" if wrong_board else None,
+                company=provider_company,
+            )
             jobs = [job, job.model_copy(deep=True)] if duplicate_jobs else [job]
             partial = target.board_id == partial_board
             return CollectionResult(
@@ -342,3 +348,33 @@ def test_fan_in_reverifies_artifact_hash_before_inventory_mutation(
     assert _inventory_table_exists(repository) is False
     with repository.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_fan_in_accepts_provider_company_name_different_from_registry_hint(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 1})
+    artifact = _artifact(
+        registry,
+        manifest,
+        "greenhouse-000",
+        provider_company="Alpha Holdings, Inc.",
+    )
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    report = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=[artifact],
+        now=lambda: PERSISTED,
+    )
+
+    assert report.status == "success"
+    with repository.connect() as connection:
+        companies = {
+            Job.model_validate_json(row["payload_json"]).company
+            for row in connection.execute("SELECT payload_json FROM jobs")
+        }
+    assert "Alpha Holdings, Inc." in companies
