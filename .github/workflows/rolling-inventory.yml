@@ -1,0 +1,166 @@
+name: Rolling Inventory Refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: Optional 30-minute rotation slot override
+        required: false
+        type: string
+  schedule:
+    - cron: "7,37 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-rolling-inventory
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e .
+
+      - name: Build rotating source plan
+        shell: bash
+        run: |
+          args=(
+            --registry config/source_registries/production_active_v1.json
+            --output-dir rolling-plan
+            --workday-detail-concurrency 4
+          )
+          if [[ -n "${{ inputs.slot }}" ]]; then
+            args+=(--slot "${{ inputs.slot }}")
+          fi
+          python -m job_scout.rolling_inventory plan "${args[@]}"
+
+      - name: Export worker matrix
+        id: matrix
+        run: |
+          matrix="$(python -c 'import json; print(json.dumps(json.load(open("rolling-plan/matrix.json")), separators=(",", ":")))' )"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jobsift-rolling-plan-${{ github.run_id }}
+          path: rolling-plan/
+          if-no-files-found: error
+          retention-days: 2
+
+  collect:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e .
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jobsift-rolling-plan-${{ github.run_id }}
+          path: rolling-plan
+
+      - name: Collect ${{ matrix.shard_id }}
+        run: |
+          mkdir -p shard-output
+          python -m job_scout.rolling_inventory collect             --registry rolling-plan/registry.json             --manifest rolling-plan/manifest.json             --shard-id "${{ matrix.shard_id }}"             --workday-detail-concurrency 4             --output "shard-output/${{ matrix.shard_id }}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jobsift-rolling-shard-${{ matrix.shard_id }}-${{ github.run_id }}
+          path: shard-output/${{ matrix.shard_id }}.json
+          if-no-files-found: error
+          retention-days: 2
+
+  persist-and-dispatch:
+    if: ${{ always() && needs.plan.result == 'success' && needs.collect.result == 'success' }}
+    needs:
+      - plan
+      - collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate persistent runtime
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON"; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jobsift-rolling-plan-${{ github.run_id }}
+          path: rolling-plan
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jobsift-rolling-shard-*-${{ github.run_id }}
+          path: shard-artifacts
+          merge-multiple: true
+
+      - name: Persist refreshed inventory
+        id: fanin
+        run: |
+          mkdir -p rolling-result
+          python -m job_scout.rolling_inventory fan-in             --database "$JOBSIFT_DATABASE"             --registry rolling-plan/registry.json             --manifest rolling-plan/manifest.json             --artifacts-dir shard-artifacts             --output rolling-result/report.json
+          run_id="$(python -c 'import json; print(json.load(open("rolling-result/report.json"))["run_id"])')"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Write Google credentials
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+
+      - name: Fill active client quotas
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/google-service-account.json
+        run: |
+          python -m job_scout.client_dispatcher             --database "$JOBSIFT_DATABASE" dispatch             --run-id "${{ steps.fanin.outputs.run_id }}"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: jobsift-rolling-result-${{ github.run_id }}
+          path: rolling-result/
+          if-no-files-found: warn
+          retention-days: 7
