@@ -219,6 +219,7 @@ class WorkdayCollector:
 
     def hydrate_paths(self, target: SourceTarget, paths: list[str]) -> CollectionResult:
         """Hydrate explicit Workday list paths without re-running board discovery."""
+        self.last_path_ids = {}
         self.last_counts = {
             "broad_total": 0,
             "paths_discovered": 0,
