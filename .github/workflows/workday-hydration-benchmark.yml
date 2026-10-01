@@ -2,6 +2,12 @@ name: JOB-37 Workday Hydration Benchmark
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "job_scout/workday_hydration_benchmark.py"
+      - "tests/test_workday_hydration_benchmark.py"
+      - "validation/workday_hydration_v1/**"
+      - ".github/workflows/workday-hydration-benchmark.yml"
   push:
     branches:
       - feat/job-37-workday-hydration-yield
@@ -12,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: jobsift-job37-workday-hydration
+  group: jobsift-job37-workday-hydration-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
