@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.live_runner import LiveRunnerConfig, run_once
 from job_scout.sourcing_plan import load_sourcing_plan
 from job_scout.storage.sqlite import SQLiteRepository
@@ -33,10 +34,16 @@ def run_active_profiles(
     retention_hours: int = 72,
 ) -> list[dict[str, object]]:
     repository = SQLiteRepository(database_path)
-    profiles = ClientDeliveryProfileStore(repository).active()
+    profile_store = ClientDeliveryProfileStore(repository)
+    profiles = profile_store.active()
     results: list[dict[str, object]] = []
+    gateway = GoogleSheetsGateway() if profiles else None
     for profile in profiles:
         try:
+            assert gateway is not None
+            reconciliation = profile_store.reconcile_destination_sheet(
+                profile, gateway=gateway
+            )
             plan_path = resolve_plan(plan_dir, profile.sourcing_plan_id)
             result = run_once(
                 LiveRunnerConfig(
@@ -58,6 +65,7 @@ def run_active_profiles(
                     source_before_delivery=False,
                 )
             )
+            result["sheet_reconciliation"] = reconciliation
             results.append(result)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             results.append(
@@ -85,6 +93,8 @@ def main() -> None:
         retention_hours=retention_hours,
     )
     print(json.dumps({"profiles": results}, sort_keys=True))
+    if any(result.get("action") == "profile_runner_error" for result in results):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
