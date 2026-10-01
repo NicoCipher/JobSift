@@ -99,4 +99,5 @@ jobs:
             --daily-quota "${{ inputs.daily_quota }}" \
             --status "${{ inputs.status }}" \
             --delivery-mode "${{ inputs.delivery_mode }}" \
-            --timezone "${{ inputs.timezone }}"
+            --timezone "${{ inputs.timezone }}" \
+            --reconcile
