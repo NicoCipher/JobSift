@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       slot:
-        description: Optional 30-minute rotation slot override
+        description: Optional hourly rotation slot override
         required: false
         type: string
   schedule:
-    - cron: "7,37 * * * *"
+    - cron: "17 * * * *"
 
 permissions:
   contents: read
@@ -39,7 +39,6 @@ jobs:
           args=(
             --registry config/source_registries/production_active_v1.json
             --output-dir rolling-plan
-            --workday-detail-concurrency 4
           )
           if [[ -n "${{ inputs.slot }}" ]]; then
             args+=(--slot "${{ inputs.slot }}")
@@ -86,7 +85,7 @@ jobs:
       - name: Collect ${{ matrix.shard_id }}
         run: |
           mkdir -p shard-output
-          python -m job_scout.rolling_inventory collect             --registry rolling-plan/registry.json             --manifest rolling-plan/manifest.json             --shard-id "${{ matrix.shard_id }}"             --workday-detail-concurrency 4             --output "shard-output/${{ matrix.shard_id }}.json"
+          python -m job_scout.rolling_inventory collect             --registry rolling-plan/registry.json             --manifest rolling-plan/manifest.json             --shard-id "${{ matrix.shard_id }}"             --output "shard-output/${{ matrix.shard_id }}.json"
 
       - uses: actions/upload-artifact@v4
         with:
