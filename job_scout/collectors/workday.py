@@ -125,8 +125,10 @@ class WorkdayCollector:
         self.delay = delay
         self.detail_concurrency = detail_concurrency
         self.last_counts: dict[str, int | str | bool] = {}
+        self.last_path_ids: dict[str, str] = {}
 
     def collect(self, target: SourceTarget) -> CollectionResult:
+        self.last_path_ids = {}
         self.last_counts = {
             "broad_total": 0,
             "paths_discovered": 0,
@@ -241,7 +243,8 @@ class WorkdayCollector:
             )
 
         self.last_counts["paths_discovered"] = len(unique_paths)
-        jobs, errors, _ = self._resolve_details(config, target, unique_paths)
+        jobs, errors, path_ids = self._resolve_details(config, target, unique_paths)
+        self.last_path_ids = dict(path_ids)
         self.last_counts.update(normalized=len(jobs), quarantined=len(errors))
         return CollectionResult(
             source=self.source,
