@@ -179,7 +179,7 @@ def run_hydration_benchmark(
             {
                 "target_identity": target_identity,
                 "external_path": external_path,
-                "source_job_id": source_job_id.strip(),
+                "list_source_job_id": source_job_id.strip(),
             }
         )
     if len(set(candidate_keys)) != len(candidate_keys):
@@ -210,6 +210,7 @@ def run_hydration_benchmark(
     hydrated_jobs: list[Job] = []
     target_reports: list[dict[str, Any]] = []
     path_errors: dict[tuple[str, str], str] = {}
+    provider_id_by_path: dict[tuple[str, str], str] = {}
     total_hydration_errors = 0
     collector = WorkdayCollector(detail_concurrency=detail_concurrency)
     try:
@@ -217,6 +218,13 @@ def run_hydration_benchmark(
             paths = grouped_paths[target_identity]
             result = collector.hydrate_paths(targets[target_identity].source_target(), paths)
             hydrated_jobs.extend(result.jobs)
+            path_ids = getattr(collector, "last_path_ids", {})
+            if not isinstance(path_ids, dict):
+                raise TypeError("Workday hydration path identity map is invalid")
+            for path, provider_id in path_ids.items():
+                if path not in paths or not isinstance(provider_id, str) or not provider_id:
+                    raise ValueError("Workday hydration path identity map is inconsistent")
+                provider_id_by_path[(target_identity, path)] = provider_id
             error_count = len(result.errors)
             total_hydration_errors += error_count
             for error in result.errors:
@@ -357,11 +365,18 @@ def run_hydration_benchmark(
     }
     per_candidate: list[dict[str, Any]] = []
     for candidate in candidate_records:
-        identity = (candidate["target_identity"], candidate["source_job_id"])
-        job = job_by_identity.get(identity)
-        error = path_errors.get(
-            (candidate["target_identity"], candidate["external_path"])
+        path_key = (candidate["target_identity"], candidate["external_path"])
+        authoritative_source_job_id = provider_id_by_path.get(path_key)
+        identity = (
+            candidate["target_identity"],
+            authoritative_source_job_id,
         )
+        job = (
+            job_by_identity.get(identity)
+            if authoritative_source_job_id is not None
+            else None
+        )
+        error = path_errors.get(path_key)
         if job is None:
             per_candidate.append(
                 {
@@ -370,6 +385,7 @@ def run_hydration_benchmark(
                         "failure" if error is not None else "provider_identity_mismatch"
                     ),
                     "hydration_error": error,
+                    "authoritative_source_job_id": authoritative_source_job_id,
                     "posting_age_evidence": None,
                     "match_decision": None,
                     "match_reasons": [],
@@ -428,6 +444,7 @@ def run_hydration_benchmark(
                 **candidate,
                 "hydration_status": "success",
                 "hydration_error": None,
+                "authoritative_source_job_id": authoritative_source_job_id,
                 "job_id": job.id,
                 "company": job.company,
                 "title": job.title,
