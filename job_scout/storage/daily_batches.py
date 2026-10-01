@@ -17,6 +17,7 @@ from job_scout.dedupe.resolver import DEDUPE_VERSION
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchItem, DailyBatchResult
 from job_scout.domain.models import Job, JobMatch, MatchDecision
 from job_scout.normalization.company import employer_key
+from job_scout.posting_freshness import posting_freshness_disposition
 
 if TYPE_CHECKING:
     from job_scout.storage.sqlite import SQLiteRepository
@@ -354,6 +355,16 @@ class DailyBatchStore:
         if len({v.group_id for v in candidates}) != len(candidates):
             raise BatchConflict("prepared groups merged; selection cannot be silently changed")
         for v in candidates:
+            freshness = posting_freshness_disposition(
+                posted_at=v.job.posted_at,
+                max_age_hours=result.request.max_posting_age_hours,
+                unknown_policy=result.request.unknown_posting_age_policy,
+                evaluated_at=datetime.now(UTC),
+            )
+            if freshness is not None:
+                raise BatchConflict(
+                    f"prepared posting is no longer fresh at delivery: {freshness}"
+                )
             if (
                 v.evidence_sha256 != expected[v.job.id]
                 or v.historical
