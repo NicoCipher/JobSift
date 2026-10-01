@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import struct
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -77,33 +76,40 @@ def _job(
     )
 
 
-def _write_historical_ledger(path: Path, historical_job: Job) -> Path:
-    identity_hash = benchmark._identity_digest(historical_job)
-    binary = b"JSH2" + struct.pack(">II", 1, 0) + identity_hash
-    binary_path = path / "historical.bin"
-    binary_path.write_bytes(binary)
+def _write_historical_evidence(
+    path: Path,
+    historical_job: Job,
+    *,
+    candidate_manifest_sha256: str,
+) -> Path:
     metadata = {
-        "ledger_version": "workday-historical-suppression-hashes-v1",
+        "evidence_version": "workday-historical-candidate-suppression-v1",
         "client_id": "client",
+        "source_index_run_id": 1,
+        "source_candidate_manifest_sha256": candidate_manifest_sha256,
+        "hydration_probe_run_id": 99,
+        "hydrated_unique_jobs_observed": 4,
         "source_logical_rows": 1,
         "source_exact_supported_identity_rows": 1,
         "source_workday_exact_identity_rows": 1,
-        "workday_unique_exact_identity_hashes": 1,
-        "workday_unique_normalized_url_hashes": 0,
+        "source_workday_unique_exact_identities": 1,
+        "source_workday_normalized_url_rows": 1,
+        "source_workday_unique_normalized_urls": 1,
         "logical_corpus_sha256": "a" * 64,
-        "binary_file": binary_path.name,
-        "binary_sha256": hashlib.sha256(binary).hexdigest(),
+        "matching_identity_hashes": [benchmark._identity_digest(historical_job).hex()],
+        "matching_url_hashes": [],
+        "historically_surfaced_authoritative_jobs": 1,
         "hash_algorithm": "sha256",
         "identity_hash_encoding": (
             "canonical-json [source, source_board_id, source_job_id]"
         ),
         "url_hash_encoding": "utf8 canonical_url",
+        "privacy_note": "test",
     }
-    metadata["ledger_sha256"] = sha256_json(metadata)
+    metadata["evidence_sha256"] = sha256_json(metadata)
     metadata_path = path / "historical.json"
     _write_json(metadata_path, metadata)
     return metadata_path
-
 
 def test_job37_full_accounting_uses_authoritative_identity_history_and_dedupe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -169,7 +175,11 @@ def test_job37_full_accounting_uses_authoritative_identity_history_and_dedupe(
     candidates_path = tmp_path / "candidates.json"
     _write_json(candidates_path, candidate_payload)
 
-    historical_path = _write_historical_ledger(tmp_path, jobs[0])
+    historical_path = _write_historical_evidence(
+        tmp_path,
+        jobs[0],
+        candidate_manifest_sha256=candidate_payload["manifest_sha256"],
+    )
 
     brief = SearchBrief(
         client_id="client",
