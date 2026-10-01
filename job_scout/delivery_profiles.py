@@ -316,17 +316,19 @@ class ClientDeliveryProfileStore:
             )
             if has_batches:
                 for row in connection.execute(
-                    "SELECT i.delivery_group_id,i.export_row_json "
+                    "SELECT g.group_id AS current_group_id,i.export_row_json "
                     "FROM daily_batch_items i "
                     "JOIN daily_batches b ON b.batch_id=i.batch_id "
+                    "LEFT JOIN posting_delivery_groups g "
+                    "ON g.job_id=i.representative_job_id "
                     "WHERE b.client_id=? AND b.destination=? "
                     "AND b.status='delivered'",
                     (profile.client_id, destination.logical_uri),
                 ).fetchall():
                     export = json.loads(row["export_row_json"])
                     link = str(export.get("Job Link", "")).strip()
-                    if link:
-                        frozen_groups[canonicalize_url(link)] = row["delivery_group_id"]
+                    if link and row["current_group_id"] is not None:
+                        frozen_groups[canonicalize_url(link)] = row["current_group_id"]
 
             identities: set[tuple[str, str]] = set()
             for row in observed_rows:
