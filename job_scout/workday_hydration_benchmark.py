@@ -25,7 +25,7 @@ from job_scout.storage.sqlite import SQLiteRepository
 def _load_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
-        raise ValueError(f"{path} must contain a JSON object")
+        raise TypeError(f"{path} must contain a JSON object")
     return value
 
 
@@ -63,7 +63,7 @@ def _load_historical_evidence(path: Path, *, client_id: str) -> dict[str, Any]:
     raw_identity_hashes = metadata.get("matching_identity_hashes")
     raw_url_hashes = metadata.get("matching_url_hashes")
     if not isinstance(raw_identity_hashes, list) or not isinstance(raw_url_hashes, list):
-        raise ValueError("historical suppression hashes are invalid")
+        raise TypeError("historical suppression hashes are invalid")
     try:
         identity_hashes = {bytes.fromhex(value) for value in raw_identity_hashes}
         url_hashes = {bytes.fromhex(value) for value in raw_url_hashes}
@@ -133,11 +133,11 @@ def run_hydration_benchmark(
     candidate_keys: list[tuple[str, str]] = []
     for row in candidates:
         if not isinstance(row, dict):
-            raise ValueError("candidate manifest contains invalid candidate rows")
+            raise TypeError("candidate manifest contains invalid candidate rows")
         target_identity = row.get("target_identity")
         external_path = row.get("external_path")
         if not isinstance(target_identity, str) or not isinstance(external_path, str):
-            raise ValueError("candidate manifest contains invalid candidate rows")
+            raise TypeError("candidate manifest contains invalid candidate rows")
         candidate_keys.append((target_identity, external_path))
     if len(set(candidate_keys)) != len(candidate_keys):
         raise ValueError("candidate manifest contains duplicate target/path candidates")
