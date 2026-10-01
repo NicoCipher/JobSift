@@ -92,6 +92,9 @@ jobs:
 
   persist-and-deliver:
     if: ${{ always() && needs.plan.result == 'success' }}
+    concurrency:
+      group: jobsift-client-delivery-mutation
+      cancel-in-progress: false
     needs:
       - plan
       - collect
