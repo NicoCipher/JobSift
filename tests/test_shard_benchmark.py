@@ -354,8 +354,8 @@ def test_benchmark_plan_records_bounded_workday_detail_concurrency() -> None:
     assert plan.workday_detail_concurrency == 4
 
 
-@pytest.mark.parametrize("value", [0, 9])
-def test_benchmark_plan_rejects_unsafe_workday_detail_concurrency(value: int) -> None:
+@pytest.mark.parametrize("value", [0, 9, True])
+def test_benchmark_plan_rejects_unsafe_workday_detail_concurrency(value) -> None:
     with pytest.raises(ValueError, match="Workday detail concurrency"):
         build_benchmark_plan(
             _registry(),
