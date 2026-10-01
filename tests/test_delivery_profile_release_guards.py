@@ -63,8 +63,10 @@ def make_job(job_id: str, company: str) -> Job:
     )
 
 
-def setup_profile(repo: SQLiteRepository, *, quota: int = 2):
-    gateway = FakeSheet()
+def setup_profile(
+    repo: SQLiteRepository, *, quota: int = 2, gateway: FakeSheet | None = None
+):
+    gateway = gateway or FakeSheet()
     destination = ClientSheetDestinationStore(repo).register_google_sheet(
         client_id="client-a",
         destination_id="jobs",
@@ -173,3 +175,47 @@ def test_reconcile_before_release_blocks_manually_added_duplicate(tmp_path):
     )
     assert failed.status == "failed"
     assert len(gateway.values) == 2
+
+def test_release_guard_recovers_already_applied_uncertain_export_before_quota_check(tmp_path):
+    class UncertainSheet(FakeSheet):
+        def __init__(self):
+            super().__init__()
+            self.fail_once = True
+
+        def append_table_rows(self, spreadsheet_id, tab, rows):
+            super().append_table_rows(spreadsheet_id, tab, rows)
+            if self.fail_once:
+                self.fail_once = False
+                raise OSError("simulated lost append response")
+
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    uncertain = UncertainSheet()
+    gateway, destination, store, profile = setup_profile(
+        repo, quota=1, gateway=uncertain
+    )
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+
+    failed = finalize_daily_batch(
+        repository=repo,
+        batch_id=batch.batch_id,
+        sheets_gateway=gateway,
+    )
+    assert failed.status == "failed"
+    assert len(gateway.values) == 2
+
+    guarded, reconciliation, remaining = store.guard_batch_release(
+        profile, batch.batch_id, gateway=gateway
+    )
+    assert guarded.batch_id == batch.batch_id
+    assert reconciliation["observed_links"] == 1
+    assert remaining == 0
+
+    recovered = finalize_daily_batch(
+        repository=repo,
+        batch_id=batch.batch_id,
+        sheets_gateway=gateway,
+    )
+    assert recovered.status == "delivered"
+    assert len(gateway.values) == 2
+    assert store.delivered_today(profile) == 1
+
