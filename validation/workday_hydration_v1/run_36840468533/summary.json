@@ -1,0 +1,81 @@
+{
+  "summary_version": "workday-hydration-yield-summary-v1",
+  "job": "JOB-37",
+  "benchmark_run_id": 36840468533,
+  "benchmark_head_sha": "f4d6466be6b4f50d66905e07df3b3428e0ac6cc8",
+  "artifact_id": 11150908290,
+  "artifact_digest": "sha256:67e9016a500b5d7a30558b93c2d1e248c75d041046ca552a56d708f8dc319d47",
+  "report_json_sha256": "d82dd8050a0424ca7cd24fdafc1f37f3c5f1f7c02c06257080b758807d5568a2",
+  "source_index_run_id": 36825761076,
+  "candidate_manifest_sha256": "d3ba8f46d83f65e88944f7f465a87053c90b1b081762edb24a80e07463c957ab",
+  "historical_evidence_sha256": "ab706e17b55cb2ec3a5ca979600ac6a97f14a10bfe64b7210ded1852c48faa8c",
+  "index_evidence": {
+    "complete_targets": 92,
+    "partial_targets": 8,
+    "trusted_candidates": 140,
+    "excluded_partial_target_candidates": 158
+  },
+  "hydration": {
+    "candidate_paths_attempted": 140,
+    "candidate_bearing_targets": 24,
+    "successful_detail_paths": 139,
+    "hydration_failures": 1,
+    "hydrated_unique_jobs": 139,
+    "provider_identity_collapses": 0,
+    "failure": {
+      "target_identity": "workday:autodesk.wd1.myworkdayjobs.com:autodesk:Ext",
+      "classification": "HTTP 403 detail response",
+      "count": 1
+    }
+  },
+  "freshness": {
+    "policy_max_age_hours": 24,
+    "unknown_policy": "reject",
+    "authoritative_source": "Workday jobPostingInfo.startDate",
+    "fresh_postings": 2,
+    "stale_postings": 137,
+    "unknown_or_invalid_posting_time": 0
+  },
+  "matching": {
+    "strong_match": 6,
+    "needs_review": 65,
+    "reject": 68,
+    "automatic_match_eligible_postings": 6,
+    "automatic_match_eligible_groups": 6
+  },
+  "history_and_dedupe": {
+    "historically_surfaced_postings": 2,
+    "historically_suppressed_match_eligible_groups": 0,
+    "prior_delivery_suppressed_groups": 0,
+    "practical_duplicate_postings_collapsed": 0
+  },
+  "fresh_posting_outcomes": [
+    {
+      "company": "Resmed",
+      "title": "Student Software Engineer",
+      "decision": "reject",
+      "reason": "Australia does not match the US target market"
+    },
+    {
+      "company": "swa",
+      "title": "Summer 2027 Software Engineer Internship",
+      "decision": "needs_review",
+      "reason": "US target role matched but remote status is unknown"
+    }
+  ],
+  "strong_match_staleness_hours_at_evaluation": [
+    33.11,
+    33.11,
+    57.11,
+    57.11,
+    57.11,
+    81.11
+  ],
+  "final": {
+    "fresh_unique_delivery_groups": 0,
+    "fresh_unique_employers": 0,
+    "max_jobs_per_employer_per_batch": 1,
+    "delivery_policy_eligible_count": 0
+  },
+  "conclusion": "The 140-candidate trusted complete-target Workday cohort provides zero automatic deliveries under the current <=24h freshness rule and unchanged SearchBrief. The 158 candidates from partial targets remain excluded from capacity evidence."
+}
