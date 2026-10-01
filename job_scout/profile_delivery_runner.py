@@ -32,10 +32,15 @@ def run_active_profiles(
     plan_dir: Path,
     reports_dir: Path,
     retention_hours: int = 72,
+    control_id: str | None = None,
 ) -> list[dict[str, object]]:
     repository = SQLiteRepository(database_path)
     profile_store = ClientDeliveryProfileStore(repository)
-    profiles = profile_store.active()
+    if control_id is None:
+        profiles = profile_store.active()
+    else:
+        selected = profile_store.get_by_control_id(control_id)
+        profiles = (selected,) if selected.status == "active" else ()
     results: list[dict[str, object]] = []
     gateway = GoogleSheetsGateway() if profiles else None
     for profile in profiles:
@@ -84,6 +89,7 @@ def main() -> None:
     plan_dir = Path(os.getenv("JOBSIFT_PLAN_DIR", "config/sourcing_plans"))
     reports_dir = Path(os.getenv("JOBSIFT_REPORTS_DIR", "/tmp/jobsift-runs"))
     retention_hours = int(os.getenv("JOBSIFT_INVENTORY_RETENTION_HOURS", "72"))
+    control_id = os.getenv("JOBSIFT_PROFILE_CONTROL_ID", "").strip() or None
     if retention_hours < 1:
         raise ValueError("JOBSIFT_INVENTORY_RETENTION_HOURS must be at least 1")
     results = run_active_profiles(
@@ -91,6 +97,7 @@ def main() -> None:
         plan_dir=plan_dir,
         reports_dir=reports_dir,
         retention_hours=retention_hours,
+        control_id=control_id,
     )
     print(json.dumps({"profiles": results}, sort_keys=True))
     if any(result.get("action") == "profile_runner_error" for result in results):
