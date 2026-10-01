@@ -15,7 +15,10 @@ from job_scout.delivery_destinations import (
     ClientSheetDestinationStore,
     ClientSheetRegistrationRequest,
 )
-from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.delivery_profiles import (
+    ClientDeliveryProfileStore,
+    delivery_profile_control_id,
+)
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
@@ -128,17 +131,56 @@ def main() -> None:
         "--delivery-mode", choices=("review", "auto"), default="review"
     )
     delivery_profile_set.add_argument("--timezone", default="Africa/Lagos")
+
+    delivery_profile_private = delivery_profile_commands.add_parser(
+        "set-from-registration",
+        help="Create/update a profile from a private Sheet-registration JSON file",
+    )
+    delivery_profile_private.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_private.add_argument("--registration-file", required=True, type=Path)
+    delivery_profile_private.add_argument("--plan", required=True, type=Path)
+    delivery_profile_private.add_argument("--daily-quota", required=True, type=int)
+    delivery_profile_private.add_argument(
+        "--status", choices=("active", "paused"), default="paused"
+    )
+    delivery_profile_private.add_argument(
+        "--delivery-mode", choices=("review", "auto"), default="review"
+    )
+    delivery_profile_private.add_argument("--timezone", default="Africa/Lagos")
+
     delivery_profile_list = delivery_profile_commands.add_parser("list")
     delivery_profile_list.add_argument("--database", default="jobs.sqlite3")
-    delivery_profile_list.add_argument("--client")
+
+    delivery_profile_status = delivery_profile_commands.add_parser("status")
+    delivery_profile_status.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_status.add_argument("--profile-id", required=True)
+
     for name in ("pause", "resume"):
         command = delivery_profile_commands.add_parser(name)
         command.add_argument("--database", default="jobs.sqlite3")
-        command.add_argument("--client", required=True)
-        command.add_argument("--destination-id", required=True)
+        command.add_argument("--profile-id", required=True)
+
+    delivery_profile_quota = delivery_profile_commands.add_parser("set-quota")
+    delivery_profile_quota.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_quota.add_argument("--profile-id", required=True)
+    delivery_profile_quota.add_argument("--daily-quota", required=True, type=int)
+
+    delivery_profile_mode = delivery_profile_commands.add_parser("set-mode")
+    delivery_profile_mode.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_mode.add_argument("--profile-id", required=True)
+    delivery_profile_mode.add_argument(
+        "--delivery-mode", choices=("review", "auto"), required=True
+    )
+
+    delivery_profile_timezone = delivery_profile_commands.add_parser("set-timezone")
+    delivery_profile_timezone.add_argument("--database", default="jobs.sqlite3")
+    delivery_profile_timezone.add_argument("--profile-id", required=True)
+    delivery_profile_timezone.add_argument("--timezone", required=True)
+
     for name in ("release-batch", "discard-batch"):
         command = delivery_profile_commands.add_parser(name)
         command.add_argument("--database", default="jobs.sqlite3")
+        command.add_argument("--profile-id", required=True)
         command.add_argument("--batch-id", required=True)
         if name == "release-batch":
             command.add_argument(
@@ -298,58 +340,84 @@ def main() -> None:
     if args.command == "delivery-profile":
         from job_scout.domain.daily_batch import BatchConflict
 
+        def _profile_for_control_id():
+            return store.get_by_control_id(args.profile_id)
+
+        def _public(value):
+            return store.public_status(value)
+
+        def _set_profile(client_id, destination_id, plan_path):
+            plan_path = plan_path.resolve()
+            plan = load_sourcing_plan(plan_path)
+            brief_path = Path(plan.search_brief)
+            if not brief_path.is_absolute():
+                brief_path = (plan_path.parent / brief_path).resolve()
+            brief = load_search_brief(brief_path)
+            if brief.client_id != client_id:
+                parser.error(
+                    "sourcing plan SearchBrief client_id does not match the client"
+                )
+            return store.upsert(
+                client_id=client_id,
+                destination_id=destination_id,
+                sourcing_plan_id=plan.plan_id,
+                daily_quota=args.daily_quota,
+                status=args.status,
+                delivery_mode=args.delivery_mode,
+                timezone=args.timezone,
+            )
+
         try:
             repository = SQLiteRepository(args.database)
             store = ClientDeliveryProfileStore(repository)
-            if args.delivery_profile_command == "set":
-                plan_path = args.plan.resolve()
-                plan = load_sourcing_plan(plan_path)
-                brief_path = Path(plan.search_brief)
-                if not brief_path.is_absolute():
-                    brief_path = (plan_path.parent / brief_path).resolve()
-                brief = load_search_brief(brief_path)
-                if brief.client_id != args.client:
-                    parser.error(
-                        "sourcing plan SearchBrief client_id does not match --client"
-                    )
-                value = store.upsert(
-                    client_id=args.client,
-                    destination_id=args.destination_id,
-                    sourcing_plan_id=plan.plan_id,
-                    daily_quota=args.daily_quota,
-                    status=args.status,
-                    delivery_mode=args.delivery_mode,
-                    timezone=args.timezone,
+            command = args.delivery_profile_command
+            if command == "set":
+                value = _set_profile(args.client, args.destination_id, args.plan)
+                print(json.dumps(_public(value), sort_keys=True))
+            elif command == "set-from-registration":
+                registration = ClientSheetRegistrationRequest.model_validate_json(
+                    args.registration_file.read_text(encoding="utf-8")
                 )
-                print(json.dumps(value.model_dump(mode="json"), sort_keys=True))
-            elif args.delivery_profile_command == "list":
-                values = store.list(args.client)
+                value = _set_profile(
+                    registration.client_id,
+                    registration.destination_id,
+                    args.plan,
+                )
+                print(json.dumps(_public(value), sort_keys=True))
+            elif command == "list":
                 print(
                     json.dumps(
-                        [
-                            {
-                                **value.model_dump(mode="json"),
-                                "delivered_today": store.delivered_today(value),
-                                "remaining_today": store.remaining_today(value),
-                            }
-                            for value in values
-                        ],
+                        [_public(value) for value in store.list()],
                         sort_keys=True,
                     )
                 )
-            elif args.delivery_profile_command in {"pause", "resume"}:
-                status = (
-                    "paused"
-                    if args.delivery_profile_command == "pause"
-                    else "active"
-                )
-                value = store.set_status(
-                    args.client, args.destination_id, status
-                )
-                print(json.dumps(value.model_dump(mode="json"), sort_keys=True))
+            elif command == "status":
+                print(json.dumps(_public(_profile_for_control_id()), sort_keys=True))
+            elif command in {"pause", "resume", "set-quota", "set-mode", "set-timezone"}:
+                current = _profile_for_control_id()
+                changes = {}
+                if command == "pause":
+                    changes["status"] = "paused"
+                elif command == "resume":
+                    changes["status"] = "active"
+                elif command == "set-quota":
+                    changes["daily_quota"] = args.daily_quota
+                elif command == "set-mode":
+                    changes["delivery_mode"] = args.delivery_mode
+                else:
+                    changes["timezone"] = args.timezone
+                value = store.update_controls(current, **changes)
+                print(json.dumps(_public(value), sort_keys=True))
             else:
+                profile = _profile_for_control_id()
                 batch_store = DailyBatchStore(repository)
                 result = batch_store.get(args.batch_id)
+                expected_control_id = delivery_profile_control_id(
+                    result.request.client_id,
+                    result.request.destination_id or "",
+                )
+                if expected_control_id != args.profile_id.casefold():
+                    parser.error("batch does not belong to the selected delivery profile")
                 if args.delivery_profile_command == "release-batch":
                     if args.confirm_batch_id != args.batch_id:
                         parser.error("confirmation must match the reviewed batch ID")
@@ -361,9 +429,10 @@ def main() -> None:
                 print(
                     json.dumps(
                         {
+                            "profile_id": delivery_profile_control_id(
+                                profile.client_id, profile.destination_id
+                            ),
                             "batch_id": result.batch_id,
-                            "client_id": result.request.client_id,
-                            "destination_id": result.request.destination_id,
                             "status": result.status,
                             "selected_count": result.selected_count,
                             "shortfall": result.shortfall,
