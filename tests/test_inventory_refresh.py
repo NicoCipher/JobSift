@@ -2,7 +2,6 @@ from pathlib import Path
 
 from job_scout import inventory_refresh
 
-
 REGISTRY = Path("config/source_registries/production_active_v1.json")
 
 
