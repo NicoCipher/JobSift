@@ -49,7 +49,7 @@ def setup_destination(repo, gateway):
             "Job Title": "JOB TITLE",
             "Company Name": "COMPANY NAME",
             "Job Link": "LINKS",
-            "Description": "DESCRIPTION",
+            "Job Description": "DESCRIPTION",
         },
         gateway=gateway,
     )
