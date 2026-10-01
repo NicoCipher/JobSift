@@ -212,14 +212,16 @@ def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
 
     assert first == {"observed_links": 1, "newly_recorded_links": 1}
     assert second == {"observed_links": 1, "newly_recorded_links": 0}
-    assert repo.is_historically_surfaced(existing, "client-a")
+    destination = ClientSheetDestinationStore(repo).get("client-a", "jobs")
+    assert repo.is_historically_surfaced(
+        existing, "client-a", destination.logical_uri
+    )
     assert store.delivered_today(profile) == 1
 
     # If the same link is also journaled as an automated delivery, quota
     # accounting still counts the URL once.
     repo.upsert_job(existing)
     group_id = repo.delivery_group_id(existing.id)
-    destination = ClientSheetDestinationStore(repo).get("client-a", "jobs")
     with repo.connect() as connection:
         connection.execute(
             "INSERT OR IGNORE INTO group_deliveries VALUES (?,?,?,?,?)",
@@ -236,7 +238,11 @@ def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
 
 def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
-    register(repo)
+    register(
+        repo,
+        client="sensitive-client-name",
+        destination="private-sheet-destination",
+    )
     store = ClientDeliveryProfileStore(repo)
     profile = store.upsert(
         client_id="sensitive-client-name",
@@ -259,3 +265,22 @@ def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
     assert store.public_status(profile)["profile_id"] == control_id
     assert "client_id" not in store.public_status(profile)
     assert "destination_id" not in store.public_status(profile)
+
+
+def test_observed_sheet_links_are_scoped_to_one_destination(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    posting = make_job()
+    repo.upsert_job(posting)
+
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination="client-sheet://sheet-a",
+        links=[str(posting.canonical_url)],
+    )
+
+    assert repo.is_historically_surfaced(
+        posting, "client-a", "client-sheet://sheet-a"
+    )
+    assert not repo.is_historically_surfaced(
+        posting, "client-a", "client-sheet://sheet-b"
+    )
