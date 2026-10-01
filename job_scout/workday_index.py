@@ -158,11 +158,15 @@ class WorkdayIndexPlan(BaseModel):
 class WorkdayIndexAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    analysis_version: Literal["workday-index-analysis-v1"] = "workday-index-analysis-v1"
+    analysis_version: Literal["workday-index-analysis-v2"] = "workday-index-analysis-v2"
     registry_id: str
     shard_manifest_sha256: str
     client_id: str
+    coverage_complete: bool
     targets_scanned: int = Field(ge=0)
+    targets_succeeded: int = Field(ge=0)
+    targets_partial: int = Field(ge=0)
+    targets_failed: int = Field(ge=0)
     targets_with_hydration_candidates: int = Field(ge=0)
     provider_rows_seen: int = Field(ge=0)
     unique_postings: int = Field(ge=0)
@@ -171,6 +175,9 @@ class WorkdayIndexAnalysis(BaseModel):
     recent_or_uncertain_for_72h: int = Field(ge=0)
     role_title_candidates: int = Field(ge=0)
     recent_or_uncertain_role_title_candidates: int = Field(ge=0)
+    hydration_candidates_on_complete_targets: int = Field(ge=0)
+    hydration_candidates_on_incomplete_targets: int = Field(ge=0)
+    incomplete_targets: list[dict[str, Any]] = Field(default_factory=list)
     top_targets: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -393,25 +400,35 @@ class WorkdayIndexScanner:
                 errors.append(f"{scope} offset {offset}: jobPostings is not a list")
                 break
             provider_rows_seen += len(rows)
+            signature = hashlib.sha256(
+                json.dumps(
+                    rows,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    default=str,
+                ).encode()
+            ).hexdigest()
+            if signature in signatures:
+                errors.append(f"{scope} offset {offset}: repeated page signature")
+                break
+            signatures.add(signature)
+
             page: list[WorkdayIndexPosting] = []
+            invalid_rows = 0
             for row in rows:
                 try:
                     item = _listing(row)
                 except ValueError:
                     item = None
                 if item is None:
-                    errors.append(f"{scope} offset {offset}: page has an invalid externalPath")
-                    break
+                    invalid_rows += 1
+                    continue
                 page.append(item)
-            if len(page) != len(rows):
-                break
-            signature = hashlib.sha256(
-                "\n".join(item.external_path for item in page).encode()
-            ).hexdigest()
-            if signature in signatures:
-                errors.append(f"{scope} offset {offset}: repeated page signature")
-                break
-            signatures.add(signature)
+            if invalid_rows:
+                errors.append(
+                    f"{scope} offset {offset}: {invalid_rows} rows have invalid externalPath"
+                )
             postings.extend(page)
             if not rows and offset < first_total:
                 errors.append(f"{scope} offset {offset}: empty page before declared total")
@@ -420,11 +437,12 @@ class WorkdayIndexScanner:
             self._pause()
 
         paths = [posting.external_path for posting in postings]
-        if first_total is not None and len(postings) != first_total and not errors:
+        if first_total is not None and len(postings) != first_total:
             errors.append(
-                f"{scope}: retrieved {len(postings)} rows but first page declared {first_total}"
+                f"{scope}: retrieved {len(postings)} valid rows but first page declared "
+                f"{first_total}"
             )
-        if len(set(paths)) != len(paths) and not errors:
+        if len(set(paths)) != len(paths):
             errors.append(f"{scope}: duplicate externalPath values across pages")
         return _QueryResult(
             postings=postings,
@@ -545,10 +563,17 @@ class WorkdayIndexScanner:
                     else "capped_partial"
                 )
         elif broad.total > CAP_TOTAL:
-            errors.append(
-                f"broad total {broad.total} exceeds the verified {CAP_TOTAL} cap contract"
-            )
-            coverage_mode = "capped_partial"
+            # A historical 2,000-row cap must not override stronger live evidence.
+            # If this exact query enumerated every declared row with unique paths and
+            # no errors, broad pagination itself proves coverage beyond the old cap.
+            if broad.complete:
+                coverage_mode = "broad"
+            else:
+                errors.append(
+                    f"broad total {broad.total} exceeds {CAP_TOTAL} and exact coverage "
+                    "was not proven"
+                )
+                coverage_mode = "capped_partial"
 
         completed_at = utc_now()
         postings = [merged[path] for path in sorted(merged)]
@@ -742,15 +767,20 @@ def analyze_index(
         manifest=manifest,
         artifacts=artifacts,
     )
+    target_results = [
+        target for artifact in artifacts for target in artifact.targets
+    ]
+    target_status = {target.target_identity: target.status for target in target_results}
     postings = [
         (target.target_identity, posting)
-        for artifact in artifacts
-        for target in artifact.targets
+        for target in target_results
         for posting in target.postings
     ]
     candidates_by_target: Counter[str] = Counter()
     role_candidates = 0
     recent_role_candidates = 0
+    complete_target_candidates = 0
+    incomplete_target_candidates = 0
     hinted = 0
     stale = 0
     for target_identity, posting in postings:
@@ -763,15 +793,45 @@ def analyze_index(
             if not is_stale:
                 recent_role_candidates += 1
                 candidates_by_target[target_identity] += 1
+                if target_status[target_identity] is CollectionStatus.SUCCESS:
+                    complete_target_candidates += 1
+                else:
+                    incomplete_target_candidates += 1
+
+    status_counts = Counter(target.status for target in target_results)
+    incomplete_targets = [
+        {
+            "target_identity": target.target_identity,
+            "status": target.status.value,
+            "broad_total": target.broad_total,
+            "coverage_mode": target.coverage_mode,
+            "valid_postings_indexed": len(target.postings),
+            "provider_rows_seen": target.provider_rows_seen,
+            "errors": target.errors,
+        }
+        for target in target_results
+        if target.status is not CollectionStatus.SUCCESS
+    ]
     top_targets = [
-        {"target_identity": target, "hydration_candidates": count}
+        {
+            "target_identity": target,
+            "target_status": target_status[target].value,
+            "hydration_candidates": count,
+        }
         for target, count in candidates_by_target.most_common(25)
     ]
+    partial = status_counts[CollectionStatus.PARTIAL]
+    succeeded = status_counts[CollectionStatus.SUCCESS]
+    failed = len(target_results) - succeeded - partial
     return WorkdayIndexAnalysis(
         registry_id=registry.registry_id,
         shard_manifest_sha256=manifest.manifest_sha256,
         client_id=brief.client_id,
-        targets_scanned=sum(len(artifact.targets) for artifact in artifacts),
+        coverage_complete=partial == 0 and failed == 0,
+        targets_scanned=len(target_results),
+        targets_succeeded=succeeded,
+        targets_partial=partial,
+        targets_failed=failed,
         targets_with_hydration_candidates=len(candidates_by_target),
         provider_rows_seen=sum(
             artifact.metrics.provider_rows_seen for artifact in artifacts
@@ -782,6 +842,9 @@ def analyze_index(
         recent_or_uncertain_for_72h=len(postings) - stale,
         role_title_candidates=role_candidates,
         recent_or_uncertain_role_title_candidates=recent_role_candidates,
+        hydration_candidates_on_complete_targets=complete_target_candidates,
+        hydration_candidates_on_incomplete_targets=incomplete_target_candidates,
+        incomplete_targets=incomplete_targets,
         top_targets=top_targets,
     )
 
