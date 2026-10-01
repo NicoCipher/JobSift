@@ -67,6 +67,8 @@ Available operations:
 - **resume** — reactivate it
 - **list** — inspect saved profiles
 - **run-now** — consume the current shared inventory immediately
+- **release-batch** — publish an explicitly reviewed prepared batch
+- **discard-batch** — discard an unreleased prepared batch
 
 For **set**, provide the logical client ID and registered destination ID, choose
 the daily quota, status, delivery mode and timezone. The current software-role
