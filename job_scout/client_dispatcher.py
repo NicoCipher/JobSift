@@ -282,6 +282,18 @@ def dispatch_profile(
     run = inventory.get(run_id)
     if run is None or run.status == "running" or run.completed_at is None:
         raise ValueError("inventory run is not complete")
+    if run.status != "success" and profile.delivery_mode == "auto":
+        return {
+            **base,
+            "action": "partial_refresh_blocked",
+            "run_id": run_id,
+            "inventory_status": run.status,
+        }
+
+    retention = repository.prune_stale_inventory(
+        retention_hours=72,
+        now=now,
+    )
 
     evaluation = evaluate_inventory_run(
         repository=repository,
@@ -328,6 +340,7 @@ def dispatch_profile(
             "action": "no_new_matches",
             "run_id": run_id,
             "evaluated": len(candidate_ids),
+            "retention": retention,
         }
 
     if profile.delivery_mode == "review":
@@ -338,6 +351,7 @@ def dispatch_profile(
             "batch_id": batch.batch_id,
             "selected_count": batch.selected_count,
             "shortfall": batch.shortfall,
+            "retention": retention,
         }
 
     delivered = finalize_daily_batch(
@@ -353,6 +367,7 @@ def dispatch_profile(
         "selected_count": delivered.selected_count,
         "shortfall": delivered.shortfall,
         "error": delivered.error,
+        "retention": retention,
     }
 
 
