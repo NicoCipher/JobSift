@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 
 import pytest
 
+from job_scout.cli import main
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
@@ -218,4 +220,35 @@ def test_release_guard_recovers_already_applied_uncertain_export_before_quota_ch
     assert recovered.status == "delivered"
     assert len(gateway.values) == 2
     assert store.delivered_today(profile) == 1
+
+def test_generic_batch_release_rejects_profile_attributed_client_sheet_batch(
+    tmp_path, monkeypatch, capsys
+):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    _gateway, destination, _store, _profile = setup_profile(repo, quota=1)
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "batch",
+            "release",
+            "--database",
+            str(database),
+            "--batch-id",
+            batch.batch_id,
+            "--confirm-batch-id",
+            batch.batch_id,
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code == 2
+    assert "delivery-profile release-batch" in capsys.readouterr().err
+    assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
 
