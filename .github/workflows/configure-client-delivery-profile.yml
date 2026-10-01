@@ -50,6 +50,7 @@ jobs:
       JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON: ${{ secrets.JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON }}
 
     steps:
@@ -61,12 +62,13 @@ jobs:
           cache: pip
 
       - name: Install JobSift
-        run: python -m pip install -e '.[cloud]'
+        run: python -m pip install -e '.[sheets,cloud]'
 
       - name: Validate private configuration
         run: |
           test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
           test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
           test -n "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" || {
             echo "Missing JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON secret"
             exit 1
@@ -74,8 +76,19 @@ jobs:
 
       - name: Write private registration context
         run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
           printf '%s' "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" > "$RUNNER_TEMP/client-sheet-registration.json"
           chmod 600 "$RUNNER_TEMP/client-sheet-registration.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Register or refresh client Sheet destination
+        run: |
+          job-scout destination register-google-sheet-file \
+            --database "$JOBSIFT_DATABASE" \
+            --registration-file "$RUNNER_TEMP/client-sheet-registration.json" \
+            > "$RUNNER_TEMP/client-sheet-registration-result.json"
+          echo "Client Sheet destination verified."
 
       - name: Configure delivery profile
         run: |
