@@ -252,3 +252,51 @@ def test_generic_batch_release_rejects_profile_attributed_client_sheet_batch(
     assert "delivery-profile release-batch" in capsys.readouterr().err
     assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
 
+def test_generic_batch_release_allows_registered_destination_without_profile(
+    tmp_path, monkeypatch
+):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    gateway = FakeSheet()
+    destination = ClientSheetDestinationStore(repo).register_google_sheet(
+        client_id="client-a",
+        destination_id="jobs",
+        display_name="Client Jobs",
+        spreadsheet="sheet123",
+        tab_name="Jobs",
+        column_mapping={
+            "Job Title": "Role",
+            "Company Name": "Company",
+            "Job Link": "URL",
+        },
+        gateway=gateway,
+    )
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+    called = []
+
+    def fake_finalize(*, repository, batch_id):
+        called.append(batch_id)
+        current = DailyBatchStore(repository).get(batch_id)
+        return current.model_copy(update={"status": "delivered"})
+
+    monkeypatch.setattr("job_scout.cli.finalize_daily_batch", fake_finalize)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "batch",
+            "release",
+            "--database",
+            str(database),
+            "--batch-id",
+            batch.batch_id,
+            "--confirm-batch-id",
+            batch.batch_id,
+        ],
+    )
+
+    main()
+
+    assert called == [batch.batch_id]
+
