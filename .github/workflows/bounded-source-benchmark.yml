@@ -48,6 +48,11 @@ on:
         required: true
         default: 2
         type: number
+      workday_detail_concurrency:
+        description: Bounded concurrent Workday detail reads per target
+        required: true
+        default: 4
+        type: number
 
 permissions:
   contents: read
@@ -83,6 +88,7 @@ jobs:
           ASHBY_SHARDS: ${{ github.event.inputs.ashby_shards }}
           WORKDAY_SHARDS: ${{ github.event.inputs.workday_shards }}
           LEVER_SHARDS: ${{ github.event.inputs.lever_shards }}
+          WORKDAY_DETAIL_CONCURRENCY: ${{ github.event.inputs.workday_detail_concurrency }}
         run: |
           if [ "$EVENT_NAME" = "push" ]; then
             GREENHOUSE_TARGETS=10
@@ -93,6 +99,7 @@ jobs:
             ASHBY_SHARDS=2
             WORKDAY_SHARDS=2
             LEVER_SHARDS=2
+            WORKDAY_DETAIL_CONCURRENCY=4
           fi
           python -m job_scout.shard_benchmark plan \
             --registry config/source_registries/production_active_v1.json \
@@ -104,7 +111,8 @@ jobs:
             --shards "greenhouse=$GREENHOUSE_SHARDS" \
             --shards "ashby=$ASHBY_SHARDS" \
             --shards "workday=$WORKDAY_SHARDS" \
-            --shards "lever=$LEVER_SHARDS"
+            --shards "lever=$LEVER_SHARDS" \
+            --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY"
 
       - name: Export worker matrix
         id: matrix
@@ -149,6 +157,7 @@ jobs:
           python -m job_scout.shard_benchmark collect \
             --registry benchmark-plan/registry.json \
             --manifest benchmark-plan/manifest.json \
+            --benchmark-plan benchmark-plan/plan.json \
             --shard-id "${{ matrix.shard_id }}" \
             --output "shard-output/${{ matrix.shard_id }}.json"
 
