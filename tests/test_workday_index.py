@@ -474,7 +474,7 @@ def test_analysis_surfaces_incomplete_target_candidate_counts() -> None:
     [
         {"targets_scanned": 3},
         {"coverage_complete": False},
-        {"hydration_candidates_on_complete_targets": 1},
+        {"hydration_candidates_on_complete_targets": 2},
         {"incomplete_targets": [{"target_identity": "unexpected"}]},
     ],
 )
