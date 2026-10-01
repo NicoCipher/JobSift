@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from job_scout import inventory_refresh
+import job_scout.inventory_refresh as inventory_refresh
 from job_scout.production_registry import load_production_registry
 
 
