@@ -1,0 +1,69 @@
+name: Manage Pending Client Batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: Client ID
+        required: true
+        type: string
+      profile_id:
+        description: Delivery profile
+        required: true
+        default: primary
+        type: string
+      action:
+        description: Release the reviewed batch or discard an unreleased prepared batch
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - discard
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery
+  cancel-in-progress: false
+
+jobs:
+  manage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate runtime
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON"; exit 1; }
+
+      - name: Write Google credentials
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+
+      - name: Manage pending batch
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/google-service-account.json
+        run: |
+          python -m job_scout.client_dispatcher             --database "$JOBSIFT_DATABASE" pending             --client "${{ inputs.client_id }}"             --profile "${{ inputs.profile_id }}"             --action "${{ inputs.action }}"
