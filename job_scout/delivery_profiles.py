@@ -229,10 +229,21 @@ class ClientDeliveryProfileStore:
         start, end = self._day_window(profile, now)
         with self.repository.connect() as connection:
             row = connection.execute(
-                "SELECT COUNT(*) FROM group_deliveries "
+                "SELECT COUNT(*) FROM ("
+                "SELECT normalized_url AS url FROM destination_observed_links "
                 "WHERE client_id=? AND destination=? "
-                "AND exported_at>=? AND exported_at<?",
+                "AND first_observed_at>=? AND first_observed_at<? "
+                "UNION "
+                "SELECT j.canonical_url AS url FROM group_deliveries d "
+                "JOIN jobs j ON j.id=d.job_id "
+                "WHERE d.client_id=? AND d.destination=? "
+                "AND d.exported_at>=? AND d.exported_at<?"
+                ")",
                 (
+                    profile.client_id,
+                    destination.logical_uri,
+                    start.isoformat(),
+                    end.isoformat(),
                     profile.client_id,
                     destination.logical_uri,
                     start.isoformat(),
