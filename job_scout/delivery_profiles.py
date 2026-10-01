@@ -15,8 +15,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.dedupe.resolver import select_preferred_url
+from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.models import Job
 from job_scout.normalization.core import canonicalize_url
