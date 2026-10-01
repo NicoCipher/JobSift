@@ -15,10 +15,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from job_scout.dedupe.resolver import select_preferred_url
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.domain.daily_batch import BatchConflict
-from job_scout.domain.models import Job
 from job_scout.normalization.core import canonicalize_url
 
 PROFILE_SCHEMA = """
@@ -292,21 +290,23 @@ class ClientDeliveryProfileStore:
         )
         start, end = self._day_window(profile, now)
         with self.repository.connect() as connection:
-            links = {
-                row["normalized_url"]
-                for row in connection.execute(
-                    "SELECT normalized_url FROM destination_observed_links "
-                    "WHERE client_id=? AND destination=? "
-                    "AND first_observed_at>=? AND first_observed_at<?",
-                    (
-                        profile.client_id,
-                        destination.logical_uri,
-                        start.isoformat(),
-                        end.isoformat(),
-                    ),
-                ).fetchall()
-            }
+            observed_rows = connection.execute(
+                "SELECT normalized_url,source,source_board_id,source_job_id "
+                "FROM destination_observed_links "
+                "WHERE client_id=? AND destination=? "
+                "AND first_observed_at>=? AND first_observed_at<?",
+                (
+                    profile.client_id,
+                    destination.logical_uri,
+                    start.isoformat(),
+                    end.isoformat(),
+                ),
+            ).fetchall()
 
+            # A delivered batch freezes the exact Job Link and practical delivery
+            # group. Use that immutable evidence to associate a reconciled Sheet
+            # URL with its delivery identity even if the current posting changes.
+            frozen_groups: dict[str, str] = {}
             has_batches = (
                 connection.execute(
                     "SELECT 1 FROM sqlite_master "
@@ -315,66 +315,78 @@ class ClientDeliveryProfileStore:
                 is not None
             )
             if has_batches:
-                # Count the exact frozen Job Link that was exported, not the
-                # posting's canonical_url. apply_url may intentionally differ,
-                # and reconciliation records the exported link from the Sheet.
                 for row in connection.execute(
-                    "SELECT i.export_row_json FROM daily_batches b "
-                    "JOIN daily_batch_items i ON i.batch_id=b.batch_id "
+                    "SELECT i.delivery_group_id,i.export_row_json "
+                    "FROM daily_batch_items i "
+                    "JOIN daily_batches b ON b.batch_id=i.batch_id "
                     "WHERE b.client_id=? AND b.destination=? "
-                    "AND b.status='delivered' "
-                    "AND b.delivered_at>=? AND b.delivered_at<?",
-                    (
-                        profile.client_id,
-                        destination.logical_uri,
-                        start.isoformat(),
-                        end.isoformat(),
-                    ),
+                    "AND b.status='delivered'",
+                    (profile.client_id, destination.logical_uri),
                 ).fetchall():
                     export = json.loads(row["export_row_json"])
                     link = str(export.get("Job Link", "")).strip()
                     if link:
-                        links.add(canonicalize_url(link))
+                        frozen_groups[canonicalize_url(link)] = row["delivery_group_id"]
 
-                legacy_rows = connection.execute(
-                    "SELECT j.payload_json FROM group_deliveries d "
-                    "JOIN jobs j ON j.id=d.job_id "
-                    "WHERE d.client_id=? AND d.destination=? "
-                    "AND d.exported_at>=? AND d.exported_at<? "
-                    "AND NOT EXISTS ("
-                    "SELECT 1 FROM daily_batches b "
-                    "JOIN daily_batch_items i ON i.batch_id=b.batch_id "
-                    "WHERE b.client_id=d.client_id "
-                    "AND b.destination=d.destination "
-                    "AND b.status='delivered' "
-                    "AND i.representative_job_id=d.job_id"
-                    ")",
-                    (
-                        profile.client_id,
-                        destination.logical_uri,
-                        start.isoformat(),
-                        end.isoformat(),
-                    ),
-                ).fetchall()
-            else:
-                legacy_rows = connection.execute(
-                    "SELECT j.payload_json FROM group_deliveries d "
-                    "JOIN jobs j ON j.id=d.job_id "
-                    "WHERE d.client_id=? AND d.destination=? "
-                    "AND d.exported_at>=? AND d.exported_at<?",
-                    (
-                        profile.client_id,
-                        destination.logical_uri,
-                        start.isoformat(),
-                        end.isoformat(),
-                    ),
-                ).fetchall()
+            identities: set[tuple[str, str]] = set()
+            for row in observed_rows:
+                normalized_url = row["normalized_url"]
+                group_id = frozen_groups.get(normalized_url)
 
-            for row in legacy_rows:
-                job = Job.model_validate_json(row["payload_json"])
-                links.add(canonicalize_url(select_preferred_url(job)))
+                if (
+                    group_id is None
+                    and row["source"]
+                    and row["source_board_id"]
+                    and row["source_job_id"]
+                ):
+                    match = connection.execute(
+                        "SELECT g.group_id FROM jobs j "
+                        "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                        "WHERE j.source=? AND j.source_board_id=? "
+                        "AND j.source_job_id=? LIMIT 1",
+                        (
+                            row["source"],
+                            row["source_board_id"],
+                            row["source_job_id"],
+                        ),
+                    ).fetchone()
+                    if match is not None:
+                        group_id = match["group_id"]
 
-        return len(links)
+                if group_id is None:
+                    match = connection.execute(
+                        "SELECT g.group_id FROM delivery_keys k "
+                        "JOIN posting_delivery_groups g ON g.job_id=k.job_id "
+                        "WHERE k.kind='url' AND k.value=? "
+                        "ORDER BY g.group_id LIMIT 1",
+                        (normalized_url,),
+                    ).fetchone()
+                    if match is not None:
+                        group_id = match["group_id"]
+
+                identities.add(
+                    ("group", group_id)
+                    if group_id is not None
+                    else ("url", normalized_url)
+                )
+
+            # Journaled deliveries count immediately, before the next Sheet
+            # reconciliation. Once their row is observed, both sides collapse to
+            # the same practical delivery-group identity instead of two URLs.
+            for row in connection.execute(
+                "SELECT group_id FROM group_deliveries "
+                "WHERE client_id=? AND destination=? "
+                "AND exported_at>=? AND exported_at<?",
+                (
+                    profile.client_id,
+                    destination.logical_uri,
+                    start.isoformat(),
+                    end.isoformat(),
+                ),
+            ).fetchall():
+                identities.add(("group", row["group_id"]))
+
+        return len(identities)
 
     def reconcile_destination_sheet(
         self,
