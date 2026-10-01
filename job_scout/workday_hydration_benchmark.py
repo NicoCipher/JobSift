@@ -102,6 +102,38 @@ def _freshness_reason(job: Job, brief, evaluated_at: datetime) -> str | None:
     )
 
 
+def _timestamp(value: datetime | None) -> float:
+    if value is None:
+        return 0.0
+    return value.replace(tzinfo=value.tzinfo or UTC).timestamp()
+
+
+def _delivery_priority_key(job: Job, match) -> tuple:
+    decision_rank = 0 if match.decision is MatchDecision.STRONG_MATCH else 1
+    score = match.score if match.score is not None else -1
+    return (
+        decision_rank,
+        -score,
+        -_timestamp(job.posted_at),
+        -_timestamp(job.updated_at),
+        representative_key(job),
+    )
+
+
+def _source_job_id_from_path(path: str) -> str:
+    _, separator, source_job_id = path.rpartition("_")
+    if not separator or not source_job_id:
+        raise ValueError(f"candidate path has no provider job id suffix: {path}")
+    return source_job_id
+
+
+def _failure_class(error: str) -> str:
+    detail = error.split(": ", 1)[-1]
+    if detail.startswith("HTTP "):
+        return "http_" + detail.removeprefix("HTTP ").strip()
+    return detail.strip().casefold().replace(" ", "_") or "unknown"
+
+
 def run_hydration_benchmark(
     *,
     registry_path: Path,
@@ -131,6 +163,7 @@ def run_hydration_benchmark(
         raise ValueError("candidate manifest count does not reconcile")
 
     candidate_keys: list[tuple[str, str]] = []
+    candidate_records: list[dict[str, str]] = []
     for row in candidates:
         if not isinstance(row, dict):
             raise TypeError("candidate manifest contains invalid candidate rows")
@@ -138,7 +171,17 @@ def run_hydration_benchmark(
         external_path = row.get("external_path")
         if not isinstance(target_identity, str) or not isinstance(external_path, str):
             raise TypeError("candidate manifest contains invalid candidate rows")
+        source_job_id = row.get("source_job_id")
+        if not isinstance(source_job_id, str) or not source_job_id.strip():
+            source_job_id = _source_job_id_from_path(external_path)
         candidate_keys.append((target_identity, external_path))
+        candidate_records.append(
+            {
+                "target_identity": target_identity,
+                "external_path": external_path,
+                "source_job_id": source_job_id.strip(),
+            }
+        )
     if len(set(candidate_keys)) != len(candidate_keys):
         raise ValueError("candidate manifest contains duplicate target/path candidates")
 
@@ -166,6 +209,7 @@ def run_hydration_benchmark(
     started_at = datetime.now(UTC)
     hydrated_jobs: list[Job] = []
     target_reports: list[dict[str, Any]] = []
+    path_errors: dict[tuple[str, str], str] = {}
     total_hydration_errors = 0
     collector = WorkdayCollector(detail_concurrency=detail_concurrency)
     try:
@@ -175,6 +219,11 @@ def run_hydration_benchmark(
             hydrated_jobs.extend(result.jobs)
             error_count = len(result.errors)
             total_hydration_errors += error_count
+            for error in result.errors:
+                for path in paths:
+                    if error.startswith(f"detail {path}:"):
+                        path_errors[(target_identity, path)] = error
+                        break
             target_reports.append(
                 {
                     "target_identity": target_identity,
@@ -261,17 +310,35 @@ def run_hydration_benchmark(
     contribution = Counter(_target_identity(job) for job in representatives.values())
     employers = Counter(employer_key(job) for job in representatives.values())
     employer_cap = brief.delivery_policy.max_jobs_per_employer_per_batch
-    delivery_policy_eligible = (
-        len(representatives)
-        if employer_cap is None
-        else sum(min(count, employer_cap) for count in employers.values())
-    )
 
+    if employer_cap is None:
+        selected_groups = set(representatives)
+    else:
+        by_employer: dict[str, list[tuple[str, Job]]] = defaultdict(list)
+        for group, job in representatives.items():
+            by_employer[employer_key(job)].append((group, job))
+        selected_groups: set[str] = set()
+        for members in by_employer.values():
+            members.sort(
+                key=lambda item: (
+                    _delivery_priority_key(item[1], match_by_job[item[1].id]),
+                    item[0],
+                )
+            )
+            selected_groups.update(group for group, _ in members[:employer_cap])
+    delivery_policy_eligible = len(selected_groups)
+
+    selected_contribution = Counter(
+        _target_identity(representatives[group]) for group in selected_groups
+    )
     target_index = {row["target_identity"]: row for row in target_reports}
     for target_identity, count in sorted(contribution.items()):
         target_index[target_identity]["fresh_unique_representatives"] = count
+    for target_identity, count in sorted(selected_contribution.items()):
+        target_index[target_identity]["delivery_policy_eligible_representatives"] = count
     for row in target_reports:
         row.setdefault("fresh_unique_representatives", 0)
+        row.setdefault("delivery_policy_eligible_representatives", 0)
 
     freshness_postings = Counter(
         fresh_by_job[job.id] or "fresh" for job in hydrated_jobs
@@ -285,12 +352,120 @@ def run_hydration_benchmark(
         0, successful_detail_paths - unique_hydrated_identity_count
     )
 
+    job_by_identity = {
+        (_target_identity(job), job.source_job_id): job for job in hydrated_jobs
+    }
+    per_candidate: list[dict[str, Any]] = []
+    for candidate in candidate_records:
+        identity = (candidate["target_identity"], candidate["source_job_id"])
+        job = job_by_identity.get(identity)
+        error = path_errors.get(
+            (candidate["target_identity"], candidate["external_path"])
+        )
+        if job is None:
+            per_candidate.append(
+                {
+                    **candidate,
+                    "hydration_status": (
+                        "failure" if error is not None else "provider_identity_mismatch"
+                    ),
+                    "hydration_error": error,
+                    "posting_age_evidence": None,
+                    "match_decision": None,
+                    "match_reasons": [],
+                    "rejection_reasons": [],
+                    "historically_surfaced": False,
+                    "delivery_group_id": None,
+                    "suppression_outcome": (
+                        "hydration_failure"
+                        if error is not None
+                        else "provider_identity_mismatch"
+                    ),
+                    "final_deliverable": False,
+                }
+            )
+            continue
+
+        match = match_by_job[job.id]
+        group = group_by_job[job.id]
+        freshness_reason = fresh_by_job[job.id]
+        historical_hit = historical_by_job[job.id]
+        representative = representatives.get(group)
+        raw = job.raw_metadata if isinstance(job.raw_metadata, dict) else {}
+        age_hours = (
+            round((evaluated_at - job.posted_at).total_seconds() / 3600, 2)
+            if job.posted_at is not None
+            else None
+        )
+
+        if match.decision not in {
+            MatchDecision.STRONG_MATCH,
+            MatchDecision.POSSIBLE_MATCH,
+        }:
+            suppression = match.decision.value
+            final_deliverable = False
+        elif group in historical_groups:
+            suppression = "historical"
+            final_deliverable = False
+        elif freshness_reason is not None:
+            suppression = freshness_reason
+            final_deliverable = False
+        elif representative is None:
+            suppression = "group_not_eligible"
+            final_deliverable = False
+        elif group not in selected_groups:
+            suppression = "company_cap"
+            final_deliverable = False
+        elif representative.id != job.id:
+            suppression = "practical_duplicate"
+            final_deliverable = False
+        else:
+            suppression = "deliverable"
+            final_deliverable = True
+
+        per_candidate.append(
+            {
+                **candidate,
+                "hydration_status": "success",
+                "hydration_error": None,
+                "job_id": job.id,
+                "company": job.company,
+                "title": job.title,
+                "canonical_url": str(job.canonical_url),
+                "posting_age_evidence": {
+                    "posted_at": (
+                        job.posted_at.isoformat() if job.posted_at is not None else None
+                    ),
+                    "age_hours_at_evaluation": age_hours,
+                    "source_start_date": raw.get("start_date"),
+                    "source_posted": raw.get("posted"),
+                    "source_posted_on": raw.get("posted_on"),
+                    "freshness_disposition": freshness_reason or "fresh",
+                },
+                "match_decision": match.decision.value,
+                "match_reasons": list(match.matched_reasons),
+                "rejection_reasons": list(match.rejection_reasons),
+                "historically_surfaced": historical_hit,
+                "delivery_group_id": group,
+                "suppression_outcome": suppression,
+                "final_deliverable": final_deliverable,
+            }
+        )
+
+    completed_at = datetime.now(UTC)
+    failure_classes = Counter(
+        _failure_class(error)
+        for row in target_reports
+        for error in row["errors"]
+    )
+
     report = {
         "report_version": "workday-hydration-yield-v1",
         "job": "JOB-37",
         "started_at": started_at.isoformat(),
         "evaluated_at": evaluated_at.isoformat(),
-        "completed_at": datetime.now(UTC).isoformat(),
+        "completed_at": completed_at.isoformat(),
+        "run_duration_seconds": round((completed_at - started_at).total_seconds(), 3),
         "source_index_run_id": candidates_manifest["source_index_run_id"],
         "candidate_manifest_sha256": candidates_manifest["manifest_sha256"],
         "historical_evidence_sha256": historical["metadata"]["evidence_sha256"],
@@ -308,6 +483,7 @@ def run_hydration_benchmark(
         "targets_with_candidates": len(grouped_paths),
         "successful_detail_paths": successful_detail_paths,
         "hydration_failures": total_hydration_errors,
+        "hydration_failure_classes": dict(sorted(failure_classes.items())),
         "hydrated_unique_jobs": len(hydrated_jobs),
         "unique_hydrated_provider_identities": unique_hydrated_identity_count,
         "provider_identity_collapses": provider_identity_collapses,
@@ -329,6 +505,7 @@ def run_hydration_benchmark(
         "delivery_policy_max_jobs_per_employer": employer_cap,
         "final_delivery_policy_eligible_count": delivery_policy_eligible,
         "per_target": sorted(target_reports, key=lambda row: row["target_identity"]),
+        "per_candidate": per_candidate,
     }
     return report
 
