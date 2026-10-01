@@ -1,0 +1,95 @@
+name: Configure Client Delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_id:
+        description: Client ID from the SearchBrief
+        required: true
+        type: string
+      profile_id:
+        description: Stable delivery profile name
+        required: true
+        default: primary
+        type: string
+      destination_id:
+        description: Registered client Sheet destination ID
+        required: true
+        type: string
+      brief_path:
+        description: SearchBrief path in the repository
+        required: true
+        default: config/search_briefs/taiwo_software_remote_us_v1.json
+        type: string
+      quota:
+        description: Link target for this client
+        required: true
+        default: "100"
+        type: string
+      quota_scope:
+        description: Fill the Sheet to this total, or deliver this many per day
+        required: true
+        default: sheet_total
+        type: choice
+        options:
+          - sheet_total
+          - daily
+      delivery_mode:
+        description: Review batches first, or deliver automatically
+        required: true
+        default: review
+        type: choice
+        options:
+          - review
+          - auto
+      status:
+        description: Whether scheduled delivery is active
+        required: true
+        default: active
+        type: choice
+        options:
+          - active
+          - paused
+      timezone:
+        description: Client quota timezone
+        required: true
+        default: Africa/Lagos
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery-control
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[cloud]'
+
+      - name: Validate persistent runtime
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN"; exit 1; }
+
+      - name: Configure client delivery
+        run: |
+          python -m job_scout.delivery_profiles             --database "$JOBSIFT_DATABASE" configure             --client "${{ inputs.client_id }}"             --profile "${{ inputs.profile_id }}"             --destination "${{ inputs.destination_id }}"             --brief "${{ inputs.brief_path }}"             --quota "${{ inputs.quota }}"             --quota-scope "${{ inputs.quota_scope }}"             --mode "${{ inputs.delivery_mode }}"             --status "${{ inputs.status }}"             --timezone "${{ inputs.timezone }}"
