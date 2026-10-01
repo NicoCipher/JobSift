@@ -63,14 +63,13 @@ never accepted as public workflow inputs.
 
 ### One-time profile setup
 
-After registering a client Sheet, open
-**GitHub → Actions → Configure Client Delivery Profile → Run workflow**.
+Open **GitHub → Actions → Configure Client Delivery Profile → Run workflow**.
 
-This setup reads the existing private
-`JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON` secret to identify the client and
-destination. The public inputs contain only non-sensitive settings such as
-quota, delivery mode and timezone. The result returns an opaque 16-character
-`profile_id`.
+This one-time action reads the existing private
+`JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON` secret, registers or refreshes that
+Sheet destination, creates the delivery profile, reconciles links already on
+the Sheet, and returns an opaque 16-character `profile_id`. The public inputs
+contain only non-sensitive settings such as quota, delivery mode and timezone.
 
 ### Routine controls
 
@@ -79,7 +78,7 @@ opaque `profile_id`.
 
 Available operations:
 
-- **status** — show quota, delivered today, remaining today, mode and state
+- **status** — reconcile the Sheet, then show quota, delivered today, remaining today, mode and state
 - **list** — show the same safe status for all profiles, without client/Sheet IDs
 - **pause** — stop new preparation/delivery
 - **resume** — reactivate the profile
@@ -120,12 +119,11 @@ otherwise non-qualifying jobs.
 1. Create and verify the client's SearchBrief/sourcing plan.
 2. Put that client's private registration JSON into
    `JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON`.
-3. Register the client's Google Sheet destination and column mapping.
-4. Share the Sheet with the JobSift service account.
-5. Run **Configure Client Delivery Profile** once and keep the returned opaque
-   profile ID.
-6. Use **Client Delivery Control** for quota, pause/resume, mode and run-now.
-7. Leave the shared inventory refresher running.
+3. Share the Sheet with the JobSift service account.
+4. Run **Configure Client Delivery Profile** once; it registers the destination,
+   reconciles existing links, and returns the opaque profile ID.
+5. Use **Client Delivery Control** for quota, pause/resume, mode and run-now.
+6. Leave the shared inventory refresher running.
 
 A single client may have more than one registered destination. Each destination
 gets its own delivery profile and quota.
