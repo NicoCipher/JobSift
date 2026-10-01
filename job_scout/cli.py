@@ -147,6 +147,7 @@ def main() -> None:
         "--delivery-mode", choices=("review", "auto"), default="review"
     )
     delivery_profile_private.add_argument("--timezone", default="Africa/Lagos")
+    delivery_profile_private.add_argument("--reconcile", action="store_true")
 
     delivery_profile_list = delivery_profile_commands.add_parser("list")
     delivery_profile_list.add_argument("--database", default="jobs.sqlite3")
@@ -154,6 +155,7 @@ def main() -> None:
     delivery_profile_status = delivery_profile_commands.add_parser("status")
     delivery_profile_status.add_argument("--database", default="jobs.sqlite3")
     delivery_profile_status.add_argument("--profile-id", required=True)
+    delivery_profile_status.add_argument("--reconcile", action="store_true")
 
     for name in ("pause", "resume"):
         command = delivery_profile_commands.add_parser(name)
@@ -383,6 +385,10 @@ def main() -> None:
                     registration.destination_id,
                     args.plan,
                 )
+                if args.reconcile:
+                    store.reconcile_destination_sheet(
+                        value, gateway=GoogleSheetsGateway()
+                    )
                 print(json.dumps(_public(value), sort_keys=True))
             elif command == "list":
                 print(
@@ -392,7 +398,12 @@ def main() -> None:
                     )
                 )
             elif command == "status":
-                print(json.dumps(_public(_profile_for_control_id()), sort_keys=True))
+                value = _profile_for_control_id()
+                if args.reconcile:
+                    store.reconcile_destination_sheet(
+                        value, gateway=GoogleSheetsGateway()
+                    )
+                print(json.dumps(_public(value), sort_keys=True))
             elif command in {"pause", "resume", "set-quota", "set-mode", "set-timezone"}:
                 current = _profile_for_control_id()
                 changes = {}
