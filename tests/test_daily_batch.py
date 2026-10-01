@@ -163,6 +163,39 @@ def test_batch_freshness_gate_suppresses_stale_unknown_and_future_postings(repo,
     assert dispositions[jobs[3].id] == "posting_time_invalid"
 
 
+def test_re_evaluation_timestamp_does_not_invalidate_prepared_match_evidence(repo, tmp_path):
+    job = posting(1)
+    seed(repo, [job])
+    prepared = prepare(repo, request(repo, tmp_path / "out.csv", [job], quota=1))
+
+    repo.save_match(
+        JobMatch(
+            job_id=job.id,
+            client_id=CLIENT,
+            decision="strong_match",
+            evaluated_at=NOW + timedelta(hours=1),
+            matcher_version="matcher-v1",
+        )
+    )
+
+    delivered = finalize(repo, prepared)
+    assert delivered.status == "delivered"
+    assert len(rows(tmp_path / "out.csv")) == 1
+
+
+def test_failed_unpublished_batch_is_discardable(repo, tmp_path):
+    job = posting(1)
+    seed(repo, [job])
+    prepared = prepare(repo, request(repo, tmp_path / "out.csv", [job], quota=1))
+    failed = DailyBatchStore(repo).fail(prepared.batch_id, "posting expired before release")
+
+    assert failed.status == "failed"
+    discarded = DailyBatchStore(repo).discard_prepared(failed.batch_id)
+    assert discarded.status == "failed"
+    with pytest.raises(BatchConflict, match="batch not found"):
+        DailyBatchStore(repo).get(failed.batch_id)
+
+
 def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
     job = posting(1)
     seed(repo, [job])
@@ -181,7 +214,7 @@ def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
 
     delivered = finalize(repo, replacement)
     assert delivered.status == "delivered"
-    with pytest.raises(BatchConflict, match="only an unreleased prepared batch"):
+    with pytest.raises(BatchConflict, match="only an unpublished batch"):
         DailyBatchStore(repo).discard_prepared(delivered.batch_id)
 
 
