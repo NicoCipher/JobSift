@@ -374,24 +374,39 @@ class ClientDeliveryProfileStore:
         gateway,
     ):
         """Reconcile the destination and enforce current profile controls before release."""
-        if profile.status != "active":
-            raise BatchConflict("delivery profile is paused")
         destination = ClientSheetDestinationStore(self.repository).get(
             profile.client_id, profile.destination_id
         )
+        from job_scout.export.batch_sheets import ClientSheetPublisher
         from job_scout.storage.daily_batches import DailyBatchStore
 
-        batch = DailyBatchStore(self.repository).get(batch_id)
+        batch_store = DailyBatchStore(self.repository)
+        batch = batch_store.get(batch_id)
         if (
             batch.request.client_id != profile.client_id
             or batch.request.destination_id != profile.destination_id
             or batch.request.destination != destination.logical_uri
         ):
             raise BatchConflict("batch does not belong to the selected delivery profile")
+
         reconciliation = self.reconcile_destination_sheet(profile, gateway=gateway)
-        if batch.status == "delivered":
-            return batch, reconciliation, self.remaining_today(profile)
         remaining = self.remaining_today(profile)
+        if batch.status == "delivered":
+            return batch, reconciliation, remaining
+
+        # If the Sheet append already happened but the response was lost, recovery
+        # must commit the existing delivery journal even when reconciliation has
+        # reduced the remaining quota to zero. This path performs no new append:
+        # finalize will observe the recorded after-digest and only complete the
+        # delivery ledger.
+        _before, after = batch_store.export_journal(batch_id)
+        if after is not None:
+            publisher = ClientSheetPublisher(batch, gateway, destination)
+            if publisher.inspect() == after:
+                return batch, reconciliation, remaining
+
+        if profile.status != "active":
+            raise BatchConflict("delivery profile is paused")
         if batch.selected_count > remaining:
             raise BatchConflict(
                 "prepared batch exceeds the profile's current remaining daily quota"
