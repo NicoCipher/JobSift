@@ -10,6 +10,7 @@ import pytest
 from job_scout.domain.models import CollectionStatus, SearchBrief
 from job_scout.production_registry import ProductionSourceRegistry
 from job_scout.workday_index import (
+    WorkdayIndexAnalysis,
     WorkdayIndexArtifact,
     WorkdayIndexPosting,
     WorkdayIndexScanner,
@@ -465,3 +466,42 @@ def test_analysis_surfaces_incomplete_target_candidate_counts() -> None:
             "errors": ["one malformed provider row"],
         }
     ]
+
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"targets_scanned": 3},
+        {"coverage_complete": False},
+        {"hydration_candidates_on_complete_targets": 1},
+        {"incomplete_targets": [{"target_identity": "unexpected"}]},
+    ],
+)
+def test_analysis_model_rejects_inconsistent_reconciliation(updates) -> None:
+    base = {
+        "registry_id": "registry",
+        "shard_manifest_sha256": "a" * 64,
+        "client_id": "client",
+        "coverage_complete": True,
+        "targets_scanned": 2,
+        "targets_succeeded": 2,
+        "targets_partial": 0,
+        "targets_failed": 0,
+        "targets_with_hydration_candidates": 1,
+        "provider_rows_seen": 2,
+        "unique_postings": 2,
+        "postings_with_age_hint": 2,
+        "definitely_older_than_72h": 0,
+        "recent_or_uncertain_for_72h": 2,
+        "role_title_candidates": 1,
+        "recent_or_uncertain_role_title_candidates": 1,
+        "hydration_candidates_on_complete_targets": 1,
+        "hydration_candidates_on_incomplete_targets": 0,
+        "incomplete_targets": [],
+        "top_targets": [],
+    }
+    base.update(updates)
+
+    with pytest.raises(ValueError, match="reconcile|exceeds"):
+        WorkdayIndexAnalysis.model_validate(base)
