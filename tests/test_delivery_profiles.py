@@ -24,6 +24,9 @@ class FakeSheet:
         assert (spreadsheet_id, tab) == ("sheet123", "Sheet1")
         return [row.copy() for row in self.values]
 
+    def read_table_rows(self, spreadsheet_id, tab):
+        return self.read_rows(spreadsheet_id, tab)
+
 
 def register(repo: SQLiteRepository, *, client: str = "client-a", destination: str = "jobs"):
     return ClientSheetDestinationStore(repo).register_google_sheet(
@@ -175,3 +178,35 @@ def test_delivered_today_is_scoped_to_destination_and_profile_timezone(tmp_path)
     now = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
     assert store.delivered_today(profile, now=now) == 1
     assert store.remaining_today(profile, now=now) == 2
+
+
+def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway = FakeSheet()
+    existing = make_job()
+    gateway.values.append(
+        [
+            existing.title,
+            existing.company,
+            str(existing.canonical_url),
+            "Already present in the client Sheet",
+        ]
+    )
+    register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    first = store.reconcile_destination_sheet(profile, gateway=gateway)
+    second = store.reconcile_destination_sheet(profile, gateway=gateway)
+
+    assert first == {"observed_links": 1, "newly_recorded_links": 1}
+    assert second == {"observed_links": 1, "newly_recorded_links": 0}
+    assert repo.is_historically_surfaced(existing, "client-a")
