@@ -8,6 +8,7 @@ profiles decide how much of the fresh shared inventory may be delivered.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -71,6 +72,12 @@ class ClientDeliveryProfile(BaseModel):
         return self
 
 
+def delivery_profile_control_id(client_id: str, destination_id: str) -> str:
+    """Return a stable non-identifying operator handle for public controls."""
+    payload = f"jobsift-delivery-profile-v1\0{client_id}\0{destination_id}".encode()
+    return sha256(payload).hexdigest()[:16]
+
+
 class ClientDeliveryProfileStore:
     def __init__(self, repository):
         self.repository = repository
@@ -101,6 +108,21 @@ class ClientDeliveryProfileStore:
         if row is None:
             raise BatchConflict("client delivery profile not found")
         return self._from_row(row)
+
+    def get_by_control_id(self, control_id: str) -> ClientDeliveryProfile:
+        value = control_id.strip().casefold()
+        if len(value) != 16 or any(ch not in "0123456789abcdef" for ch in value):
+            raise BatchConflict("invalid delivery profile control ID")
+        matches = [
+            profile
+            for profile in self.list()
+            if delivery_profile_control_id(
+                profile.client_id, profile.destination_id
+            ) == value
+        ]
+        if len(matches) != 1:
+            raise BatchConflict("delivery profile control ID was not found uniquely")
+        return matches[0]
 
     def list(self, client_id: str | None = None) -> tuple[ClientDeliveryProfile, ...]:
         with self.repository.connect() as connection:
@@ -188,6 +210,44 @@ class ClientDeliveryProfileStore:
                 ),
             )
         return value
+
+    def update_controls(
+        self,
+        profile: ClientDeliveryProfile,
+        *,
+        daily_quota: int | None = None,
+        status: Literal["active", "paused"] | None = None,
+        delivery_mode: Literal["review", "auto"] | None = None,
+        timezone: str | None = None,
+    ) -> ClientDeliveryProfile:
+        return self.upsert(
+            client_id=profile.client_id,
+            destination_id=profile.destination_id,
+            sourcing_plan_id=profile.sourcing_plan_id,
+            daily_quota=daily_quota if daily_quota is not None else profile.daily_quota,
+            status=status or profile.status,
+            delivery_mode=delivery_mode or profile.delivery_mode,
+            timezone=timezone or profile.timezone,
+        )
+
+    def public_status(
+        self,
+        profile: ClientDeliveryProfile,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, object]:
+        delivered = self.delivered_today(profile, now=now)
+        return {
+            "profile_id": delivery_profile_control_id(
+                profile.client_id, profile.destination_id
+            ),
+            "daily_quota": profile.daily_quota,
+            "status": profile.status,
+            "delivery_mode": profile.delivery_mode,
+            "timezone": profile.timezone,
+            "delivered_today": delivered,
+            "remaining_today": max(0, profile.daily_quota - delivered),
+        }
 
     def set_status(
         self,
