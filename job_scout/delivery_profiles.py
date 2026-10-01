@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS client_delivery_profiles (
   profile_id TEXT NOT NULL,
   destination_id TEXT NOT NULL,
   brief_path TEXT NOT NULL,
-  daily_quota INTEGER NOT NULL CHECK(daily_quota >= 1 AND daily_quota <= 5000),
+  link_quota INTEGER NOT NULL CHECK(link_quota >= 1 AND link_quota <= 5000),
+  quota_scope TEXT NOT NULL CHECK(quota_scope IN ('sheet_total','daily')),
   delivery_mode TEXT NOT NULL CHECK(delivery_mode IN ('review','auto')),
   status TEXT NOT NULL CHECK(status IN ('active','paused')),
   timezone TEXT NOT NULL,
@@ -47,7 +48,8 @@ class ClientDeliveryProfile(BaseModel):
     profile_id: str
     destination_id: str
     brief_path: str
-    daily_quota: int = Field(ge=1, le=5000)
+    link_quota: int = Field(ge=1, le=5000)
+    quota_scope: Literal["sheet_total", "daily"] = "sheet_total"
     delivery_mode: Literal["review", "auto"] = "review"
     status: Literal["active", "paused"] = "active"
     timezone: str = "Africa/Lagos"
@@ -91,7 +93,8 @@ class ClientDeliveryProfileStore:
             profile_id=row["profile_id"],
             destination_id=row["destination_id"],
             brief_path=row["brief_path"],
-            daily_quota=row["daily_quota"],
+            link_quota=row["link_quota"],
+            quota_scope=row["quota_scope"],
             delivery_mode=row["delivery_mode"],
             status=row["status"],
             timezone=row["timezone"],
@@ -138,7 +141,8 @@ class ClientDeliveryProfileStore:
         profile_id: str,
         destination_id: str,
         brief_path: str,
-        daily_quota: int,
+        link_quota: int,
+        quota_scope: Literal["sheet_total", "daily"],
         delivery_mode: Literal["review", "auto"],
         status: Literal["active", "paused"],
         timezone: str,
@@ -149,7 +153,8 @@ class ClientDeliveryProfileStore:
             profile_id=profile_id,
             destination_id=destination_id,
             brief_path=brief_path,
-            daily_quota=daily_quota,
+            link_quota=link_quota,
+            quota_scope=quota_scope,
             delivery_mode=delivery_mode,
             status=status,
             timezone=timezone,
@@ -171,18 +176,20 @@ class ClientDeliveryProfileStore:
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute(
                     "INSERT INTO client_delivery_profiles "
-                    "(client_id,profile_id,destination_id,brief_path,daily_quota,delivery_mode,"
-                    "status,timezone,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) "
+                    "(client_id,profile_id,destination_id,brief_path,link_quota,quota_scope,delivery_mode,"
+                    "status,timezone,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(client_id,profile_id) DO UPDATE SET "
                     "destination_id=excluded.destination_id,brief_path=excluded.brief_path,"
-                    "daily_quota=excluded.daily_quota,delivery_mode=excluded.delivery_mode,"
-                    "status=excluded.status,timezone=excluded.timezone,updated_at=excluded.updated_at",
+                    "link_quota=excluded.link_quota,quota_scope=excluded.quota_scope,"
+                    "delivery_mode=excluded.delivery_mode,status=excluded.status,"
+                    "timezone=excluded.timezone,updated_at=excluded.updated_at",
                     (
                         candidate.client_id,
                         candidate.profile_id,
                         candidate.destination_id,
                         candidate.brief_path,
-                        candidate.daily_quota,
+                        candidate.link_quota,
+                        candidate.quota_scope,
                         candidate.delivery_mode,
                         candidate.status,
                         candidate.timezone,
@@ -226,6 +233,7 @@ def main() -> None:
     configure.add_argument("--destination", required=True)
     configure.add_argument("--brief", required=True)
     configure.add_argument("--quota", required=True, type=int)
+    configure.add_argument("--quota-scope", choices=("sheet_total", "daily"), default="sheet_total")
     configure.add_argument("--mode", choices=("review", "auto"), default="review")
     configure.add_argument("--status", choices=("active", "paused"), default="active")
     configure.add_argument("--timezone", default="Africa/Lagos")
@@ -255,7 +263,8 @@ def main() -> None:
                 profile_id=args.profile,
                 destination_id=args.destination,
                 brief_path=args.brief,
-                daily_quota=args.quota,
+                link_quota=args.quota,
+                quota_scope=args.quota_scope,
                 delivery_mode=args.mode,
                 status=args.status,
                 timezone=args.timezone,
