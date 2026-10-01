@@ -150,7 +150,7 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
         "InventoryRunStore",
         lambda _: SimpleNamespace(active_job_ids=lambda _run: ("job-1",)),
     )
-    store = SimpleNamespace(evidence_digest=lambda *_: "b" * 64)
+    store = SimpleNamespace(evidence_digest=lambda *_, **__: "b" * 64)
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     captured = {}
 
@@ -407,7 +407,7 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
         "InventoryRunStore",
         lambda _: SimpleNamespace(active_job_ids=lambda _run: ()),
     )
-    store = SimpleNamespace(evidence_digest=lambda *_: "b" * 64)
+    store = SimpleNamespace(evidence_digest=lambda *_, **__: "b" * 64)
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     captured = []
 
