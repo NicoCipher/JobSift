@@ -238,6 +238,60 @@ def test_auto_release_does_not_exceed_current_remaining_quota(tmp_path, monkeypa
     }
 
 
+def test_paused_profile_recovers_already_applied_unresolved_export(
+    tmp_path, monkeypatch
+):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=100,
+        status="paused",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+    base(monkeypatch, tmp_path, profile, delivered=1)
+    unresolved = SimpleNamespace(batch_id="batch-1", selected_count=1)
+    recovered = SimpleNamespace(batch_id="batch-1", selected_count=1, status="delivered")
+    monkeypatch.setattr(
+        live_runner, "_unresolved_batch", lambda *_, **__: unresolved
+    )
+    monkeypatch.setattr(live_runner, "GoogleSheetsGateway", lambda: object())
+    calls = []
+
+    def guard(_profile, batch_id, *, gateway):
+        calls.append(("guard", batch_id))
+        return unresolved, {"observed_links": 1}, 99
+
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 1,
+            guard_batch_release=guard,
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "finalize_daily_batch",
+        lambda **kwargs: calls.append(("finalize", kwargs["batch_id"])) or recovered,
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda _store, batch, *, action, **_kwargs: {
+            "action": action,
+            "batch_status": batch.status,
+        },
+    )
+
+    result = live_runner.run_once(config(tmp_path))
+
+    assert result == {"action": "recovered_release", "batch_status": "delivered"}
+    assert calls == [("guard", "batch-1"), ("finalize", "batch-1")]
+
+
 def test_profile_runner_recovers_unresolved_export_before_quota_reached(
     tmp_path, monkeypatch
 ):
