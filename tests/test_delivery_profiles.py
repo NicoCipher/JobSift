@@ -210,3 +210,22 @@ def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
     assert first == {"observed_links": 1, "newly_recorded_links": 1}
     assert second == {"observed_links": 1, "newly_recorded_links": 0}
     assert repo.is_historically_surfaced(existing, "client-a")
+    assert store.delivered_today(profile) == 1
+
+    # If the same link is also journaled as an automated delivery, quota
+    # accounting still counts the URL once.
+    repo.upsert_job(existing)
+    group_id = repo.delivery_group_id(existing.id)
+    destination = ClientSheetDestinationStore(repo).get("client-a", "jobs")
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                group_id,
+                "client-a",
+                destination.logical_uri,
+                existing.id,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+    assert store.delivered_today(profile) == 1
