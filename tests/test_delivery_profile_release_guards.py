@@ -39,7 +39,12 @@ class FakeSheet:
         self.append_table_rows(spreadsheet_id, tab, rows)
 
 
-def make_job(job_id: str, company: str) -> Job:
+def make_job(
+    job_id: str,
+    company: str,
+    *,
+    apply_url: str | None = None,
+) -> Job:
     now = datetime.now(UTC)
     description = "Build production software."
     return Job(
@@ -53,6 +58,7 @@ def make_job(job_id: str, company: str) -> Job:
         description_text=description,
         job_url=f"https://example.com/{job_id}",
         canonical_url=f"https://example.com/{job_id}",
+        apply_url=apply_url,
         posted_at=now,
         discovered_at=now,
         last_seen_at=now,
@@ -220,6 +226,31 @@ def test_release_guard_recovers_already_applied_uncertain_export_before_quota_ch
     assert recovered.status == "delivered"
     assert len(gateway.values) == 2
     assert store.delivered_today(profile) == 1
+
+def test_quota_counts_preferred_apply_url_once_after_reconciliation(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway, destination, store, profile = setup_profile(repo, quota=2)
+    posting = make_job(
+        "job-apply",
+        "Acme",
+        apply_url="https://apply.example.com/jobs/job-apply",
+    )
+    batch = prepare(repo, destination, [posting])
+
+    delivered = finalize_daily_batch(
+        repository=repo,
+        batch_id=batch.batch_id,
+        sheets_gateway=gateway,
+    )
+
+    assert delivered.status == "delivered"
+    assert gateway.values[-1][2] == str(posting.apply_url)
+    assert store.delivered_today(profile) == 1
+
+    store.reconcile_destination_sheet(profile, gateway=gateway)
+
+    assert store.delivered_today(profile) == 1
+
 
 def test_generic_batch_release_rejects_profile_attributed_client_sheet_batch(
     tmp_path, monkeypatch, capsys
