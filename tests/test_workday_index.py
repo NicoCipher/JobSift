@@ -505,3 +505,61 @@ def test_analysis_model_rejects_inconsistent_reconciliation(updates) -> None:
 
     with pytest.raises(ValueError, match="reconcile|exceeds"):
         WorkdayIndexAnalysis.model_validate(base)
+
+def test_capped_partition_overlap_is_partial(monkeypatch) -> None:
+    registry = _registry()
+    target = registry.targets[0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        facet = (payload["appliedFacets"].get("jobFamilyGroup") or ["broad"])[0]
+        if facet == "broad":
+            return httpx.Response(
+                200,
+                json={
+                    "total": 3,
+                    "facets": [
+                        {
+                            "facetParameter": "jobFamilyGroup",
+                            "values": [
+                                {"id": "eng", "descriptor": "Engineering", "count": 2},
+                                {"id": "ops", "descriptor": "Operations", "count": 2},
+                            ],
+                        }
+                    ],
+                    "jobPostings": [
+                        {"title": "Backend Engineer", "externalPath": "/job/A_R1"},
+                        {"title": "Frontend Engineer", "externalPath": "/job/B_R2"},
+                        {"title": "Operator", "externalPath": "/job/C_R3"},
+                    ],
+                },
+                request=request,
+            )
+        rows = {
+            "eng": [
+                {"title": "Backend Engineer", "externalPath": "/job/A_R1"},
+                {"title": "Frontend Engineer", "externalPath": "/job/B_R2"},
+            ],
+            "ops": [
+                {"title": "Frontend Engineer", "externalPath": "/job/B_R2"},
+                {"title": "Accountant", "externalPath": "/job/D_R4"},
+            ],
+        }[facet]
+        return httpx.Response(
+            200,
+            json={"total": 2, "jobPostings": rows},
+            request=request,
+        )
+
+    scanner = WorkdayIndexScanner(
+        httpx.Client(transport=httpx.MockTransport(handler)),
+        delay=0,
+    )
+    monkeypatch.setattr("job_scout.workday_index.CAP_TOTAL", 3)
+
+    result = scanner.scan(target)
+
+    assert result.status is CollectionStatus.PARTIAL
+    assert result.coverage_mode == "capped_partial"
+    assert any("overlap by externalPath" in error for error in result.errors)
+
