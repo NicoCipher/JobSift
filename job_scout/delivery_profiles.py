@@ -301,25 +301,43 @@ class ClientDeliveryProfileStore:
                     end.isoformat(),
                 ),
             ).fetchall()
-            delivered_rows = connection.execute(
-                "SELECT j.canonical_url, "
-                "(SELECT i.export_row_json FROM daily_batch_items i "
-                "JOIN daily_batches b ON b.batch_id=i.batch_id "
-                "WHERE i.representative_job_id=d.job_id "
-                "AND b.client_id=d.client_id AND b.destination=d.destination "
-                "AND b.status='delivered' "
-                "ORDER BY b.delivered_at DESC, b.batch_id DESC LIMIT 1) "
-                "AS export_row_json "
-                "FROM group_deliveries d JOIN jobs j ON j.id=d.job_id "
-                "WHERE d.client_id=? AND d.destination=? "
-                "AND d.exported_at>=? AND d.exported_at<?",
-                (
-                    profile.client_id,
-                    destination.logical_uri,
-                    start.isoformat(),
-                    end.isoformat(),
-                ),
-            ).fetchall()
+            has_batch_evidence = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='daily_batch_items'"
+            ).fetchone()
+            if has_batch_evidence:
+                delivered_rows = connection.execute(
+                    "SELECT j.canonical_url, "
+                    "(SELECT i.export_row_json FROM daily_batch_items i "
+                    "JOIN daily_batches b ON b.batch_id=i.batch_id "
+                    "WHERE i.representative_job_id=d.job_id "
+                    "AND b.client_id=d.client_id AND b.destination=d.destination "
+                    "AND b.status='delivered' "
+                    "ORDER BY b.delivered_at DESC, b.batch_id DESC LIMIT 1) "
+                    "AS export_row_json "
+                    "FROM group_deliveries d JOIN jobs j ON j.id=d.job_id "
+                    "WHERE d.client_id=? AND d.destination=? "
+                    "AND d.exported_at>=? AND d.exported_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall()
+            else:
+                delivered_rows = connection.execute(
+                    "SELECT j.canonical_url, NULL AS export_row_json "
+                    "FROM group_deliveries d JOIN jobs j ON j.id=d.job_id "
+                    "WHERE d.client_id=? AND d.destination=? "
+                    "AND d.exported_at>=? AND d.exported_at<?",
+                    (
+                        profile.client_id,
+                        destination.logical_uri,
+                        start.isoformat(),
+                        end.isoformat(),
+                    ),
+                ).fetchall()
 
         urls = {row["normalized_url"] for row in observed_rows}
         for row in delivered_rows:
