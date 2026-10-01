@@ -7,6 +7,7 @@ profiles decide how much of the fresh shared inventory may be delivered.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Literal
@@ -16,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.domain.daily_batch import BatchConflict
+from job_scout.normalization.core import canonicalize_url
 
 PROFILE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS client_delivery_profiles (
@@ -288,29 +290,44 @@ class ClientDeliveryProfileStore:
         )
         start, end = self._day_window(profile, now)
         with self.repository.connect() as connection:
-            row = connection.execute(
-                "SELECT COUNT(*) FROM ("
-                "SELECT normalized_url AS url FROM destination_observed_links "
+            observed_rows = connection.execute(
+                "SELECT normalized_url FROM destination_observed_links "
                 "WHERE client_id=? AND destination=? "
-                "AND first_observed_at>=? AND first_observed_at<? "
-                "UNION "
-                "SELECT j.canonical_url AS url FROM group_deliveries d "
-                "JOIN jobs j ON j.id=d.job_id "
-                "WHERE d.client_id=? AND d.destination=? "
-                "AND d.exported_at>=? AND d.exported_at<?"
-                ")",
+                "AND first_observed_at>=? AND first_observed_at<?",
                 (
                     profile.client_id,
                     destination.logical_uri,
                     start.isoformat(),
                     end.isoformat(),
+                ),
+            ).fetchall()
+            delivered_rows = connection.execute(
+                "SELECT j.canonical_url, "
+                "(SELECT i.export_row_json FROM daily_batch_items i "
+                "JOIN daily_batches b ON b.batch_id=i.batch_id "
+                "WHERE i.representative_job_id=d.job_id "
+                "AND b.client_id=d.client_id AND b.destination=d.destination "
+                "AND b.status='delivered' "
+                "ORDER BY b.delivered_at DESC, b.batch_id DESC LIMIT 1) "
+                "AS export_row_json "
+                "FROM group_deliveries d JOIN jobs j ON j.id=d.job_id "
+                "WHERE d.client_id=? AND d.destination=? "
+                "AND d.exported_at>=? AND d.exported_at<?",
+                (
                     profile.client_id,
                     destination.logical_uri,
                     start.isoformat(),
                     end.isoformat(),
                 ),
-            ).fetchone()
-        return int(row[0])
+            ).fetchall()
+
+        urls = {row["normalized_url"] for row in observed_rows}
+        for row in delivered_rows:
+            exported_url = None
+            if row["export_row_json"]:
+                exported_url = json.loads(row["export_row_json"]).get("Job Link")
+            urls.add(canonicalize_url(str(exported_url or row["canonical_url"])))
+        return len(urls)
 
     def reconcile_destination_sheet(
         self,
