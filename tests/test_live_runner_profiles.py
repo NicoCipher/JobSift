@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from job_scout import live_runner
-from job_scout.live_runner import LiveRunnerConfig
 from job_scout.domain.daily_batch import BatchConflict
+from job_scout.live_runner import LiveRunnerConfig
 
 
 def config(tmp_path: Path, *, profile_managed: bool = True) -> LiveRunnerConfig:
