@@ -165,7 +165,8 @@ def _unresolved_batch(
     with repository.connect() as connection:
         row = connection.execute(
             "SELECT batch_id FROM daily_batches "
-            "WHERE client_id=? AND destination=? AND status!='delivered' "
+            "WHERE client_id=? AND destination=? "
+            "AND (status='prepared' OR export_after_sha256 IS NOT NULL) "
             "ORDER BY assembled_at, batch_id LIMIT 1",
             (client_id, destination),
         ).fetchone()
