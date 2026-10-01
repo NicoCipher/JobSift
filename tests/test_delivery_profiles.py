@@ -5,7 +5,10 @@ from datetime import UTC, datetime
 import pytest
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
-from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.delivery_profiles import (
+    ClientDeliveryProfileStore,
+    delivery_profile_control_id,
+)
 from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.models import Job
 from job_scout.normalization.core import content_fingerprint
@@ -229,3 +232,30 @@ def test_reconciliation_makes_existing_sheet_link_prior_surfacing(tmp_path):
             ),
         )
     assert store.delivered_today(profile) == 1
+
+
+def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="sensitive-client-name",
+        destination_id="private-sheet-destination",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    control_id = delivery_profile_control_id(
+        profile.client_id, profile.destination_id
+    )
+
+    assert len(control_id) == 16
+    assert "sensitive" not in control_id
+    assert "private" not in control_id
+    assert store.get_by_control_id(control_id) == profile
+    assert store.public_status(profile)["profile_id"] == control_id
+    assert "client_id" not in store.public_status(profile)
+    assert "destination_id" not in store.public_status(profile)
