@@ -318,6 +318,81 @@ def test_quota_counts_exported_apply_url_once_after_sheet_reconciliation(tmp_pat
     assert profile_store.delivered_today(profile) == 1
 
 
+def test_quota_uses_current_group_after_frozen_group_merge(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=10,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    posting = make_job("merged-group-job")
+    repo.upsert_job(posting)
+    current_group = repo.delivery_group_id(posting.id)
+    DailyBatchStore(repo)
+    now = datetime.now(UTC).isoformat()
+
+    repo.observe_destination_links(
+        client_id="client-a",
+        destination=destination.logical_uri,
+        links=[str(posting.canonical_url)],
+    )
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            (
+                current_group,
+                "client-a",
+                destination.logical_uri,
+                posting.id,
+                now,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,delivered_at,request_json,"
+            "counts_json,dedupe_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "batch-merged-group",
+                "client-a",
+                destination.logical_uri,
+                "scope-merged-group",
+                1,
+                1,
+                0,
+                "delivered",
+                now,
+                now,
+                "{}",
+                "{}",
+                "test",
+            ),
+        )
+        # Simulate a batch frozen before its original delivery group was merged
+        # into the posting's current group.
+        connection.execute(
+            "INSERT INTO daily_batch_items VALUES (?,?,?,?,?,?,?)",
+            (
+                "batch-merged-group",
+                1,
+                "obsolete-frozen-group",
+                posting.id,
+                "a" * 64,
+                "test",
+                json.dumps({"Job Link": str(posting.canonical_url)}),
+            ),
+        )
+
+    assert store.delivered_today(profile) == 1
+
+
 def test_legacy_delivery_quota_survives_later_apply_url_change(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     destination = register(repo)
