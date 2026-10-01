@@ -1,14 +1,13 @@
 from pathlib import Path
 
-import job_scout.inventory_refresh as inventory_refresh
-from job_scout.production_registry import load_production_registry
+from job_scout import inventory_refresh
 
 
 REGISTRY = Path("config/source_registries/production_active_v1.json")
 
 
 def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
-    registry = load_production_registry(REGISTRY)
+    registry = inventory_refresh.load_production_registry(REGISTRY)
 
     plan0, subset0, manifest0 = inventory_refresh.build_refresh_plan(
         registry=registry, cohort=0
