@@ -1,0 +1,157 @@
+name: Client Delivery Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Control action
+        required: true
+        type: choice
+        default: status
+        options:
+          - status
+          - list
+          - pause
+          - resume
+          - set-quota
+          - set-mode
+          - set-timezone
+          - run-now
+          - release-batch
+          - discard-batch
+      profile_id:
+        description: Opaque delivery profile ID shown by profile setup/status
+        required: false
+        type: string
+      daily_quota:
+        description: New daily quota for Set quota
+        required: false
+        default: "100"
+        type: string
+      delivery_mode:
+        description: New delivery mode for Set mode
+        required: false
+        default: review
+        type: choice
+        options:
+          - review
+          - auto
+      timezone:
+        description: IANA timezone for Set timezone
+        required: false
+        default: Africa/Lagos
+        type: string
+      batch_id:
+        description: Prepared batch ID for release/discard
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery-mutation
+  cancel-in-progress: false
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      JOBSIFT_PLAN_DIR: config/sourcing_plans
+      JOBSIFT_REPORTS_DIR: /tmp/jobsift-runs
+      JOBSIFT_INVENTORY_RETENTION_HOURS: "72"
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate persistent runtime
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+
+      - name: Configure Google credentials
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Apply control
+        shell: bash
+        run: |
+          operation="${{ inputs.operation }}"
+          profile_id="${{ inputs.profile_id }}"
+          case "$operation" in
+            list)
+              python -m job_scout.cli delivery-profile list \
+                --database "$JOBSIFT_DATABASE"
+              ;;
+            status)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile status \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --reconcile
+              ;;
+            pause|resume)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile "$operation" \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id"
+              ;;
+            set-quota)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set-quota \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --daily-quota "${{ inputs.daily_quota }}"
+              ;;
+            set-mode)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set-mode \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --delivery-mode "${{ inputs.delivery_mode }}"
+              ;;
+            set-timezone)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set-timezone \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --timezone "${{ inputs.timezone }}"
+              ;;
+            run-now)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              JOBSIFT_PROFILE_CONTROL_ID="$profile_id" \
+                python -m job_scout.profile_delivery_runner
+              ;;
+            release-batch)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile release-batch \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --batch-id "${{ inputs.batch_id }}" \
+                --confirm-batch-id "${{ inputs.batch_id }}"
+              ;;
+            discard-batch)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile discard-batch \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --batch-id "${{ inputs.batch_id }}"
+              ;;
+          esac

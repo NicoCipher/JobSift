@@ -1,0 +1,103 @@
+name: Configure Client Delivery Profile
+
+on:
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: Registered sourcing-plan file
+        required: true
+        default: config/sourcing_plans/taiwo_software_remote_us_v2.json
+        type: string
+      daily_quota:
+        description: Maximum links per client-local day
+        required: true
+        default: "100"
+        type: string
+      status:
+        description: Initial profile state
+        required: true
+        default: active
+        type: choice
+        options:
+          - active
+          - paused
+      delivery_mode:
+        description: Review prepares a batch; Auto publishes it
+        required: true
+        default: review
+        type: choice
+        options:
+          - review
+          - auto
+      timezone:
+        description: IANA timezone used for the daily quota
+        required: true
+        default: Africa/Lagos
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery-mutation
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON: ${{ secrets.JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate private configuration
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+          test -n "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" || {
+            echo "Missing JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON secret"
+            exit 1
+          }
+
+      - name: Write private registration context
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+          printf '%s' "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" > "$RUNNER_TEMP/client-sheet-registration.json"
+          chmod 600 "$RUNNER_TEMP/client-sheet-registration.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Register or refresh client Sheet destination
+        run: |
+          job-scout destination register-google-sheet-file \
+            --database "$JOBSIFT_DATABASE" \
+            --registration-file "$RUNNER_TEMP/client-sheet-registration.json" \
+            > "$RUNNER_TEMP/client-sheet-registration-result.json"
+          echo "Client Sheet destination verified."
+
+      - name: Configure delivery profile
+        run: |
+          python -m job_scout.cli delivery-profile set-from-registration \
+            --database "$JOBSIFT_DATABASE" \
+            --registration-file "$RUNNER_TEMP/client-sheet-registration.json" \
+            --plan "${{ inputs.plan }}" \
+            --daily-quota "${{ inputs.daily_quota }}" \
+            --status "${{ inputs.status }}" \
+            --delivery-mode "${{ inputs.delivery_mode }}" \
+            --timezone "${{ inputs.timezone }}" \
+            --reconcile

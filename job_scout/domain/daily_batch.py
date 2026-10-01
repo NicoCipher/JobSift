@@ -34,6 +34,7 @@ class DailyBatchRequest(BatchModel):
     evaluation_id: str
     candidate_job_ids: tuple[str, ...]
     evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    match_scope_id: str | None = None
     # Legacy job_matches have no immutable revision association. Null is honest.
     brief_revision_id: str | None = None
     brief_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -48,6 +49,16 @@ class DailyBatchRequest(BatchModel):
         if not value.strip():
             raise ValueError("explicit nonblank identity required")
         return value.strip()
+
+    @field_validator("match_scope_id")
+    @classmethod
+    def nonblank_match_scope(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("match_scope_id must not be blank")
+        return value
 
     @field_validator("candidate_job_ids")
     @classmethod

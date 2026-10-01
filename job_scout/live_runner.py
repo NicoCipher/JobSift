@@ -13,14 +13,16 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
-from job_scout.domain.daily_batch import DailyBatchRequest, DailyBatchResult
-from job_scout.export.batch_sheets import sheet_destination
+from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
+from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
 from job_scout.sourcing_plan import (
     SourcingPlan,
     collect_inventory_plan,
     evaluate_inventory_run,
+    evaluate_recent_inventory,
     load_sourcing_plan,
 )
 from job_scout.storage.daily_batches import DailyBatchStore
@@ -73,6 +75,8 @@ class LiveRunnerConfig:
     discard_prepared: bool = False
     validation_only: bool = False
     inventory_retention_hours: int = 72
+    profile_managed: bool = False
+    source_before_delivery: bool = True
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
@@ -116,6 +120,8 @@ class LiveRunnerConfig:
             inventory_retention_hours=_positive_integer(
                 "JOBSIFT_INVENTORY_RETENTION_HOURS", 72
             ),
+            profile_managed=_boolean("JOBSIFT_PROFILE_MANAGED"),
+            source_before_delivery=_boolean("JOBSIFT_SOURCE_BEFORE_DELIVERY", True),
         )
 
 
@@ -160,6 +166,7 @@ def _unresolved_batch(
         row = connection.execute(
             "SELECT batch_id FROM daily_batches "
             "WHERE client_id=? AND destination=? AND status!='delivered' "
+            "AND (status='prepared' OR export_after_sha256 IS NOT NULL) "
             "ORDER BY assembled_at, batch_id LIMIT 1",
             (client_id, destination),
         ).fetchone()
@@ -311,6 +318,29 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "no ready client destination and no legacy Google Sheet fallback configured"
             )
 
+    profile = None
+    profile_store = None
+    delivered_today = 0
+    effective_quota = config.quota
+    profile_auto_release = False
+    profile_timezone = config.timezone
+    if config.profile_managed:
+        if config.validation_only:
+            raise ValueError("profile-managed delivery cannot run in validation mode")
+        if destination_record is None:
+            raise ValueError(
+                "profile-managed delivery requires a registered client destination"
+            )
+        profile_store = ClientDeliveryProfileStore(repository)
+        profile = profile_store.get(brief.client_id, destination_record.destination_id)
+        if profile.sourcing_plan_id != plan.plan_id:
+            raise ValueError(
+                "delivery profile sourcing plan does not match the active runner plan"
+            )
+        profile_timezone = profile.timezone
+        delivered_today = profile_store.delivered_today(profile)
+        effective_quota = max(0, profile.daily_quota - delivered_today)
+        profile_auto_release = profile.delivery_mode == "auto"
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
@@ -323,7 +353,64 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "selected_count": discarded.selected_count,
                 "destination": destination,
             }
-        if config.auto_release:
+
+        # Pausing a profile or reaching today's quota must not strand an export
+        # that is already visible on the Sheet after an uncertain response.
+        # guard_batch_release only bypasses those controls when the current
+        # destination digest proves the journaled append already happened.
+        if (
+            profile is not None
+            and profile_store is not None
+            and (profile.status == "paused" or effective_quota == 0)
+        ):
+            try:
+                unresolved, _reconciliation, effective_quota = (
+                    profile_store.guard_batch_release(
+                        profile,
+                        unresolved.batch_id,
+                        gateway=GoogleSheetsGateway(),
+                    )
+                )
+            except BatchConflict:
+                if profile.status == "paused":
+                    return {
+                        "action": "profile_paused",
+                        "client_id": profile.client_id,
+                        "destination_id": profile.destination_id,
+                        "daily_quota": profile.daily_quota,
+                        "delivery_mode": profile.delivery_mode,
+                    }
+                return {
+                    "action": "quota_reached",
+                    "client_id": profile.client_id,
+                    "destination_id": profile.destination_id,
+                    "daily_quota": profile.daily_quota,
+                    "delivered_today": delivered_today,
+                    "remaining_today": 0,
+                    "delivery_mode": profile.delivery_mode,
+                }
+            unresolved = finalize_daily_batch(
+                repository=repository, batch_id=unresolved.batch_id
+            )
+            return _batch_payload(store, unresolved, action="recovered_release")
+
+        if config.auto_release or profile_auto_release:
+            if profile is not None and profile_store is not None:
+                try:
+                    unresolved, _reconciliation, effective_quota = (
+                        profile_store.guard_batch_release(
+                            profile,
+                            unresolved.batch_id,
+                            gateway=GoogleSheetsGateway(),
+                        )
+                    )
+                except BatchConflict as error:
+                    action = (
+                        "release_blocked_quota"
+                        if "remaining daily quota" in str(error)
+                        else "release_blocked_profile"
+                    )
+                    return _batch_payload(store, unresolved, action=action)
             unresolved = finalize_daily_batch(
                 repository=repository, batch_id=unresolved.batch_id
             )
@@ -331,6 +418,26 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         else:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
+
+    if profile is not None and profile.status == "paused":
+        return {
+            "action": "profile_paused",
+            "client_id": profile.client_id,
+            "destination_id": profile.destination_id,
+            "daily_quota": profile.daily_quota,
+            "delivery_mode": profile.delivery_mode,
+        }
+
+    if profile is not None and effective_quota == 0:
+        return {
+            "action": "quota_reached",
+            "client_id": profile.client_id,
+            "destination_id": profile.destination_id,
+            "daily_quota": profile.daily_quota,
+            "delivered_today": delivered_today,
+            "remaining_today": 0,
+            "delivery_mode": profile.delivery_mode,
+        }
 
     if config.discard_prepared:
         return {
@@ -348,57 +455,92 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             "destination": destination,
         }
 
-    local_day = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
+    local_day = datetime.now(ZoneInfo(profile_timezone)).date().isoformat()
     idempotency_key = local_day
-    today = _batch_by_idempotency(
-        repository,
-        client_id=brief.client_id,
-        destination=destination,
-        idempotency_key=idempotency_key,
-    )
-    if today is not None:
-        return _batch_payload(store, today, action="already_ran_today")
+    if profile is None:
+        today = _batch_by_idempotency(
+            repository,
+            client_id=brief.client_id,
+            destination=destination,
+            idempotency_key=idempotency_key,
+        )
+        if today is not None:
+            return _batch_payload(store, today, action="already_ran_today")
 
-    report = collect_inventory_plan(
-        plan,
-        repository=repository,
-        reports_dir=config.reports_dir.resolve(),
-    )
-    if report.status == "failure":
-        return {
-            "action": "sourcing_failed",
-            "plan_id": plan.plan_id,
-            "status": report.status,
-            "source_failures": list(_source_failures(report)),
-        }
-    if report.status != "success" and not config.allow_partial:
-        return {
-            "action": "partial_sourcing_blocked",
-            "plan_id": plan.plan_id,
-            "status": report.status,
-            "source_failures": list(_source_failures(report)),
-        }
+    brief_sha = sha256(brief_path.read_bytes()).hexdigest()
+    match_scope_id = brief_sha if profile is not None else None
+
+    report = None
+    if config.source_before_delivery:
+        report = collect_inventory_plan(
+            plan,
+            repository=repository,
+            reports_dir=config.reports_dir.resolve(),
+        )
+        if report.status == "failure":
+            return {
+                "action": "sourcing_failed",
+                "plan_id": plan.plan_id,
+                "status": report.status,
+                "source_failures": list(_source_failures(report)),
+            }
+        if report.status != "success" and not config.allow_partial:
+            return {
+                "action": "partial_sourcing_blocked",
+                "plan_id": plan.plan_id,
+                "status": report.status,
+                "source_failures": list(_source_failures(report)),
+            }
 
     retention = repository.prune_stale_inventory(
         retention_hours=config.inventory_retention_hours
     )
 
-    evaluation = evaluate_inventory_run(
-        repository=repository,
-        run_id=report.run_id,
-        brief=brief,
-        evaluated_at=report.completed_at,
-    )
+    if report is not None:
+        evaluation = evaluate_inventory_run(
+            repository=repository,
+            run_id=report.run_id,
+            brief=brief,
+            evaluated_at=report.completed_at,
+            match_scope_id=match_scope_id,
+        )
+        candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
+        scope = f"{plan.plan_id}:{report.run_id}"
+        failures = _source_failures(report)
+        completeness = "complete" if report.status == "success" else "partial"
+    else:
+        evaluation, candidate_ids = evaluate_recent_inventory(
+            repository=repository,
+            brief=brief,
+            retention_hours=config.inventory_retention_hours,
+            match_scope_id=match_scope_id,
+        )
+        scope = f"{plan.plan_id}:{evaluation.run_id}"
+        failures = ()
+        completeness = "complete"
 
-    candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
-    evidence_sha = store.evidence_digest(brief.client_id, candidate_ids)
-    brief_sha = sha256(brief_path.read_bytes()).hexdigest()
-    scope = f"{plan.plan_id}:{report.run_id}"
+    if profile is not None:
+        scope_key = sha256(scope.encode()).hexdigest()[:20]
+        idempotency_key = f"{local_day}:scope-{scope_key}"
+        existing_scope = _batch_by_idempotency(
+            repository,
+            client_id=brief.client_id,
+            destination=destination,
+            idempotency_key=idempotency_key,
+        )
+        if existing_scope is not None:
+            return _batch_payload(
+                store, existing_scope, action="already_ran_inventory_scope"
+            )
+
+    evidence_sha = store.evidence_digest(
+        brief.client_id,
+        candidate_ids,
+        match_scope_id=match_scope_id,
+    )
     evaluation_id = (
         f"{scope}:{brief.client_id}:{evaluation.evaluated_at.astimezone(UTC).isoformat()}"
     )
-    failures = _source_failures(report)
-    completeness = "complete" if report.status == "success" else "partial"
     request = DailyBatchRequest(
         client_id=brief.client_id,
         destination=destination,
@@ -407,7 +549,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             destination_record.config_sha256 if destination_record else None
         ),
         idempotency_key=idempotency_key,
-        requested_quota=config.quota,
+        requested_quota=effective_quota,
         max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,
         employer_cooldown_days=brief.delivery_policy.employer_cooldown_days,
         max_posting_age_hours=brief.posting_freshness.max_age_hours,
@@ -421,6 +563,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         evaluation_id=evaluation_id,
         candidate_job_ids=candidate_ids,
         evidence_sha256=evidence_sha,
+        match_scope_id=match_scope_id,
         brief_revision_id=brief_path.stem,
         brief_sha256=brief_sha,
         completeness=completeness,
@@ -428,10 +571,32 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     )
     batch = prepare_daily_batch(repository=repository, request=request)
     action = "validated" if config.validation_only else "prepared"
-    if config.auto_release:
-        batch = finalize_daily_batch(repository=repository, batch_id=batch.batch_id)
-        action = "released" if batch.status == "delivered" else "release_failed"
-    return _batch_payload(
+    if profile_auto_release and profile_store is not None and profile is not None:
+        current_profile = profile_store.get(profile.client_id, profile.destination_id)
+        profile = current_profile
+        if current_profile.sourcing_plan_id != plan.plan_id:
+            action = "release_blocked_profile"
+        elif current_profile.delivery_mode != "auto":
+            action = "prepared"
+        else:
+            try:
+                batch, _reconciliation, _remaining = profile_store.guard_batch_release(
+                    current_profile,
+                    batch.batch_id,
+                    gateway=GoogleSheetsGateway(),
+                )
+            except BatchConflict as error:
+                action = (
+                    "release_blocked_quota"
+                    if "remaining daily quota" in str(error)
+                    else "release_blocked_profile"
+                )
+            else:
+                batch = finalize_daily_batch(
+                    repository=repository, batch_id=batch.batch_id
+                )
+                action = "released" if batch.status == "delivered" else "release_failed"
+    payload = _batch_payload(
         store,
         batch,
         action=action,
@@ -439,6 +604,19 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         evaluation=evaluation,
         retention=retention,
     )
+    if profile is not None and profile_store is not None:
+        delivered_after = profile_store.delivered_today(profile)
+        payload["delivery_profile"] = {
+            "client_id": profile.client_id,
+            "destination_id": profile.destination_id,
+            "daily_quota": profile.daily_quota,
+            "status": profile.status,
+            "delivery_mode": profile.delivery_mode,
+            "timezone": profile.timezone,
+            "delivered_today": delivered_after,
+            "remaining_today": max(0, profile.daily_quota - delivered_after),
+        }
+    return payload
 
 
 def main() -> None:

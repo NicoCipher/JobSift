@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS job_matches (
   matcher_version TEXT NOT NULL,
   PRIMARY KEY(job_id, client_id)
 );
+CREATE TABLE IF NOT EXISTS scoped_job_matches (
+  job_id TEXT NOT NULL REFERENCES jobs(id),
+  client_id TEXT NOT NULL,
+  match_scope_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  score INTEGER,
+  matched_reasons_json TEXT NOT NULL,
+  rejection_reasons_json TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  matcher_version TEXT NOT NULL,
+  PRIMARY KEY(job_id, client_id, match_scope_id)
+);
+CREATE INDEX IF NOT EXISTS ix_scoped_job_matches_client_scope
+  ON scoped_job_matches(client_id, match_scope_id, job_id);
 CREATE TABLE IF NOT EXISTS collection_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source TEXT NOT NULL, target TEXT NOT NULL, started_at TEXT NOT NULL,
@@ -125,6 +139,20 @@ CREATE TABLE IF NOT EXISTS historical_job_links (
 );
 CREATE INDEX IF NOT EXISTS ix_historical_url ON historical_job_links(client_id, normalized_url);
 CREATE INDEX IF NOT EXISTS ix_historical_identity ON historical_job_links(client_id, source, source_board_id, source_job_id);
+CREATE TABLE IF NOT EXISTS destination_observed_links (
+  client_id TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  normalized_url TEXT NOT NULL,
+  source TEXT,
+  source_board_id TEXT,
+  source_job_id TEXT,
+  first_observed_at TEXT NOT NULL,
+  PRIMARY KEY(client_id, destination, normalized_url)
+);
+CREATE INDEX IF NOT EXISTS ix_destination_observed_url
+  ON destination_observed_links(client_id, normalized_url);
+CREATE INDEX IF NOT EXISTS ix_destination_observed_identity
+  ON destination_observed_links(client_id, source, source_board_id, source_job_id);
 CREATE TABLE IF NOT EXISTS historical_blacklist_evidence (
   id INTEGER PRIMARY KEY AUTOINCREMENT, import_id TEXT NOT NULL REFERENCES historical_imports(id),
   client_id TEXT NOT NULL, value TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('company','note')),
@@ -382,6 +410,9 @@ class SQLiteRepository:
                     ),
                 )
                 connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
+                connection.execute(
+                    "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)
+                )
 
                 if keep_identity_row:
                     compact = job.model_copy(
@@ -481,17 +512,31 @@ class SQLiteRepository:
                 if (
                     group not in representatives
                     and exported is None
-                    and not self._is_historically_surfaced(connection, job, client_id)
+                    and not self._is_historically_surfaced(
+                        connection, job, client_id, destination
+                    )
                 ):
                     representatives[group] = job
         return [representatives[group] for group in sorted(representatives)]
 
-    def is_historically_surfaced(self, job: Job, client_id: str) -> bool:
+    def is_historically_surfaced(
+        self,
+        job: Job,
+        client_id: str,
+        destination: str | None = None,
+    ) -> bool:
         with self.connect() as connection:
-            return self._is_historically_surfaced(connection, job, client_id)
+            return self._is_historically_surfaced(
+                connection, job, client_id, destination
+            )
 
     @staticmethod
-    def _is_historically_surfaced(connection: sqlite3.Connection, job: Job, client_id: str) -> bool:
+    def _is_historically_surfaced(
+        connection: sqlite3.Connection,
+        job: Job,
+        client_id: str,
+        destination: str | None = None,
+    ) -> bool:
         identity = connection.execute(
             "SELECT 1 FROM historical_job_links WHERE client_id=? AND source=? "
             "AND source_board_id=? AND source_job_id=? LIMIT 1",
@@ -499,10 +544,34 @@ class SQLiteRepository:
         ).fetchone()
         if identity is not None:
             return True
+        historical_url = connection.execute(
+            "SELECT 1 FROM historical_job_links "
+            "WHERE client_id=? AND normalized_url=? LIMIT 1",
+            (client_id, str(job.canonical_url)),
+        ).fetchone()
+        if historical_url is not None:
+            return True
+        if destination is None:
+            return False
+        observed_identity = connection.execute(
+            "SELECT 1 FROM destination_observed_links WHERE client_id=? "
+            "AND destination=? AND source=? AND source_board_id=? "
+            "AND source_job_id=? LIMIT 1",
+            (
+                client_id,
+                destination,
+                job.source,
+                job.source_board_id,
+                job.source_job_id,
+            ),
+        ).fetchone()
+        if observed_identity is not None:
+            return True
         return (
             connection.execute(
-                "SELECT 1 FROM historical_job_links WHERE client_id=? AND normalized_url=? LIMIT 1",
-                (client_id, str(job.canonical_url)),
+                "SELECT 1 FROM destination_observed_links "
+                "WHERE client_id=? AND destination=? AND normalized_url=? LIMIT 1",
+                (client_id, destination, str(job.canonical_url)),
             ).fetchone()
             is not None
         )
@@ -575,6 +644,51 @@ class SQLiteRepository:
             )
             return len(values), 0
 
+    def observe_destination_links(
+        self,
+        *,
+        client_id: str,
+        destination: str,
+        links: Iterable[str],
+    ) -> tuple[int, int]:
+        """Persist links already visible in a client destination as prior surfacing."""
+        from job_scout.history import source_identity
+        from job_scout.normalization.core import canonicalize_url
+
+        unique: dict[str, tuple[str | None, str | None, str | None]] = {}
+        for raw in links:
+            value = str(raw).strip()
+            if not value:
+                continue
+            normalized = canonicalize_url(value)
+            if not normalized.startswith(("http://", "https://")):
+                raise ValueError("destination Job Link contains an invalid URL")
+            unique.setdefault(normalized, source_identity(value))
+
+        if not unique:
+            return 0, 0
+        now = datetime.now(UTC).isoformat()
+        inserted = 0
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for normalized, identity in sorted(unique.items()):
+                source, board, job_id = identity
+                inserted += connection.execute(
+                    "INSERT OR IGNORE INTO destination_observed_links "
+                    "(client_id,destination,normalized_url,source,source_board_id,"
+                    "source_job_id,first_observed_at) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        client_id,
+                        destination,
+                        normalized,
+                        source,
+                        board,
+                        job_id,
+                        now,
+                    ),
+                ).rowcount
+        return inserted, len(unique)
+
     @staticmethod
     def _match_row(match: JobMatch) -> tuple[object, ...]:
         return (
@@ -587,6 +701,31 @@ class SQLiteRepository:
             match.evaluated_at.isoformat(),
             match.matcher_version,
         )
+
+    @staticmethod
+    def _scoped_match_row(match: JobMatch, match_scope_id: str) -> tuple[object, ...]:
+        scope = match_scope_id.strip()
+        if not scope:
+            raise ValueError("match_scope_id must not be blank")
+        return (
+            match.job_id,
+            match.client_id,
+            scope,
+            match.decision.value,
+            match.score,
+            json.dumps(match.matched_reasons),
+            json.dumps(match.rejection_reasons),
+            match.evaluated_at.isoformat(),
+            match.matcher_version,
+        )
+
+    def save_scoped_match(self, match: JobMatch, match_scope_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO scoped_job_matches "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._scoped_match_row(match, match_scope_id),
+            )
 
     def save_match(self, match: JobMatch) -> None:
         with self.connect() as connection:

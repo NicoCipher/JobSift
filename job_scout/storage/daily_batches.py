@@ -17,6 +17,7 @@ from job_scout.dedupe.resolver import DEDUPE_VERSION
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchItem, DailyBatchResult
 from job_scout.domain.models import Job, JobMatch, MatchDecision
 from job_scout.normalization.company import employer_key
+from job_scout.posting_freshness import posting_freshness_disposition
 
 if TYPE_CHECKING:
     from job_scout.storage.sqlite import SQLiteRepository
@@ -73,7 +74,18 @@ class BatchCandidate:
 def posting_evidence(job: Job, match: JobMatch) -> str:
     payload = job.model_dump(mode="json")
     payload["eligible_countries"] = sorted(payload["eligible_countries"])
-    return digest([payload, match.model_dump(mode="json")])
+    # Collection bookkeeping is not job content. Hourly refreshes may change
+    # these timestamps while a reviewed batch is waiting without changing the
+    # posting itself.
+    payload.pop("discovered_at", None)
+    payload.pop("last_seen_at", None)
+    match_payload = match.model_dump(mode="json")
+    # Re-evaluating the same semantic match at a later time must not invalidate
+    # an already prepared batch for another destination. The batch request
+    # separately freezes its evaluation scope/time; delivery evidence should
+    # change only when the posting or match result changes.
+    match_payload.pop("evaluated_at", None)
+    return digest([payload, match_payload])
 
 
 class DailyBatchStore:
@@ -82,16 +94,33 @@ class DailyBatchStore:
         with repository.connect() as connection:
             connection.executescript(BATCH_SCHEMA)
 
-    def _candidates(self, c, client_id, job_ids):
+    def _candidates(
+        self,
+        c,
+        client_id,
+        job_ids,
+        destination=None,
+        match_scope_id: str | None = None,
+    ):
         candidates = []
         group_states = {}
         for job_id in sorted(job_ids):
-            row = c.execute(
-                "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
-                "JOIN posting_delivery_groups g ON g.job_id=j.id "
-                "JOIN job_matches m ON m.job_id=j.id WHERE j.id=? AND m.client_id=?",
-                (job_id, client_id),
-            ).fetchone()
+            if match_scope_id is None:
+                row = c.execute(
+                    "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
+                    "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                    "JOIN job_matches m ON m.job_id=j.id "
+                    "WHERE j.id=? AND m.client_id=?",
+                    (job_id, client_id),
+                ).fetchone()
+            else:
+                row = c.execute(
+                    "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
+                    "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                    "JOIN scoped_job_matches m ON m.job_id=j.id "
+                    "WHERE j.id=? AND m.client_id=? AND m.match_scope_id=?",
+                    (job_id, client_id, match_scope_id),
+                ).fetchone()
             if row is None:
                 raise BatchConflict(f"missing authoritative posting/match: {job_id}")
             job = Job.model_validate_json(row["payload_json"])
@@ -115,7 +144,10 @@ class DailyBatchStore:
                 ).fetchall()
                 group_states[group] = any(
                     self.repository._is_historically_surfaced(
-                        c, Job.model_validate_json(member[0]), client_id
+                        c,
+                        Job.model_validate_json(member[0]),
+                        client_id,
+                        destination,
                     )
                     for member in members
                 )
@@ -132,13 +164,26 @@ class DailyBatchStore:
             )
         return candidates
 
-    def evidence_digest(self, client_id: str, job_ids: tuple[str, ...]) -> str:
-        """Capture current authoritative rows, without asserting a legacy brief association."""
+    def evidence_digest(
+        self,
+        client_id: str,
+        job_ids: tuple[str, ...],
+        *,
+        match_scope_id: str | None = None,
+    ) -> str:
+        """Capture current authoritative rows for an explicit match scope when provided."""
         if len(set(job_ids)) != len(job_ids):
             raise BatchConflict("candidate IDs must be unique")
         with self.repository.connect() as c:
             c.execute("BEGIN")
-            return self._digest(self._candidates(c, client_id, job_ids))
+            return self._digest(
+                self._candidates(
+                    c,
+                    client_id,
+                    job_ids,
+                    match_scope_id=match_scope_id,
+                )
+            )
 
     @staticmethod
     def _digest(candidates):
@@ -173,8 +218,20 @@ class DailyBatchStore:
         with self.repository.connect() as c:
             return self._load(c, batch_id)
 
+    def export_journal(self, batch_id: str) -> tuple[str | None, str | None]:
+        """Return the frozen destination digests for release/recovery checks."""
+        with self.repository.connect() as c:
+            row = c.execute(
+                "SELECT export_before_sha256,export_after_sha256 "
+                "FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+        if row is None:
+            raise BatchConflict("batch not found")
+        return row["export_before_sha256"], row["export_after_sha256"]
+
     def discard_prepared(self, batch_id: str) -> DailyBatchResult:
-        """Delete only an unreleased prepared snapshot; never erase uncertain delivery state."""
+        """Delete only an unpublished snapshot; never erase uncertain delivery state."""
         with self.repository.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row = c.execute(
@@ -184,11 +241,11 @@ class DailyBatchStore:
             if row is None:
                 raise BatchConflict("batch not found")
             if (
-                row["status"] != "prepared"
+                row["status"] not in {"prepared", "failed"}
                 or row["delivered_at"] is not None
                 or row["export_after_sha256"] is not None
             ):
-                raise BatchConflict("only an unreleased prepared batch can be discarded")
+                raise BatchConflict("only an unpublished batch can be discarded")
             result = self._load(c, batch_id)
             c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
             c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
@@ -238,7 +295,13 @@ class DailyBatchStore:
                 if old["request_json"] != request_json:
                     raise BatchConflict("idempotency key reused with incompatible request")
                 return self._load(c, old["batch_id"])
-            candidates = self._candidates(c, request.client_id, request.candidate_job_ids)
+            candidates = self._candidates(
+                c,
+                request.client_id,
+                request.candidate_job_ids,
+                request.destination,
+                request.match_scope_id,
+            )
             if self._digest(candidates) != request.evidence_sha256:
                 raise BatchConflict("candidate evidence changed; capture an explicit new scope")
             recent_employers: set[str] = set()
@@ -337,12 +400,26 @@ class DailyBatchStore:
 
     def _verify_selected(self, c, result):
         candidates = self._candidates(
-            c, result.request.client_id, tuple(i.representative_job_id for i in result.items)
+            c,
+            result.request.client_id,
+            tuple(i.representative_job_id for i in result.items),
+            result.request.destination,
+            result.request.match_scope_id,
         )
         expected = {i.representative_job_id: i.evidence_sha256 for i in result.items}
         if len({v.group_id for v in candidates}) != len(candidates):
             raise BatchConflict("prepared groups merged; selection cannot be silently changed")
         for v in candidates:
+            freshness = posting_freshness_disposition(
+                posted_at=v.job.posted_at,
+                max_age_hours=result.request.max_posting_age_hours,
+                unknown_policy=result.request.unknown_posting_age_policy,
+                evaluated_at=datetime.now(UTC),
+            )
+            if freshness is not None:
+                raise BatchConflict(
+                    f"prepared posting is no longer fresh at delivery: {freshness}"
+                )
             if (
                 v.evidence_sha256 != expected[v.job.id]
                 or v.historical
