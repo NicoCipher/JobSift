@@ -372,10 +372,13 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "destination": destination,
             }
         if config.auto_release or profile_auto_release:
-            unresolved = finalize_daily_batch(
-                repository=repository, batch_id=unresolved.batch_id
-            )
-            action = "resumed_release"
+            if profile is not None and unresolved.selected_count > effective_quota:
+                action = "release_blocked_quota"
+            else:
+                unresolved = finalize_daily_batch(
+                    repository=repository, batch_id=unresolved.batch_id
+                )
+                action = "resumed_release"
         else:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
@@ -397,19 +400,16 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         }
 
     local_day = datetime.now(ZoneInfo(profile_timezone)).date().isoformat()
-    idempotency_key = (
-        f"{local_day}:delivered-{delivered_today}"
-        if profile is not None
-        else local_day
-    )
-    today = _batch_by_idempotency(
-        repository,
-        client_id=brief.client_id,
-        destination=destination,
-        idempotency_key=idempotency_key,
-    )
-    if today is not None:
-        return _batch_payload(store, today, action="already_ran_today")
+    idempotency_key = local_day
+    if profile is None:
+        today = _batch_by_idempotency(
+            repository,
+            client_id=brief.client_id,
+            destination=destination,
+            idempotency_key=idempotency_key,
+        )
+        if today is not None:
+            return _batch_payload(store, today, action="already_ran_today")
 
     report = None
     if config.source_before_delivery:
@@ -457,6 +457,20 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         scope = f"{plan.plan_id}:{evaluation.run_id}"
         failures = ()
         completeness = "complete"
+
+    if profile is not None:
+        scope_key = sha256(scope.encode()).hexdigest()[:20]
+        idempotency_key = f"{local_day}:scope-{scope_key}"
+        existing_scope = _batch_by_idempotency(
+            repository,
+            client_id=brief.client_id,
+            destination=destination,
+            idempotency_key=idempotency_key,
+        )
+        if existing_scope is not None:
+            return _batch_payload(
+                store, existing_scope, action="already_ran_inventory_scope"
+            )
 
     evidence_sha = store.evidence_digest(brief.client_id, candidate_ids)
     brief_sha = sha256(brief_path.read_bytes()).hexdigest()
