@@ -1,0 +1,169 @@
+{
+  "validation_version": "bounded-source-benchmark-evidence-v1",
+  "github_actions_run_id": 36807915457,
+  "github_actions_run_number": 2,
+  "benchmark_trigger_commit": "6fc7524b33c3208d5437b6e92db6965e13e227ba",
+  "benchmark_base_main": "8c23e90bcb8287648fa7668a01284cbe59c41598",
+  "production_registry_id": "ats-active-2026-09-v1",
+  "benchmark_registry_id": "ats-active-2026-09-v1-bounded-c41736451d8f9004",
+  "safety": {
+    "production_registry_only": true,
+    "local_sqlite_only": true,
+    "turso_credentials": false,
+    "sheets_credentials": false,
+    "job_delivery": false,
+    "complete_artifact_set_required": true
+  },
+  "plan": {
+    "targets_by_source": {
+      "greenhouse": 10,
+      "ashby": 10,
+      "workday": 5,
+      "lever": 10
+    },
+    "total_targets": 35,
+    "shards_by_source": {
+      "greenhouse": 2,
+      "ashby": 2,
+      "workday": 2,
+      "lever": 2
+    },
+    "total_shards": 8,
+    "workday_detail_concurrency": 4,
+    "shard_timeout_minutes": 30
+  },
+  "artifacts": {
+    "result": {
+      "artifact_id": 11139540361,
+      "name": "jobsift-benchmark-result-36807915457",
+      "github_digest": "sha256:e435e2d52156ca4d118909db8aa496d7a03b23d09b7b0378cb7feaa4d233bb19",
+      "report_json_sha256": "03d1036bd30bd1e879731c9cda48133e23c5cc0798312cae6392e920dd8c0e2e"
+    },
+    "workday_000": {
+      "artifact_id": 11138143934,
+      "github_digest": "sha256:6d7493c92daf2e2edf10b96fc4ce71cd3d2a2e24574894c27608ce06d586873e"
+    },
+    "workday_001": {
+      "artifact_id": 11139355915,
+      "github_digest": "sha256:23885d153dd5c036f388a6c873762f58bb1f1a7863de545d63d1be3e9d72bd87"
+    }
+  },
+  "fan_in": {
+    "status": "success",
+    "replayed": false,
+    "run_id": "299ae0ee-ea98-509a-8709-4521d9d87bdd",
+    "artifact_set_sha256": "923704884136c6bc7c1b0acb5441b3759167218bd25f42ec0a085cada6d6afa8",
+    "shard_manifest_sha256": "7cb083e0ce3ee60f3e77ca7d834baf2543040866036bf515cf437803775778ba",
+    "collection_started_at": "2026-10-01T02:53:27.330840Z",
+    "collection_completed_at": "2026-10-01T03:10:04.535074Z",
+    "persisted_at": "2026-10-01T03:10:55.039214Z",
+    "targets_attempted": 35,
+    "targets_succeeded": 35,
+    "targets_partial": 0,
+    "targets_failed": 0,
+    "raw_postings_received": 4199,
+    "normalized_job_records": 4199,
+    "unique_normalized_jobs": 4199,
+    "duplicate_job_records_suppressed": 0,
+    "inventory_memberships": 4199,
+    "postings_with_trustworthy_timestamps": 4199,
+    "postings_at_most_24h_old_at_collection": 26,
+    "target_runtime_p50_ms": 164,
+    "target_runtime_p95_ms": 72556
+  },
+  "evaluation": {
+    "client_id": "taiwo_operator_sourcing_v1",
+    "evaluated_at": "2026-10-01T03:10:04.535074Z",
+    "total_evaluated": 4199,
+    "semantic_matches_before_freshness": 23,
+    "freshness_eligible_matches": 0,
+    "matcher_non_matches": 4176,
+    "stale_posting_suppressions": 23,
+    "unknown_age_suppressions": 0,
+    "invalid_time_suppressions": 0,
+    "distinct_fresh_matched_employers": 0,
+    "distinct_fresh_matched_delivery_groups": 0,
+    "fresh_postings_rejected_by_matcher": 26,
+    "fresh_rejection_reasons": {
+      "title does not match a configured target role": 26
+    },
+    "nearest_stale_semantic_match_age_hours": 56.7
+  },
+  "source_breakdown": {
+    "greenhouse": {
+      "targets": 10,
+      "normalized_jobs": 529,
+      "postings_at_most_24h_old": 11,
+      "semantic_matches_before_freshness": 1,
+      "freshness_eligible_matches": 0
+    },
+    "ashby": {
+      "targets": 10,
+      "normalized_jobs": 219,
+      "postings_at_most_24h_old": 3,
+      "semantic_matches_before_freshness": 12,
+      "freshness_eligible_matches": 0
+    },
+    "lever": {
+      "targets": 10,
+      "normalized_jobs": 70,
+      "postings_at_most_24h_old": 1,
+      "semantic_matches_before_freshness": 9,
+      "freshness_eligible_matches": 0
+    },
+    "workday": {
+      "targets": 5,
+      "normalized_jobs": 3381,
+      "postings_at_most_24h_old": 11,
+      "semantic_matches_before_freshness": 1,
+      "freshness_eligible_matches": 0
+    }
+  },
+  "workday_concurrency_evidence": {
+    "comparison_run_id": 36782209908,
+    "serial_run_outcome": "workday-001 exceeded the unchanged 30-minute shard guard; fan-in failed closed on the incomplete artifact set",
+    "concurrency_4_outcome": "both Workday shards completed successfully with zero target partials/failures",
+    "workday_000": {
+      "targets_succeeded": 3,
+      "raw_postings_received": 617,
+      "target_runtime_p50_ms": 63510,
+      "target_runtime_p95_ms": 90648,
+      "targets": {
+        "allegion": {
+          "raw_postings": 334,
+          "runtime_ms": 93663
+        },
+        "bullhorn": {
+          "raw_postings": 14,
+          "runtime_ms": 4251
+        },
+        "yale": {
+          "raw_postings": 269,
+          "runtime_ms": 63510
+        }
+      }
+    },
+    "workday_001": {
+      "targets_succeeded": 2,
+      "raw_postings_received": 2764,
+      "target_runtime_p50_ms": 495726,
+      "target_runtime_p95_ms": 936987,
+      "targets": {
+        "genpt": {
+          "raw_postings": 2750,
+          "runtime_ms": 986016
+        },
+        "gn_resound": {
+          "raw_postings": 14,
+          "runtime_ms": 5436
+        }
+      }
+    },
+    "interpretation": [
+      "bounded detail concurrency materially improves Workday throughput without changing ordinary collector default behavior",
+      "the health count of 2000 for genpt was a provider cap, not an exact inventory count; cap recovery produced 2750 postings",
+      "full-scale capacity is not proven by this 35-target sample",
+      "zero freshness-eligible client matches means the 150-per-day target remains unproven"
+    ]
+  }
+}
