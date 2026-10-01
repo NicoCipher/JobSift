@@ -13,6 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
+from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import DailyBatchRequest, DailyBatchResult
 from job_scout.export.batch_sheets import sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
@@ -73,6 +74,7 @@ class LiveRunnerConfig:
     discard_prepared: bool = False
     validation_only: bool = False
     inventory_retention_hours: int = 72
+    profile_managed: bool = False
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
@@ -116,6 +118,7 @@ class LiveRunnerConfig:
             inventory_retention_hours=_positive_integer(
                 "JOBSIFT_INVENTORY_RETENTION_HOURS", 72
             ),
+            profile_managed=_boolean("JOBSIFT_PROFILE_MANAGED"),
         )
 
 
@@ -311,6 +314,48 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "no ready client destination and no legacy Google Sheet fallback configured"
             )
 
+    profile = None
+    profile_store = None
+    delivered_today = 0
+    effective_quota = config.quota
+    profile_auto_release = False
+    profile_timezone = config.timezone
+    if config.profile_managed:
+        if config.validation_only:
+            raise ValueError("profile-managed delivery cannot run in validation mode")
+        if destination_record is None:
+            raise ValueError(
+                "profile-managed delivery requires a registered client destination"
+            )
+        profile_store = ClientDeliveryProfileStore(repository)
+        profile = profile_store.get(brief.client_id, destination_record.destination_id)
+        if profile.sourcing_plan_id != plan.plan_id:
+            raise ValueError(
+                "delivery profile sourcing plan does not match the active runner plan"
+            )
+        profile_timezone = profile.timezone
+        if profile.status == "paused":
+            return {
+                "action": "profile_paused",
+                "client_id": profile.client_id,
+                "destination_id": profile.destination_id,
+                "daily_quota": profile.daily_quota,
+                "delivery_mode": profile.delivery_mode,
+            }
+        delivered_today = profile_store.delivered_today(profile)
+        effective_quota = max(0, profile.daily_quota - delivered_today)
+        profile_auto_release = profile.delivery_mode == "auto"
+        if effective_quota == 0:
+            return {
+                "action": "quota_reached",
+                "client_id": profile.client_id,
+                "destination_id": profile.destination_id,
+                "daily_quota": profile.daily_quota,
+                "delivered_today": delivered_today,
+                "remaining_today": 0,
+                "delivery_mode": profile.delivery_mode,
+            }
+
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
@@ -323,7 +368,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "selected_count": discarded.selected_count,
                 "destination": destination,
             }
-        if config.auto_release:
+        if config.auto_release or profile_auto_release:
             unresolved = finalize_daily_batch(
                 repository=repository, batch_id=unresolved.batch_id
             )
@@ -348,8 +393,12 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             "destination": destination,
         }
 
-    local_day = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
-    idempotency_key = local_day
+    local_day = datetime.now(ZoneInfo(profile_timezone)).date().isoformat()
+    idempotency_key = (
+        f"{local_day}:delivered-{delivered_today}"
+        if profile is not None
+        else local_day
+    )
     today = _batch_by_idempotency(
         repository,
         client_id=brief.client_id,
@@ -407,7 +456,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             destination_record.config_sha256 if destination_record else None
         ),
         idempotency_key=idempotency_key,
-        requested_quota=config.quota,
+        requested_quota=effective_quota,
         max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,
         employer_cooldown_days=brief.delivery_policy.employer_cooldown_days,
         max_posting_age_hours=brief.posting_freshness.max_age_hours,
@@ -428,10 +477,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     )
     batch = prepare_daily_batch(repository=repository, request=request)
     action = "validated" if config.validation_only else "prepared"
-    if config.auto_release:
+    if profile_auto_release:
         batch = finalize_daily_batch(repository=repository, batch_id=batch.batch_id)
         action = "released" if batch.status == "delivered" else "release_failed"
-    return _batch_payload(
+    payload = _batch_payload(
         store,
         batch,
         action=action,
@@ -439,6 +488,19 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         evaluation=evaluation,
         retention=retention,
     )
+    if profile is not None and profile_store is not None:
+        delivered_after = profile_store.delivered_today(profile)
+        payload["delivery_profile"] = {
+            "client_id": profile.client_id,
+            "destination_id": profile.destination_id,
+            "daily_quota": profile.daily_quota,
+            "status": profile.status,
+            "delivery_mode": profile.delivery_mode,
+            "timezone": profile.timezone,
+            "delivered_today": delivered_after,
+            "remaining_today": max(0, profile.daily_quota - delivered_after),
+        }
+    return payload
 
 
 def main() -> None:
