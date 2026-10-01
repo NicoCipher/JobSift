@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sqlite3
 from datetime import UTC, datetime
@@ -18,7 +17,7 @@ from job_scout.search_brief import load_search_brief
 from job_scout.storage.sqlite import SQLiteRepository
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-_PLAN = re.compile(r"^config/sourcing_plans/[A-Za-z0-9._/-]+\.json$")
+_BRIEF = re.compile(r"^config/search_briefs/[A-Za-z0-9._/-]+\.json$")
 
 PROFILE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS client_delivery_profiles (
