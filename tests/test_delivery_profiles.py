@@ -166,17 +166,21 @@ def test_delivered_today_is_scoped_to_destination_and_profile_timezone(tmp_path)
 
     posting = make_job()
     repo.upsert_job(posting)
-    group_id = repo.delivery_group_id(posting.id)
 
     # 23:30 UTC on Sep 30 is 00:30 Oct 1 in Lagos and must count for Oct 1.
+    # Quota is defined by the destination link that was actually observed.
     with repo.connect() as connection:
         connection.execute(
-            "INSERT INTO group_deliveries VALUES (?,?,?,?,?)",
+            "INSERT INTO destination_observed_links "
+            "(client_id,destination,normalized_url,source,source_board_id,"
+            "source_job_id,first_observed_at) VALUES (?,?,?,?,?,?,?)",
             (
-                group_id,
                 "client-a",
                 destination.logical_uri,
-                posting.id,
+                str(posting.canonical_url),
+                posting.source,
+                posting.source_board_id,
+                posting.source_job_id,
                 "2026-09-30T23:30:00+00:00",
             ),
         )
