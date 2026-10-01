@@ -180,6 +180,26 @@ class WorkdayIndexAnalysis(BaseModel):
     incomplete_targets: list[dict[str, Any]] = Field(default_factory=list)
     top_targets: list[dict[str, Any]] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_reconciliation(self) -> WorkdayIndexAnalysis:
+        if self.targets_scanned != (
+            self.targets_succeeded + self.targets_partial + self.targets_failed
+        ):
+            raise ValueError("Workday index analysis target counts do not reconcile")
+        expected_complete = self.targets_partial == 0 and self.targets_failed == 0
+        if self.coverage_complete is not expected_complete:
+            raise ValueError("Workday index analysis coverage flag does not reconcile")
+        if self.recent_or_uncertain_role_title_candidates != (
+            self.hydration_candidates_on_complete_targets
+            + self.hydration_candidates_on_incomplete_targets
+        ):
+            raise ValueError("Workday index analysis candidate counts do not reconcile")
+        if len(self.incomplete_targets) != self.targets_partial + self.targets_failed:
+            raise ValueError("Workday index analysis incomplete targets do not reconcile")
+        if self.targets_with_hydration_candidates > self.targets_scanned:
+            raise ValueError("hydration-candidate target count exceeds scanned targets")
+        return self
+
 
 class _Partition(BaseModel):
     model_config = ConfigDict(extra="forbid")
