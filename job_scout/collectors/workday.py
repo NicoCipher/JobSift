@@ -15,8 +15,8 @@ import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from functools import partial
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -78,7 +78,6 @@ class _RequestFailure:
     status_code: int | None = None
 
 
-@dataclass
 @dataclass(frozen=True)
 class _DetailResult:
     path: str
@@ -86,6 +85,7 @@ class _DetailResult:
     error: str | None
 
 
+@dataclass
 class _QueryResult:
     paths: list[str]
     total: int | None
