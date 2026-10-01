@@ -27,8 +27,8 @@ from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
 
 PROVIDERS = ("greenhouse", "ashby", "workday", "lever")
-DEFAULT_LIMITS = {"greenhouse": 35, "ashby": 35, "workday": 15, "lever": 15}
-DEFAULT_SHARDS = {"greenhouse": 5, "ashby": 5, "workday": 3, "lever": 3}
+DEFAULT_LIMITS = {"greenhouse": 35, "ashby": 35, "workday": 20, "lever": 10}
+DEFAULT_SHARDS = {"greenhouse": 5, "ashby": 5, "workday": 4, "lever": 2}
 
 
 def _stable_targets(registry: ProductionSourceRegistry, source: str):
@@ -56,7 +56,7 @@ def build_refresh_registry(
     slot: int,
     target_counts: dict[str, int] | None = None,
 ) -> ProductionSourceRegistry:
-    """Choose one deterministic circular window per provider for an hourly slot."""
+    """Choose one deterministic circular window per provider for a 30-minute slot."""
     if slot < 0:
         raise ValueError("rotation slot must be non-negative")
     counts = dict(target_counts or DEFAULT_LIMITS)
@@ -73,7 +73,7 @@ def build_refresh_registry(
         )
     selected = sorted(selected, key=lambda target: target.target_identity)
     return ProductionSourceRegistry(
-        registry_id=f"{registry.registry_id}-hourly-{slot}",
+        registry_id=f"{registry.registry_id}-rolling-{slot}",
         target_universe_git_blob_sha=registry.target_universe_git_blob_sha,
         health_manifest_sha256=registry.health_manifest_sha256,
         health_evidence_updated_at=registry.health_evidence_updated_at,
@@ -88,7 +88,7 @@ def build_refresh_registry(
 def _slot(value: int | None) -> int:
     if value is not None:
         return value
-    return int(datetime.now(UTC).timestamp() // 3600)
+    return int(datetime.now(UTC).timestamp() // 1800)
 
 
 def _collector_factory(source: str, *, workday_detail_concurrency: int):
