@@ -481,6 +481,7 @@ def evaluate_inventory_run(
     run_id: str,
     brief: SearchBrief,
     evaluated_at: datetime | None = None,
+    match_scope_id: str | None = None,
 ) -> InventoryEvaluationReport:
     """Evaluate one shared inventory run for one client without recollecting sources."""
     evaluation_time = evaluated_at or datetime.now(UTC)
@@ -509,6 +510,18 @@ def evaluate_inventory_run(
                 "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 repository._match_row(match),
             )
+            if match_scope_id is not None:
+                connection.execute(
+                    "INSERT OR REPLACE INTO scoped_job_matches "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    repository._scoped_match_row(match, match_scope_id),
+                )
+            if match_scope_id is not None:
+                connection.execute(
+                    "INSERT OR REPLACE INTO scoped_job_matches "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    repository._scoped_match_row(match, match_scope_id),
+                )
             evaluated += 1
             if match.decision in {
                 MatchDecision.STRONG_MATCH,
@@ -534,6 +547,7 @@ def evaluate_recent_inventory(
     brief: SearchBrief,
     retention_hours: int = 72,
     evaluated_at: datetime | None = None,
+    match_scope_id: str | None = None,
 ) -> tuple[InventoryEvaluationReport, tuple[str, ...]]:
     """Evaluate the currently retained shared inventory for one client.
 
