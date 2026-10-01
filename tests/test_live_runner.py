@@ -252,6 +252,15 @@ def test_sole_ready_client_destination_is_auto_selected(tmp_path, monkeypatch):
         "ClientSheetDestinationStore",
         lambda _: SimpleNamespace(list=lambda client_id: (destination,)),
     )
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: (_ for _ in ()).throw(
+                live_runner.BatchConflict("client delivery profile not found")
+            )
+        ),
+    )
     observed = {}
 
     def unresolved(repository, *, client_id, destination):
@@ -350,6 +359,15 @@ def test_registered_client_destination_replaces_global_sheet_coordinates(tmp_pat
         "ClientSheetDestinationStore",
         lambda _: SimpleNamespace(
             get=lambda client_id, destination_id: destination
+        ),
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: (_ for _ in ()).throw(
+                live_runner.BatchConflict("client delivery profile not found")
+            )
         ),
     )
 
