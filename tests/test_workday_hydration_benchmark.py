@@ -139,6 +139,9 @@ def test_job37_full_accounting_uses_authoritative_identity_history_and_dedupe(
 
         def hydrate_paths(self, target, paths):
             assert len(paths) == 4
+            self.last_path_ids = {
+                path: job.source_job_id for path, job in zip(paths, jobs, strict=True)
+            }
             return CollectionResult(
                 source="workday",
                 target=target,
@@ -214,6 +217,21 @@ def test_job37_full_accounting_uses_authoritative_identity_history_and_dedupe(
     assert report["fresh_unique_delivery_groups"] == 1
     assert report["final_delivery_policy_eligible_count"] == 1
     assert report["prior_delivery_suppressed_groups"] == 0
+    assert report["hydration_failure_classes"] == {}
+    assert report["run_duration_seconds"] >= 0
+    assert len(report["per_candidate"]) == 4
+    historical = next(
+        row for row in report["per_candidate"]
+        if row["authoritative_source_job_id"] == "HIST"
+    )
+    assert historical["historically_surfaced"] is True
+    assert historical["suppression_outcome"] == "historical"
+    stale = next(
+        row for row in report["per_candidate"]
+        if row["authoritative_source_job_id"] == "STALE"
+    )
+    assert stale["posting_age_evidence"]["freshness_disposition"] == "stale_posting"
+    assert stale["final_deliverable"] is False
 
 
 def test_job37_rejects_tampered_candidate_manifest(tmp_path: Path) -> None:
