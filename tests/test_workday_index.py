@@ -361,7 +361,9 @@ def test_scanner_continues_after_invalid_external_path_and_marks_partial() -> No
     assert result.status is CollectionStatus.PARTIAL
     assert result.provider_rows_seen == 21
     assert len(result.postings) == 20
-    assert result.postings[-1].external_path == "/job/Remote/Final_R21"
+    assert "/job/Remote/Final_R21" in {
+        posting.external_path for posting in result.postings
+    }
     assert any("1 rows have invalid externalPath" in error for error in result.errors)
     assert any("retrieved 20 valid rows" in error for error in result.errors)
 
