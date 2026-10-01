@@ -58,21 +58,39 @@ closed.
 
 ## Phone control
 
-Open **GitHub → Actions → Client Delivery Control → Run workflow**.
+Because the repository is public, client IDs and Sheet destination IDs are
+never accepted as public workflow inputs.
+
+### One-time profile setup
+
+After registering a client Sheet, open
+**GitHub → Actions → Configure Client Delivery Profile → Run workflow**.
+
+This setup reads the existing private
+`JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON` secret to identify the client and
+destination. The public inputs contain only non-sensitive settings such as
+quota, delivery mode and timezone. The result returns an opaque 16-character
+`profile_id`.
+
+### Routine controls
+
+Open **GitHub → Actions → Client Delivery Control → Run workflow** and use the
+opaque `profile_id`.
 
 Available operations:
 
-- **set** — create or update a profile
-- **pause** — stop new preparation/delivery for one client destination
-- **resume** — reactivate it
-- **list** — inspect saved profiles
-- **run-now** — consume the current shared inventory immediately
+- **status** — show quota, delivered today, remaining today, mode and state
+- **list** — show the same safe status for all profiles, without client/Sheet IDs
+- **pause** — stop new preparation/delivery
+- **resume** — reactivate the profile
+- **set-quota** — change the daily maximum
+- **set-mode** — switch between review and auto delivery
+- **set-timezone** — change the client-local quota timezone
+- **run-now** — consume current shared inventory for that profile immediately
 - **release-batch** — publish an explicitly reviewed prepared batch
 - **discard-batch** — discard an unreleased prepared batch
 
-For **set**, provide the logical client ID and registered destination ID, choose
-the daily quota, status, delivery mode and timezone. The current software-role
-plan is the default plan in the workflow.
+The opaque profile ID is an operator handle, not a client identifier or secret.
 
 ### Review mode
 
@@ -100,10 +118,14 @@ otherwise non-qualifying jobs.
 ## Onboarding another client
 
 1. Create and verify the client's SearchBrief/sourcing plan.
-2. Register the client's Google Sheet destination and column mapping.
-3. Share the Sheet with the JobSift service account.
-4. Use **Client Delivery Control → set** to choose quota, mode and status.
-5. Leave the shared inventory refresher running.
+2. Put that client's private registration JSON into
+   `JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON`.
+3. Register the client's Google Sheet destination and column mapping.
+4. Share the Sheet with the JobSift service account.
+5. Run **Configure Client Delivery Profile** once and keep the returned opaque
+   profile ID.
+6. Use **Client Delivery Control** for quota, pause/resume, mode and run-now.
+7. Leave the shared inventory refresher running.
 
 A single client may have more than one registered destination. Each destination
 gets its own delivery profile and quota.
