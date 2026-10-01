@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from job_scout.domain.models import CollectionStatus, SearchBrief
-from job_scout.production_registry import ProductionSourceRegistry, build_shard_manifest
+from job_scout.production_registry import ProductionSourceRegistry
 from job_scout.workday_index import (
     WorkdayIndexArtifact,
     WorkdayIndexPosting,
