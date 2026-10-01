@@ -199,6 +199,48 @@ def _remaining_quota(
     return max(0, profile.link_quota - progress), progress
 
 
+def _batch_fully_visible_on_sheet(
+    *,
+    repository: SQLiteRepository,
+    batch,
+    destination: ClientSheetDestination,
+    gateway: GoogleSheetsGateway,
+) -> bool:
+    """Allow uncertain-write recovery without treating already-appended rows as new quota."""
+    rows = _destination_rows(destination, gateway)
+    link_index = destination.header.index(destination.column_mapping["Job Link"])
+    visible = {
+        canonicalize_url(row[link_index])
+        for row in rows[1:]
+        if row[link_index].strip()
+    }
+    frozen = DailyBatchStore(repository).export_rows(batch.batch_id)
+    batch_links = {
+        canonicalize_url(row["Job Link"])
+        for row in frozen
+        if row["Job Link"].strip()
+    }
+    return bool(batch_links) and batch_links.issubset(visible)
+
+
+def _release_quota_blocked(
+    *,
+    repository: SQLiteRepository,
+    batch,
+    destination: ClientSheetDestination,
+    gateway: GoogleSheetsGateway,
+    remaining: int,
+) -> bool:
+    if batch.selected_count <= remaining:
+        return False
+    return not _batch_fully_visible_on_sheet(
+        repository=repository,
+        batch=batch,
+        destination=destination,
+        gateway=gateway,
+    )
+
+
 def dispatch_profile(
     *,
     repository: SQLiteRepository,
@@ -235,15 +277,27 @@ def dispatch_profile(
         "delivery_mode": profile.delivery_mode,
         "reconciliation": reconciliation,
     }
-    if remaining == 0:
-        return {**base, "action": "quota_complete"}
-
     unresolved = _unresolved(
         repository,
         client_id=profile.client_id,
         destination=destination.logical_uri,
     )
     if unresolved is not None:
+        quota_blocked = _release_quota_blocked(
+            repository=repository,
+            batch=unresolved,
+            destination=destination,
+            gateway=gateway,
+            remaining=remaining,
+        )
+        if quota_blocked:
+            return {
+                **base,
+                "action": "prepared_batch_exceeds_current_quota",
+                "batch_id": unresolved.batch_id,
+                "selected_count": unresolved.selected_count,
+                "required_action": "discard_and_rebuild",
+            }
         if profile.delivery_mode == "review":
             return {
                 **base,
@@ -285,6 +339,9 @@ def dispatch_profile(
         if remaining == 0:
             return {**base, "action": "quota_complete_after_release"}
 
+    if remaining == 0:
+        return {**base, "action": "quota_complete"}
+
     brief_path = Path(profile.brief_path)
     brief = load_search_brief(brief_path)
     if brief.client_id != profile.client_id:
@@ -294,6 +351,13 @@ def dispatch_profile(
     run = inventory.get(run_id)
     if run is None or run.status == "running" or run.completed_at is None:
         raise ValueError("inventory run is not complete")
+    if run.status == "failure":
+        return {
+            **base,
+            "action": "sourcing_failed",
+            "run_id": run_id,
+            "inventory_status": run.status,
+        }
     if run.status != "success" and profile.delivery_mode == "auto":
         return {
             **base,
@@ -445,6 +509,38 @@ def manage_pending(
             "action": "discarded",
             "batch_id": result.batch_id,
         }
+
+    reconciliation = reconcile_sheet_history(
+        repository=repository,
+        profile=profile,
+        destination=destination,
+        gateway=gateway,
+    )
+    remaining, progress = _remaining_quota(
+        repository=repository,
+        profile=profile,
+        destination=destination,
+        sheet_links=reconciliation["sheet_links"],
+        now=datetime.now(UTC),
+    )
+    if _release_quota_blocked(
+        repository=repository,
+        batch=batch,
+        destination=destination,
+        gateway=gateway,
+        remaining=remaining,
+    ):
+        return {
+            "client_id": client_id,
+            "profile_id": profile_id,
+            "action": "quota_changed_requires_rebuild",
+            "batch_id": batch.batch_id,
+            "selected_count": batch.selected_count,
+            "quota": profile.link_quota,
+            "progress": progress,
+            "remaining": remaining,
+        }
+
     result = finalize_daily_batch(
         repository=repository,
         batch_id=batch.batch_id,
@@ -478,6 +574,10 @@ def main() -> None:
     gateway = GoogleSheetsGateway()
     if args.command == "dispatch":
         result = dispatch_all(repository=repository, run_id=args.run_id, gateway=gateway)
+        failed = any(
+            item.get("action") in {"profile_error", "release_failed"}
+            for item in result
+        )
     else:
         result = manage_pending(
             repository=repository,
@@ -486,7 +586,13 @@ def main() -> None:
             action=args.action,
             gateway=gateway,
         )
+        failed = result.get("action") in {
+            "release_failed",
+            "quota_changed_requires_rebuild",
+        }
     print(json.dumps(result, sort_keys=True, default=str))
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
