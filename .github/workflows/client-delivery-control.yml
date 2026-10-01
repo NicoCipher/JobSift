@@ -14,12 +14,18 @@ on:
           - resume
           - list
           - run-now
+          - release-batch
+          - discard-batch
       client_id:
         description: Logical client ID (not a spreadsheet ID)
         required: false
         type: string
       destination_id:
         description: Registered logical Sheet destination ID
+        required: false
+        type: string
+      batch_id:
+        description: Prepared batch ID for release/discard
         required: false
         type: string
       plan:
@@ -134,5 +140,18 @@ jobs:
               ;;
             run-now)
               python -m job_scout.profile_delivery_runner
+              ;;
+            release-batch)
+              test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile release-batch \
+                --database "$JOBSIFT_DATABASE" \
+                --batch-id "${{ inputs.batch_id }}" \
+                --confirm-batch-id "${{ inputs.batch_id }}"
+              ;;
+            discard-batch)
+              test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile discard-batch \
+                --database "$JOBSIFT_DATABASE" \
+                --batch-id "${{ inputs.batch_id }}"
               ;;
           esac
