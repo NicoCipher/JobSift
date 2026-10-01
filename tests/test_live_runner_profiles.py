@@ -209,7 +209,7 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
 
     def prepare(*, repository, request):
         captured["request"] = request
-        return SimpleNamespace(batch_id="batch-1")
+        return SimpleNamespace(batch_id="batch-1", selected_count=1)
 
     monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
     monkeypatch.setattr(
@@ -460,13 +460,19 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
         "InventoryRunStore",
         lambda _: SimpleNamespace(active_job_ids=lambda _run: ()),
     )
-    store = SimpleNamespace(evidence_digest=lambda *_, **__: "b" * 64)
+    store = SimpleNamespace(
+        evidence_digest=lambda *_, **__: "b" * 64,
+        discard_prepared=lambda _batch_id: None,
+    )
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     captured = []
 
     def prepare(*, repository, request):
         captured.append(request.idempotency_key)
-        return SimpleNamespace(batch_id=f"batch-{len(captured)}")
+        return SimpleNamespace(
+            batch_id=f"batch-{len(captured)}",
+            selected_count=0,
+        )
 
     monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
     monkeypatch.setattr(
