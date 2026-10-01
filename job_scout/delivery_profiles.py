@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS client_delivery_profiles (
   client_id TEXT NOT NULL,
   profile_id TEXT NOT NULL,
   destination_id TEXT NOT NULL,
-  plan_path TEXT NOT NULL,
+  brief_path TEXT NOT NULL,
   daily_quota INTEGER NOT NULL CHECK(daily_quota >= 1 AND daily_quota <= 5000),
   delivery_mode TEXT NOT NULL CHECK(delivery_mode IN ('review','auto')),
   status TEXT NOT NULL CHECK(status IN ('active','paused')),
@@ -46,7 +46,7 @@ class ClientDeliveryProfile(BaseModel):
     client_id: str
     profile_id: str
     destination_id: str
-    plan_path: str
+    brief_path: str
     daily_quota: int = Field(ge=1, le=5000)
     delivery_mode: Literal["review", "auto"] = "review"
     status: Literal["active", "paused"] = "active"
@@ -62,12 +62,12 @@ class ClientDeliveryProfile(BaseModel):
             raise ValueError("profile identifiers must be path-safe")
         return value
 
-    @field_validator("plan_path")
+    @field_validator("brief_path")
     @classmethod
-    def safe_plan_path(cls, value: str) -> str:
+    def safe_brief_path(cls, value: str) -> str:
         value = value.strip()
-        if ".." in value or not _PLAN.fullmatch(value):
-            raise ValueError("plan_path must point inside config/sourcing_plans")
+        if ".." in value or not _BRIEF.fullmatch(value):
+            raise ValueError("brief_path must point inside config/search_briefs")
         return value
 
     @field_validator("timezone")
@@ -90,7 +90,7 @@ class ClientDeliveryProfileStore:
             client_id=row["client_id"],
             profile_id=row["profile_id"],
             destination_id=row["destination_id"],
-            plan_path=row["plan_path"],
+            brief_path=row["brief_path"],
             daily_quota=row["daily_quota"],
             delivery_mode=row["delivery_mode"],
             status=row["status"],
@@ -137,7 +137,7 @@ class ClientDeliveryProfileStore:
         client_id: str,
         profile_id: str,
         destination_id: str,
-        plan_path: str,
+        brief_path: str,
         daily_quota: int,
         delivery_mode: Literal["review", "auto"],
         status: Literal["active", "paused"],
@@ -148,7 +148,7 @@ class ClientDeliveryProfileStore:
             client_id=client_id,
             profile_id=profile_id,
             destination_id=destination_id,
-            plan_path=plan_path,
+            brief_path=brief_path,
             daily_quota=daily_quota,
             delivery_mode=delivery_mode,
             status=status,
@@ -171,17 +171,17 @@ class ClientDeliveryProfileStore:
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute(
                     "INSERT INTO client_delivery_profiles "
-                    "(client_id,profile_id,destination_id,plan_path,daily_quota,delivery_mode,"
+                    "(client_id,profile_id,destination_id,brief_path,daily_quota,delivery_mode,"
                     "status,timezone,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(client_id,profile_id) DO UPDATE SET "
-                    "destination_id=excluded.destination_id,plan_path=excluded.plan_path,"
+                    "destination_id=excluded.destination_id,brief_path=excluded.brief_path,"
                     "daily_quota=excluded.daily_quota,delivery_mode=excluded.delivery_mode,"
                     "status=excluded.status,timezone=excluded.timezone,updated_at=excluded.updated_at",
                     (
                         candidate.client_id,
                         candidate.profile_id,
                         candidate.destination_id,
-                        candidate.plan_path,
+                        candidate.brief_path,
                         candidate.daily_quota,
                         candidate.delivery_mode,
                         candidate.status,
@@ -224,7 +224,7 @@ def main() -> None:
     configure.add_argument("--client", required=True)
     configure.add_argument("--profile", default="primary")
     configure.add_argument("--destination", required=True)
-    configure.add_argument("--plan", required=True)
+    configure.add_argument("--brief", required=True)
     configure.add_argument("--quota", required=True, type=int)
     configure.add_argument("--mode", choices=("review", "auto"), default="review")
     configure.add_argument("--status", choices=("active", "paused"), default="active")
@@ -243,12 +243,9 @@ def main() -> None:
     store = ClientDeliveryProfileStore(repository)
 
     if args.command == "configure":
-        plan = Path(args.plan)
-        if not plan.is_file():
-            parser.error("delivery profile plan does not exist")
-        brief_path = Path(json.loads(plan.read_text(encoding="utf-8"))["search_brief"])
-        if not brief_path.is_absolute():
-            brief_path = (plan.parent / brief_path).resolve()
+        brief_path = Path(args.brief)
+        if not brief_path.is_file():
+            parser.error("delivery profile SearchBrief does not exist")
         brief = load_search_brief(brief_path)
         if brief.client_id != args.client:
             parser.error("delivery profile client does not match the plan SearchBrief")
@@ -257,7 +254,7 @@ def main() -> None:
                 client_id=args.client,
                 profile_id=args.profile,
                 destination_id=args.destination,
-                plan_path=args.plan,
+                brief_path=args.brief,
                 daily_quota=args.quota,
                 delivery_mode=args.mode,
                 status=args.status,
