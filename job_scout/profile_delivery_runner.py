@@ -6,7 +6,10 @@ import json
 import os
 from pathlib import Path
 
-from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.delivery_profiles import (
+    ClientDeliveryProfileStore,
+    delivery_profile_control_id,
+)
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.live_runner import LiveRunnerConfig, run_once
 from job_scout.sourcing_plan import load_sourcing_plan
@@ -26,6 +29,48 @@ def resolve_plan(plan_dir: Path, plan_id: str) -> Path:
     return matches[0]
 
 
+def _public_result(profile, result: dict[str, object]) -> dict[str, object]:
+    """Return only non-identifying operational fields safe for public CI logs."""
+    allowed = (
+        "action",
+        "batch_id",
+        "batch_status",
+        "requested_quota",
+        "selected_count",
+        "shortfall",
+        "fresh_eligible_employers",
+        "company_cap_suppressed_groups",
+        "employer_cooldown_suppressed_groups",
+        "stale_posting_suppressed_groups",
+        "unknown_age_suppressed_groups",
+        "invalid_time_suppressed_groups",
+        "completeness",
+        "retention",
+        "sheet_reconciliation",
+    )
+    public = {
+        "profile_id": delivery_profile_control_id(
+            profile.client_id, profile.destination_id
+        )
+    }
+    public.update({key: result[key] for key in allowed if key in result})
+    delivery = result.get("delivery_profile")
+    if isinstance(delivery, dict):
+        public["delivery_profile"] = {
+            key: delivery[key]
+            for key in (
+                "daily_quota",
+                "status",
+                "delivery_mode",
+                "timezone",
+                "delivered_today",
+                "remaining_today",
+            )
+            if key in delivery
+        }
+    return public
+
+
 def run_active_profiles(
     *,
     database_path: Path,
@@ -40,7 +85,18 @@ def run_active_profiles(
         profiles = profile_store.active()
     else:
         selected = profile_store.get_by_control_id(control_id)
-        profiles = (selected,) if selected.status == "active" else ()
+        if selected.status != "active":
+            return [
+                {
+                    "profile_id": delivery_profile_control_id(
+                        selected.client_id, selected.destination_id
+                    ),
+                    "action": "profile_paused",
+                    "daily_quota": selected.daily_quota,
+                    "delivery_mode": selected.delivery_mode,
+                }
+            ]
+        profiles = (selected,)
     results: list[dict[str, object]] = []
     gateway = GoogleSheetsGateway() if profiles else None
     for profile in profiles:
@@ -71,14 +127,15 @@ def run_active_profiles(
                 )
             )
             result["sheet_reconciliation"] = reconciliation
-            results.append(result)
+            results.append(_public_result(profile, result))
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             results.append(
                 {
+                    "profile_id": delivery_profile_control_id(
+                        profile.client_id, profile.destination_id
+                    ),
                     "action": "profile_runner_error",
-                    "client_id": profile.client_id,
-                    "destination_id": profile.destination_id,
-                    "error": f"{type(error).__name__}: {error}",
+                    "error_type": type(error).__name__,
                 }
             )
     return results
