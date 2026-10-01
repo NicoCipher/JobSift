@@ -176,7 +176,8 @@ class ClientDeliveryProfileStore:
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute(
                     "INSERT INTO client_delivery_profiles "
-                    "(client_id,profile_id,destination_id,brief_path,link_quota,quota_scope,delivery_mode,"
+                    "(client_id,profile_id,destination_id,brief_path,link_quota,quota_scope,"
+                    "delivery_mode,"
                     "status,timezone,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(client_id,profile_id) DO UPDATE SET "
                     "destination_id=excluded.destination_id,brief_path=excluded.brief_path,"
