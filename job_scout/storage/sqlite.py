@@ -495,7 +495,9 @@ class SQLiteRepository:
                 if (
                     group not in representatives
                     and exported is None
-                    and not self._is_historically_surfaced(connection, job, client_id)
+                    and not self._is_historically_surfaced(
+                        connection, job, client_id, destination
+                    )
                 ):
                     representatives[group] = job
         return [representatives[group] for group in sorted(representatives)]
