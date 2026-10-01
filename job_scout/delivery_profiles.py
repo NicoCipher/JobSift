@@ -256,7 +256,7 @@ def main() -> None:
             parser.error("delivery profile SearchBrief does not exist")
         brief = load_search_brief(brief_path)
         if brief.client_id != args.client:
-            parser.error("delivery profile client does not match the plan SearchBrief")
+            parser.error("delivery profile client does not match the SearchBrief")
         try:
             value = store.configure(
                 client_id=args.client,
