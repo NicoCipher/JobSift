@@ -411,36 +411,42 @@ def main() -> None:
             else:
                 profile = _profile_for_control_id()
                 batch_store = DailyBatchStore(repository)
-                result = batch_store.get(args.batch_id)
-                expected_control_id = delivery_profile_control_id(
-                    result.request.client_id,
-                    result.request.destination_id or "",
-                )
-                if expected_control_id != args.profile_id.casefold():
-                    parser.error("batch does not belong to the selected delivery profile")
                 if args.delivery_profile_command == "release-batch":
                     if args.confirm_batch_id != args.batch_id:
                         parser.error("confirmation must match the reviewed batch ID")
+                    result, reconciliation, _remaining = store.guard_batch_release(
+                        profile,
+                        args.batch_id,
+                        gateway=GoogleSheetsGateway(),
+                    )
                     result = finalize_daily_batch(
                         repository=repository, batch_id=result.batch_id
                     )
                 else:
-                    result = batch_store.discard_prepared(result.batch_id)
-                print(
-                    json.dumps(
-                        {
-                            "profile_id": delivery_profile_control_id(
-                                profile.client_id, profile.destination_id
-                            ),
-                            "batch_id": result.batch_id,
-                            "status": result.status,
-                            "selected_count": result.selected_count,
-                            "shortfall": result.shortfall,
-                            "error": result.error,
-                        },
-                        sort_keys=True,
+                    result = batch_store.get(args.batch_id)
+                    expected_control_id = delivery_profile_control_id(
+                        result.request.client_id,
+                        result.request.destination_id or "",
                     )
-                )
+                    if expected_control_id != args.profile_id.casefold():
+                        parser.error(
+                            "batch does not belong to the selected delivery profile"
+                        )
+                    reconciliation = None
+                    result = batch_store.discard_prepared(result.batch_id)
+                payload = {
+                    "profile_id": delivery_profile_control_id(
+                        profile.client_id, profile.destination_id
+                    ),
+                    "batch_id": result.batch_id,
+                    "status": result.status,
+                    "selected_count": result.selected_count,
+                    "shortfall": result.shortfall,
+                    "error": result.error,
+                }
+                if reconciliation is not None:
+                    payload["sheet_reconciliation"] = reconciliation
+                print(json.dumps(payload, sort_keys=True))
                 if (
                     args.delivery_profile_command == "release-batch"
                     and result.status != "delivered"
