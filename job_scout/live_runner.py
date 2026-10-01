@@ -338,14 +338,6 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "delivery profile sourcing plan does not match the active runner plan"
             )
         profile_timezone = profile.timezone
-        if profile.status == "paused":
-            return {
-                "action": "profile_paused",
-                "client_id": profile.client_id,
-                "destination_id": profile.destination_id,
-                "daily_quota": profile.daily_quota,
-                "delivery_mode": profile.delivery_mode,
-            }
         delivered_today = profile_store.delivered_today(profile)
         effective_quota = max(0, profile.daily_quota - delivered_today)
         profile_auto_release = profile.delivery_mode == "auto"
@@ -361,6 +353,47 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "selected_count": discarded.selected_count,
                 "destination": destination,
             }
+
+        # Pausing a profile or reaching today's quota must not strand an export
+        # that is already visible on the Sheet after an uncertain response.
+        # guard_batch_release only bypasses those controls when the current
+        # destination digest proves the journaled append already happened.
+        if (
+            profile is not None
+            and profile_store is not None
+            and (profile.status == "paused" or effective_quota == 0)
+        ):
+            try:
+                unresolved, _reconciliation, effective_quota = (
+                    profile_store.guard_batch_release(
+                        profile,
+                        unresolved.batch_id,
+                        gateway=GoogleSheetsGateway(),
+                    )
+                )
+            except BatchConflict:
+                if profile.status == "paused":
+                    return {
+                        "action": "profile_paused",
+                        "client_id": profile.client_id,
+                        "destination_id": profile.destination_id,
+                        "daily_quota": profile.daily_quota,
+                        "delivery_mode": profile.delivery_mode,
+                    }
+                return {
+                    "action": "quota_reached",
+                    "client_id": profile.client_id,
+                    "destination_id": profile.destination_id,
+                    "daily_quota": profile.daily_quota,
+                    "delivered_today": delivered_today,
+                    "remaining_today": 0,
+                    "delivery_mode": profile.delivery_mode,
+                }
+            unresolved = finalize_daily_batch(
+                repository=repository, batch_id=unresolved.batch_id
+            )
+            return _batch_payload(store, unresolved, action="recovered_release")
+
         if config.auto_release or profile_auto_release:
             if profile is not None and profile_store is not None:
                 try:
@@ -385,6 +418,15 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         else:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
+
+    if profile is not None and profile.status == "paused":
+        return {
+            "action": "profile_paused",
+            "client_id": profile.client_id,
+            "destination_id": profile.destination_id,
+            "daily_quota": profile.daily_quota,
+            "delivery_mode": profile.delivery_mode,
+        }
 
     if profile is not None and effective_quota == 0:
         return {
