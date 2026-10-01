@@ -39,7 +39,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: jobsift-client-delivery-profile-configuration
+  group: jobsift-client-delivery-mutation
   cancel-in-progress: false
 
 jobs:
