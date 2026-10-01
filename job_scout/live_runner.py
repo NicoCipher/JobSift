@@ -14,8 +14,8 @@ from zoneinfo import ZoneInfo
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
-from job_scout.domain.daily_batch import DailyBatchRequest, DailyBatchResult
-from job_scout.export.batch_sheets import sheet_destination
+from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
+from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
 from job_scout.sourcing_plan import (
@@ -349,17 +349,6 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         delivered_today = profile_store.delivered_today(profile)
         effective_quota = max(0, profile.daily_quota - delivered_today)
         profile_auto_release = profile.delivery_mode == "auto"
-        if effective_quota == 0:
-            return {
-                "action": "quota_reached",
-                "client_id": profile.client_id,
-                "destination_id": profile.destination_id,
-                "daily_quota": profile.daily_quota,
-                "delivered_today": delivered_today,
-                "remaining_today": 0,
-                "delivery_mode": profile.delivery_mode,
-            }
-
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
@@ -373,16 +362,40 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "destination": destination,
             }
         if config.auto_release or profile_auto_release:
-            if profile is not None and unresolved.selected_count > effective_quota:
-                action = "release_blocked_quota"
-            else:
-                unresolved = finalize_daily_batch(
-                    repository=repository, batch_id=unresolved.batch_id
-                )
-                action = "resumed_release"
+            if profile is not None and profile_store is not None:
+                try:
+                    unresolved, _reconciliation, effective_quota = (
+                        profile_store.guard_batch_release(
+                            profile,
+                            unresolved.batch_id,
+                            gateway=GoogleSheetsGateway(),
+                        )
+                    )
+                except BatchConflict as error:
+                    action = (
+                        "release_blocked_quota"
+                        if "remaining daily quota" in str(error)
+                        else "release_blocked_profile"
+                    )
+                    return _batch_payload(store, unresolved, action=action)
+            unresolved = finalize_daily_batch(
+                repository=repository, batch_id=unresolved.batch_id
+            )
+            action = "resumed_release"
         else:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
+
+    if profile is not None and effective_quota == 0:
+        return {
+            "action": "quota_reached",
+            "client_id": profile.client_id,
+            "destination_id": profile.destination_id,
+            "daily_quota": profile.daily_quota,
+            "delivered_today": delivered_today,
+            "remaining_today": 0,
+            "delivery_mode": profile.delivery_mode,
+        }
 
     if config.discard_prepared:
         return {
