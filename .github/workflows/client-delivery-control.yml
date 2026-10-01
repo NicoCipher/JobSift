@@ -1,0 +1,138 @@
+name: Client Delivery Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Control action
+        required: true
+        type: choice
+        default: set
+        options:
+          - set
+          - pause
+          - resume
+          - list
+          - run-now
+      client_id:
+        description: Logical client ID (not a spreadsheet ID)
+        required: false
+        type: string
+      destination_id:
+        description: Registered logical Sheet destination ID
+        required: false
+        type: string
+      plan:
+        description: Registered sourcing-plan file
+        required: false
+        default: config/sourcing_plans/taiwo_software_remote_us_v2.json
+        type: string
+      daily_quota:
+        description: Maximum links for this destination per client-local day
+        required: false
+        default: "100"
+        type: string
+      status:
+        description: Profile state when using Set
+        required: false
+        default: active
+        type: choice
+        options:
+          - active
+          - paused
+      delivery_mode:
+        description: Review prepares a batch; Auto publishes it
+        required: false
+        default: review
+        type: choice
+        options:
+          - review
+          - auto
+      timezone:
+        description: IANA timezone used for the daily quota
+        required: false
+        default: Africa/Lagos
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery-control
+  cancel-in-progress: false
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
+      JOBSIFT_PLAN_DIR: config/sourcing_plans
+      JOBSIFT_REPORTS_DIR: /tmp/jobsift-runs
+      JOBSIFT_INVENTORY_RETENTION_HOURS: "72"
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[sheets,cloud]'
+
+      - name: Validate persistent runtime
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+
+      - name: Configure Google credentials when available
+        if: ${{ env.GOOGLE_SERVICE_ACCOUNT_JSON != '' }}
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Apply control
+        shell: bash
+        run: |
+          operation="${{ inputs.operation }}"
+          case "$operation" in
+            set)
+              test -n "${{ inputs.client_id }}" || { echo "client_id is required"; exit 1; }
+              test -n "${{ inputs.destination_id }}" || { echo "destination_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile set \
+                --database "$JOBSIFT_DATABASE" \
+                --client "${{ inputs.client_id }}" \
+                --destination-id "${{ inputs.destination_id }}" \
+                --plan "${{ inputs.plan }}" \
+                --daily-quota "${{ inputs.daily_quota }}" \
+                --status "${{ inputs.status }}" \
+                --delivery-mode "${{ inputs.delivery_mode }}" \
+                --timezone "${{ inputs.timezone }}"
+              ;;
+            pause|resume)
+              test -n "${{ inputs.client_id }}" || { echo "client_id is required"; exit 1; }
+              test -n "${{ inputs.destination_id }}" || { echo "destination_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile "$operation" \
+                --database "$JOBSIFT_DATABASE" \
+                --client "${{ inputs.client_id }}" \
+                --destination-id "${{ inputs.destination_id }}"
+              ;;
+            list)
+              if [ -n "${{ inputs.client_id }}" ]; then
+                python -m job_scout.cli delivery-profile list \
+                  --database "$JOBSIFT_DATABASE" \
+                  --client "${{ inputs.client_id }}"
+              else
+                python -m job_scout.cli delivery-profile list \
+                  --database "$JOBSIFT_DATABASE"
+              fi
+              ;;
+            run-now)
+              python -m job_scout.profile_delivery_runner
+              ;;
+          esac
