@@ -82,7 +82,7 @@ class DailyBatchStore:
         with repository.connect() as connection:
             connection.executescript(BATCH_SCHEMA)
 
-    def _candidates(self, c, client_id, job_ids):
+    def _candidates(self, c, client_id, job_ids, destination=None):
         candidates = []
         group_states = {}
         for job_id in sorted(job_ids):
@@ -115,7 +115,10 @@ class DailyBatchStore:
                 ).fetchall()
                 group_states[group] = any(
                     self.repository._is_historically_surfaced(
-                        c, Job.model_validate_json(member[0]), client_id
+                        c,
+                        Job.model_validate_json(member[0]),
+                        client_id,
+                        destination,
                     )
                     for member in members
                 )
@@ -238,7 +241,12 @@ class DailyBatchStore:
                 if old["request_json"] != request_json:
                     raise BatchConflict("idempotency key reused with incompatible request")
                 return self._load(c, old["batch_id"])
-            candidates = self._candidates(c, request.client_id, request.candidate_job_ids)
+            candidates = self._candidates(
+                c,
+                request.client_id,
+                request.candidate_job_ids,
+                request.destination,
+            )
             if self._digest(candidates) != request.evidence_sha256:
                 raise BatchConflict("candidate evidence changed; capture an explicit new scope")
             recent_employers: set[str] = set()
@@ -337,7 +345,10 @@ class DailyBatchStore:
 
     def _verify_selected(self, c, result):
         candidates = self._candidates(
-            c, result.request.client_id, tuple(i.representative_job_id for i in result.items)
+            c,
+            result.request.client_id,
+            tuple(i.representative_job_id for i in result.items),
+            result.request.destination,
         )
         expected = {i.representative_job_id: i.evidence_sha256 for i in result.items}
         if len({v.group_id for v in candidates}) != len(candidates):
