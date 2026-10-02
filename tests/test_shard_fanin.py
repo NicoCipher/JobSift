@@ -507,7 +507,13 @@ def test_fan_in_replay_identity_includes_retention_policy(
     assert wider.replayed is False
     assert strict.metrics.inventory_memberships == 1
     assert wider.metrics.inventory_memberships == 2
-    assert len(InventoryRunStore(repository).active_job_ids(wider.run_id)) == 2
+    assert len(
+        InventoryRunStore(repository).active_job_ids(
+            wider.run_id,
+            retention_hours=168,
+            evaluated_at=PERSISTED,
+        )
+    ) == 2
 
 
 def test_completed_replay_reports_persisted_memberships_after_cutoff_moves(
