@@ -212,7 +212,7 @@ class DailyBatchStore:
         return DailyBatchResult(
             batch_id=batch_id,
             generation_id=(
-                row["generation_id"] if "generation_id" in row.keys() else None
+                row["generation_id"] if "generation_id" in row else None
             ),
             request=json.loads(row["request_json"]),
             status=row["status"],
