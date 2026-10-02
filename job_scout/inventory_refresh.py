@@ -7,7 +7,8 @@ import hashlib
 import json
 import math
 import time
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from job_scout.shard_collection import (
     default_collector_factory,
 )
 from job_scout.shard_fanin import persist_shard_artifacts
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 DEFAULT_LIMITS = {
@@ -47,6 +49,86 @@ DEFAULT_SHARDS = {
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
 MAX_REFRESH_TARGETS = 125
 WORKDAY_RAMP_LEVELS = (1, 5, 10, 20, 25)
+
+
+class ProviderCoverageProof(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    registry_targets: int = Field(ge=1)
+    targets_per_cohort: int = Field(ge=1)
+    selection_period_cohorts: int = Field(ge=1)
+    visits_per_target_min: int = Field(ge=1)
+    visits_per_target_max: int = Field(ge=1)
+    max_revisit_gap_cohorts: int = Field(ge=1)
+    worst_case_full_coverage_cohorts: int = Field(ge=1)
+    all_targets_reached: bool
+    deterministic_wraparound: bool
+
+
+class CoverageProof(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registry_id: str
+    registry_sha256: str
+    providers: list[ProviderCoverageProof]
+    all_targets_reached: bool
+
+
+class TargetObservationTelemetry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_identity: str
+    source: str
+    status: str
+    started_at: datetime
+    completed_at: datetime
+    runtime_ms: int = Field(ge=0)
+    raw_postings_received: int = Field(ge=0)
+    normalized_jobs: int = Field(ge=0)
+    postings_with_trustworthy_timestamps: int = Field(ge=0)
+    postings_at_most_24h_old: int = Field(ge=0)
+    previous_completed_at: datetime | None = None
+    revisit_hours: float | None = Field(default=None, ge=0)
+
+
+class ProviderObservedCoverage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    approved_registry_targets: int = Field(ge=1)
+    targets_per_cohort: int = Field(ge=1)
+    current_targets_attempted: int = Field(ge=0)
+    current_targets_succeeded: int = Field(ge=0)
+    current_targets_partial: int = Field(ge=0)
+    current_targets_failed: int = Field(ge=0)
+    raw_postings_received: int = Field(ge=0)
+    normalized_jobs: int = Field(ge=0)
+    postings_with_trustworthy_timestamps: int = Field(ge=0)
+    timestamp_known_rate: float | None = Field(default=None, ge=0, le=1)
+    postings_at_most_24h_old: int = Field(ge=0)
+    approved_targets_observed_ever: int = Field(ge=0)
+    approved_targets_never_observed: int = Field(ge=0)
+    observed_coverage_rate: float = Field(ge=0, le=1)
+    revisit_samples: int = Field(ge=0)
+    p95_observed_revisit_hours: float | None = Field(default=None, ge=0)
+    max_observed_revisit_hours: float | None = Field(default=None, ge=0)
+    max_hours_since_last_observation: float | None = Field(default=None, ge=0)
+    target_runtime_p50_ms: int = Field(ge=0)
+    target_runtime_p95_ms: int = Field(ge=0)
+
+
+class ObservedCoverageReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    parent_registry_id: str
+    parent_registry_sha256: str
+    selected_registry_id: str
+    generated_at: datetime
+    observation_history_started_at: datetime | None
+    providers: list[ProviderObservedCoverage]
+    targets: list[TargetObservationTelemetry]
 
 
 class RefreshPlan(BaseModel):
@@ -93,6 +175,309 @@ def default_refresh_limits(
     if sum(limits.values()) > MAX_REFRESH_TARGETS:
         raise ValueError("default refresh cohort exceeds safety ceiling")
     return limits
+
+
+def _selection_indices(*, count: int, limit: int, cohort: int) -> tuple[int, ...]:
+    start = (cohort * limit) % count
+    return tuple((start + offset) % count for offset in range(limit))
+
+
+def _provider_coverage_proof(
+    *, source: str, registry_targets: int, targets_per_cohort: int
+) -> ProviderCoverageProof:
+    if not 1 <= targets_per_cohort <= registry_targets:
+        raise ValueError("coverage limit must be within provider registry size")
+    period = registry_targets // math.gcd(registry_targets, targets_per_cohort)
+    visits: list[list[int]] = [[] for _ in range(registry_targets)]
+    for cohort in range(period):
+        for index in _selection_indices(
+            count=registry_targets,
+            limit=targets_per_cohort,
+            cohort=cohort,
+        ):
+            visits[index].append(cohort)
+    all_targets_reached = all(visits)
+    if not all_targets_reached:
+        raise ValueError(f"refresh rotation starves {source} targets")
+
+    revisit_gaps = []
+    for target_visits in visits:
+        for current, nxt in zip(target_visits, target_visits[1:]):
+            revisit_gaps.append(nxt - current)
+        revisit_gaps.append(target_visits[0] + period - target_visits[-1])
+
+    worst_coverage = 0
+    for start_cohort in range(period):
+        seen: set[int] = set()
+        for step in range(1, period + 1):
+            cohort = (start_cohort + step - 1) % period
+            seen.update(
+                _selection_indices(
+                    count=registry_targets,
+                    limit=targets_per_cohort,
+                    cohort=cohort,
+                )
+            )
+            if len(seen) == registry_targets:
+                worst_coverage = max(worst_coverage, step)
+                break
+        else:
+            raise ValueError(f"refresh rotation cannot cover {source} registry")
+
+    return ProviderCoverageProof(
+        source=source,
+        registry_targets=registry_targets,
+        targets_per_cohort=targets_per_cohort,
+        selection_period_cohorts=period,
+        visits_per_target_min=min(len(value) for value in visits),
+        visits_per_target_max=max(len(value) for value in visits),
+        max_revisit_gap_cohorts=max(revisit_gaps),
+        worst_case_full_coverage_cohorts=worst_coverage,
+        all_targets_reached=True,
+        deterministic_wraparound=(
+            _selection_indices(
+                count=registry_targets,
+                limit=targets_per_cohort,
+                cohort=0,
+            )
+            == _selection_indices(
+                count=registry_targets,
+                limit=targets_per_cohort,
+                cohort=period,
+            )
+        ),
+    )
+
+
+def build_coverage_proof(
+    registry: ProductionSourceRegistry,
+    *,
+    limits: dict[str, int],
+) -> CoverageProof:
+    providers = tuple(
+        source for source in PROVIDERS if source in registry.target_counts_by_source
+    )
+    if set(limits) != set(providers):
+        raise ValueError("coverage limits must contain every approved provider")
+    proofs = [
+        _provider_coverage_proof(
+            source=source,
+            registry_targets=registry.target_counts_by_source[source],
+            targets_per_cohort=limits[source],
+        )
+        for source in providers
+    ]
+    return CoverageProof(
+        registry_id=registry.registry_id,
+        registry_sha256=sha256_json(registry.model_dump(mode="json")),
+        providers=proofs,
+        all_targets_reached=all(value.all_targets_reached for value in proofs),
+    )
+
+
+def _percentile_int(values: list[int], fraction: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return round(ordered[lower] * (1 - weight) + ordered[upper] * weight)
+
+
+def _percentile_float(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(ordered[0], 3)
+    position = (len(ordered) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return round(ordered[lower] * (1 - weight) + ordered[upper] * weight, 3)
+
+
+def build_observed_coverage_report(
+    *,
+    repository: SQLiteRepository,
+    run_id: str,
+    parent_registry: ProductionSourceRegistry,
+    selected_registry: ProductionSourceRegistry,
+    generated_at: datetime,
+) -> ObservedCoverageReport:
+    # Ensure the lightweight observation schema exists before querying history.
+    InventoryRunStore(repository)
+    approved_by_source = {
+        source: {
+            target.target_identity
+            for target in parent_registry.targets
+            if target.source == source
+        }
+        for source in parent_registry.target_counts_by_source
+    }
+    selected_limits = selected_registry.target_counts_by_source
+    if not set(selected_limits) <= set(approved_by_source):
+        raise ValueError("selected refresh registry contains an unapproved provider")
+    parent_targets = {
+        target.target_identity for target in parent_registry.targets
+    }
+    if any(target.target_identity not in parent_targets for target in selected_registry.targets):
+        raise ValueError("selected refresh registry contains a target outside parent registry")
+
+    with repository.connect() as connection:
+        current_rows = connection.execute(
+            "SELECT run_id,target_identity,source,started_at,completed_at,status,"
+            "runtime_ms,raw_postings_received,normalized_jobs,"
+            "postings_with_trustworthy_timestamps,postings_at_most_24h_old "
+            "FROM inventory_target_observations WHERE run_id=? "
+            "ORDER BY source,target_identity",
+            (run_id,),
+        ).fetchall()
+        history_rows = connection.execute(
+            "SELECT run_id,target_identity,source,completed_at "
+            "FROM inventory_target_observations "
+            "ORDER BY source,target_identity,completed_at,run_id"
+        ).fetchall()
+
+    history_by_target: dict[str, list[tuple[str, datetime]]] = defaultdict(list)
+    history_started_at: datetime | None = None
+    for row in history_rows:
+        if row["target_identity"] not in parent_targets:
+            continue
+        completed_at = datetime.fromisoformat(row["completed_at"])
+        history_by_target[row["target_identity"]].append((row["run_id"], completed_at))
+        if history_started_at is None or completed_at < history_started_at:
+            history_started_at = completed_at
+
+    target_reports: list[TargetObservationTelemetry] = []
+    for row in current_rows:
+        completed_at = datetime.fromisoformat(row["completed_at"])
+        previous = [
+            observed_at
+            for observed_run, observed_at in history_by_target[row["target_identity"]]
+            if observed_run != run_id and observed_at < completed_at
+        ]
+        previous_completed_at = max(previous) if previous else None
+        revisit_hours = (
+            round((completed_at - previous_completed_at).total_seconds() / 3600, 3)
+            if previous_completed_at is not None
+            else None
+        )
+        target_reports.append(
+            TargetObservationTelemetry(
+                target_identity=row["target_identity"],
+                source=row["source"],
+                status=row["status"],
+                started_at=datetime.fromisoformat(row["started_at"]),
+                completed_at=completed_at,
+                runtime_ms=row["runtime_ms"],
+                raw_postings_received=row["raw_postings_received"],
+                normalized_jobs=row["normalized_jobs"],
+                postings_with_trustworthy_timestamps=row[
+                    "postings_with_trustworthy_timestamps"
+                ],
+                postings_at_most_24h_old=row["postings_at_most_24h_old"],
+                previous_completed_at=previous_completed_at,
+                revisit_hours=revisit_hours,
+            )
+        )
+
+    providers: list[ProviderObservedCoverage] = []
+    normalized_generated_at = generated_at.replace(
+        tzinfo=generated_at.tzinfo or UTC
+    ).astimezone(UTC)
+    for source in sorted(selected_limits):
+        approved = approved_by_source[source]
+        current = [row for row in target_reports if row.source == source]
+        observed = approved.intersection(history_by_target)
+        all_revisit_gaps: list[float] = []
+        last_observed: list[datetime] = []
+        for target_identity in approved:
+            times = sorted(
+                observed_at
+                for _run, observed_at in history_by_target.get(target_identity, [])
+            )
+            if times:
+                last_observed.append(times[-1])
+            all_revisit_gaps.extend(
+                (nxt - prior).total_seconds() / 3600
+                for prior, nxt in zip(times, times[1:])
+            )
+        normalized_jobs = sum(row.normalized_jobs for row in current)
+        timestamped = sum(
+            row.postings_with_trustworthy_timestamps for row in current
+        )
+        runtimes = [row.runtime_ms for row in current]
+        providers.append(
+            ProviderObservedCoverage(
+                source=source,
+                approved_registry_targets=len(approved),
+                targets_per_cohort=selected_limits[source],
+                current_targets_attempted=len(current),
+                current_targets_succeeded=sum(row.status == "success" for row in current),
+                current_targets_partial=sum(row.status == "partial" for row in current),
+                current_targets_failed=sum(
+                    row.status not in {"success", "partial"} for row in current
+                ),
+                raw_postings_received=sum(
+                    row.raw_postings_received for row in current
+                ),
+                normalized_jobs=normalized_jobs,
+                postings_with_trustworthy_timestamps=timestamped,
+                timestamp_known_rate=(
+                    round(timestamped / normalized_jobs, 6)
+                    if normalized_jobs
+                    else None
+                ),
+                postings_at_most_24h_old=sum(
+                    row.postings_at_most_24h_old for row in current
+                ),
+                approved_targets_observed_ever=len(observed),
+                approved_targets_never_observed=len(approved) - len(observed),
+                observed_coverage_rate=round(len(observed) / len(approved), 6),
+                revisit_samples=len(all_revisit_gaps),
+                p95_observed_revisit_hours=_percentile_float(
+                    all_revisit_gaps, 0.95
+                ),
+                max_observed_revisit_hours=(
+                    round(max(all_revisit_gaps), 3)
+                    if all_revisit_gaps
+                    else None
+                ),
+                max_hours_since_last_observation=(
+                    round(
+                        max(
+                            (
+                                normalized_generated_at
+                                - value.replace(tzinfo=value.tzinfo or UTC).astimezone(UTC)
+                            ).total_seconds()
+                            / 3600
+                            for value in last_observed
+                        ),
+                        3,
+                    )
+                    if last_observed
+                    else None
+                ),
+                target_runtime_p50_ms=_percentile_int(runtimes, 0.50),
+                target_runtime_p95_ms=_percentile_int(runtimes, 0.95),
+            )
+        )
+
+    return ObservedCoverageReport(
+        run_id=run_id,
+        parent_registry_id=parent_registry.registry_id,
+        parent_registry_sha256=sha256_json(parent_registry.model_dump(mode="json")),
+        selected_registry_id=selected_registry.registry_id,
+        generated_at=normalized_generated_at,
+        observation_history_started_at=history_started_at,
+        providers=providers,
+        targets=target_reports,
+    )
 
 
 def _stable(values):
@@ -285,6 +670,7 @@ def main() -> None:
 
     fan_in = commands.add_parser("fan-in")
     fan_in.add_argument("--registry", type=Path, required=True)
+    fan_in.add_argument("--parent-registry", type=Path, required=True)
     fan_in.add_argument("--manifest", type=Path, required=True)
     fan_in.add_argument("--artifacts-dir", type=Path, required=True)
     fan_in.add_argument("--database", type=Path, required=True)
@@ -314,6 +700,10 @@ def main() -> None:
             _write_json(args.output_dir / "manifest.json", manifest)
             _write_json(args.output_dir / "matrix.json", refresh.matrix)
             _write_json(args.output_dir / "plan.json", refresh)
+            _write_json(
+                args.output_dir / "coverage.json",
+                build_coverage_proof(registry, limits=limits),
+            )
             _write_json(
                 args.output_dir / "refresh.json",
                 {
@@ -421,6 +811,23 @@ def main() -> None:
             ),
             flush=True,
         )
+        parent_registry = load_production_registry(args.parent_registry)
+        coverage_proof = build_coverage_proof(
+            parent_registry,
+            limits=registry.target_counts_by_source,
+        )
+        observed_coverage = build_observed_coverage_report(
+            repository=repository,
+            run_id=report.run_id,
+            parent_registry=parent_registry,
+            selected_registry=registry,
+            generated_at=report.persisted_at,
+        )
+        coverage_payload = {
+            "theoretical": coverage_proof.model_dump(mode="json"),
+            "observed": observed_coverage.model_dump(mode="json"),
+        }
+        _write_json(args.output.parent / "coverage.json", coverage_payload)
         retention = {}
         retention_seconds = 0.0
         if not args.skip_retention:
@@ -442,6 +849,7 @@ def main() -> None:
             )
         payload = {
             "fan_in": report.model_dump(mode="json"),
+            "coverage": coverage_payload,
             "retention": retention,
             "timings": {
                 "fan_in_seconds": round(fan_in_seconds, 3),
