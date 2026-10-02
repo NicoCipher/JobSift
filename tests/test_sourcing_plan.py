@@ -510,6 +510,58 @@ def test_run_scoped_evaluation_does_not_use_last_verified_as_retention_age(
     assert evaluation.total_matched == 1
 
 
+
+
+def test_retention_evidence_overrides_newer_payload_posted_at(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteRepository(tmp_path / "shared.sqlite3")
+    now = datetime.now(UTC)
+    target = plan(tmp_path, [targets()[0]]).targets[0].source_target()
+    posting = fixture_job("greenhouse", target).model_copy(
+        update={
+            "posted_at": now - timedelta(hours=1),
+            "discovered_at": now - timedelta(hours=1),
+            "last_seen_at": now,
+        }
+    )
+    repository.upsert_job(posting)
+
+    inventory = InventoryRunStore(repository)
+    run_id = "inventory-retention-evidence-regression"
+    inventory.create(run_id=run_id, plan_id="mixed-plan", started_at=now)
+    inventory.add_jobs(
+        run_id=run_id,
+        target_identity="greenhouse:green",
+        jobs=[posting],
+    )
+    inventory.finish(run_id=run_id, status="success", completed_at=now)
+
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO job_retention_evidence (job_id,posted_at) "
+            "VALUES (?,?)",
+            (posting.id, (now - timedelta(hours=80)).isoformat()),
+        )
+
+    brief = SearchBrief(
+        client_id="client-one",
+        target_roles=["Support Engineer"],
+        management_roles=RuleIntent.IGNORE,
+    )
+    evaluation = evaluate_inventory_run(
+        repository=repository,
+        run_id=run_id,
+        brief=brief,
+        retention_hours=72,
+        evaluated_at=now,
+    )
+
+    assert inventory.active_job_ids(
+        run_id, retention_hours=72, evaluated_at=now
+    ) == ()
+    assert evaluation.total_evaluated == 0
+
 def test_failure_is_isolated_and_reported_without_closure_claim(tmp_path: Path) -> None:
     sourcing_plan = plan(tmp_path)
     calls: list[str] = []
