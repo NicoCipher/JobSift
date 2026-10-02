@@ -82,6 +82,14 @@ def _registry() -> ProductionSourceRegistry:
             "health_inventory_exact": True,
         },
         {
+            "target_identity": "smartrecruiters:acme",
+            "source": "smartrecruiters",
+            "coordinates": {"board": "acme"},
+            "company_hint": "Smart Acme",
+            "health_current_postings": 2,
+            "health_inventory_exact": True,
+        },
+        {
             "target_identity": "workday:alpha.wd1.myworkdayjobs.com:alpha:External",
             "source": "workday",
             "coordinates": {
@@ -115,6 +123,7 @@ def _registry() -> ProductionSourceRegistry:
             "ashby": 2,
             "greenhouse": 2,
             "lever": 2,
+            "smartrecruiters": 1,
             "workday": 2,
         },
         targets=targets,
@@ -127,6 +136,7 @@ def _all(value: int) -> dict[str, int]:
         "ashby": value,
         "workday": value,
         "lever": value,
+        "smartrecruiters": value,
     }
 
 
@@ -137,11 +147,12 @@ def test_bounded_subset_is_deterministic_and_retains_production_provenance() -> 
     second = select_registry_subset(registry, target_limits_by_source=_all(1))
 
     assert first == second
-    assert len(first.targets) == 4
+    assert len(first.targets) == 5
     assert first.target_counts_by_source == {
         "ashby": 1,
         "greenhouse": 1,
         "lever": 1,
+        "smartrecruiters": 1,
         "workday": 1,
     }
     assert first.target_universe_git_blob_sha == registry.target_universe_git_blob_sha
@@ -157,10 +168,10 @@ def test_benchmark_plan_builds_provider_isolated_matrix() -> None:
         shard_counts_by_source=_all(1),
     )
 
-    assert plan.total_targets == 8
-    assert plan.total_shards == 4
+    assert plan.total_targets == 9
+    assert plan.total_shards == 5
     assert plan.workday_detail_concurrency == 1
-    assert len(plan.matrix["include"]) == 4
+    assert len(plan.matrix["include"]) == 5
     assert {row["source"] for row in plan.matrix["include"]} == set(_all(1))
     assert manifest.registry_id == subset.registry_id
     assert {shard.source for shard in manifest.shards} == set(_all(1))
@@ -176,6 +187,7 @@ def test_benchmark_plan_rejects_shards_above_selected_targets() -> None:
                 "ashby": 1,
                 "workday": 1,
                 "lever": 1,
+                "smartrecruiters": 1,
             },
         )
 
@@ -255,14 +267,14 @@ def test_benchmark_fan_in_evaluates_shared_inventory_without_delivery(tmp_path: 
     )
 
     assert report.fan_in.status == "success"
-    assert report.fan_in.metrics.targets_attempted == 4
-    assert report.active_inventory_jobs == 4
+    assert report.fan_in.metrics.targets_attempted == 5
+    assert report.active_inventory_jobs == 5
     assert report.evaluation is not None
-    assert report.evaluation.total_evaluated == 4
-    assert report.evaluation.semantic_matches_before_freshness == 4
-    assert report.evaluation.freshness_eligible_matches == 4
-    assert report.distinct_matched_employers == 4
-    assert report.distinct_matched_delivery_groups == 4
+    assert report.evaluation.total_evaluated == 5
+    assert report.evaluation.semantic_matches_before_freshness == 5
+    assert report.evaluation.freshness_eligible_matches == 5
+    assert report.distinct_matched_employers == 5
+    assert report.distinct_matched_delivery_groups == 5
 
     with repository.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM exports").fetchone()[0] == 0
