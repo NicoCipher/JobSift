@@ -10,6 +10,7 @@ import time
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from functools import partial
+from itertools import pairwise
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -202,7 +203,7 @@ def _provider_coverage_proof(
 
     revisit_gaps = []
     for target_visits in visits:
-        for current, nxt in zip(target_visits, target_visits[1:]):
+        for current, nxt in pairwise(target_visits):
             revisit_gaps.append(nxt - current)
         revisit_gaps.append(target_visits[0] + period - target_visits[-1])
 
@@ -405,7 +406,7 @@ def build_observed_coverage_report(
                 last_observed.append(times[-1])
             all_revisit_gaps.extend(
                 (nxt - prior).total_seconds() / 3600
-                for prior, nxt in zip(times, times[1:])
+                for prior, nxt in pairwise(times)
             )
         normalized_jobs = sum(row.normalized_jobs for row in current)
         timestamped = sum(
