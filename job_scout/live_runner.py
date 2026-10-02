@@ -169,6 +169,7 @@ def _unresolved_batch(
     """Delegate unresolved delivery recovery to the transactional state machine."""
     return DailyBatchStore(repository).recover_unresolved(client_id, destination)
 
+
 def _candidate_job_ids(
     repository: SQLiteRepository,
     *,
@@ -771,7 +772,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         expected_generation_id=batch.generation_id,
                     )
                 except BatchConflict as error:
-                    if str(error) != "batch not found":
+                    if not _is_concurrent_batch_recovery(error):
                         raise
                     recovered = store.recover_unresolved(
                         brief.client_id, destination
