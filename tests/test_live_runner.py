@@ -110,6 +110,45 @@ def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
     )
 
 
+def test_unresolved_batch_recovers_exact_stale_failed_unpublished_state(tmp_path, monkeypatch):
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    DailyBatchStore(repository)
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
+            "dedupe_version,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "stale-profile-scope",
+                "client-a",
+                "client-sheet://jobs",
+                "2026-10-02:scope-abc123",
+                1,
+                0,
+                1,
+                "failed",
+                datetime.now(UTC).isoformat(),
+                "{}",
+                "{}",
+                "test",
+                "prepared posting is no longer fresh at delivery: stale_posting",
+            ),
+        )
+
+    monkeypatch.setattr(
+        DailyBatchStore,
+        "get",
+        lambda self, batch_id: SimpleNamespace(batch_id=batch_id),
+    )
+    result = live_runner._unresolved_batch(
+        repository,
+        client_id="client-a",
+        destination="client-sheet://jobs",
+    )
+    assert result.batch_id == "stale-profile-scope"
+
+
 def test_unresolved_batch_ignores_delivered_export_journal(tmp_path):
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
     DailyBatchStore(repository)
