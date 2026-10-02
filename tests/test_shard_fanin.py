@@ -369,6 +369,120 @@ def test_stale_identity_path_preserves_latest_reobservation_through_prune(
     assert live is None
 
 
+def test_incoming_stale_posted_at_prunes_existing_recent_payload(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    target = next(target for target in registry.targets if target.board_id == "a")
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    stored_recent = _job(target.source_target())
+    repository.upsert_job(stored_recent)
+
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000", stale_board="a"),
+        _artifact(registry, manifest, "greenhouse-001", stale_board="a"),
+    ]
+    persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        payload_retention_hours=72,
+        now=lambda: PERSISTED,
+    )
+    repository.prune_stale_inventory(retention_hours=72, now=PERSISTED)
+
+    with repository.connect() as connection:
+        live = connection.execute(
+            "SELECT 1 FROM jobs WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (stored_recent.source, stored_recent.source_board_id, stored_recent.source_job_id),
+        ).fetchone()
+        ledger = connection.execute(
+            "SELECT last_seen_at FROM job_identity_ledger "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (stored_recent.source, stored_recent.source_board_id, stored_recent.source_job_id),
+        ).fetchone()
+
+    assert live is None
+    assert ledger is not None
+
+
+def test_fresh_upsert_clears_prior_stale_retention_evidence(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    target = registry.targets[0].source_target()
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    stored = _job(target)
+    repository.upsert_job(stored)
+
+    stale = stored.model_copy(update={"posted_at": NOW - timedelta(hours=96)})
+    repository.record_pruned_identities([stale], pruned_at=PERSISTED)
+
+    fresh = stored.model_copy(
+        update={
+            "posted_at": PERSISTED - timedelta(hours=2),
+            "last_seen_at": PERSISTED,
+            "content_fingerprint": "fp-fresh-correction",
+        }
+    )
+    repository.upsert_job(fresh)
+    repository.prune_stale_inventory(retention_hours=72, now=PERSISTED)
+
+    with repository.connect() as connection:
+        live = connection.execute(
+            "SELECT payload_json FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (fresh.source, fresh.source_board_id, fresh.source_job_id),
+        ).fetchone()
+        evidence = connection.execute(
+            "SELECT 1 FROM job_retention_evidence WHERE job_id=?",
+            (fresh.id,),
+        ).fetchone()
+
+    assert live is not None
+    assert Job.model_validate_json(live["payload_json"]).posted_at == fresh.posted_at
+    assert evidence is None
+
+
+def test_fan_in_replay_identity_includes_retention_policy(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000", stale_board="a"),
+        _artifact(registry, manifest, "greenhouse-001", stale_board="a"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    strict = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        payload_retention_hours=72,
+        now=lambda: PERSISTED,
+    )
+    wider = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        payload_retention_hours=168,
+        now=lambda: PERSISTED,
+    )
+
+    assert strict.run_id != wider.run_id
+    assert strict.replayed is False
+    assert wider.replayed is False
+    assert strict.metrics.inventory_memberships == 1
+    assert wider.metrics.inventory_memberships == 2
+    assert len(InventoryRunStore(repository).active_job_ids(wider.run_id)) == 2
+
+
 def test_fan_in_rejects_invalid_payload_retention_before_mutating_inventory(
     tmp_path: Path,
 ) -> None:
