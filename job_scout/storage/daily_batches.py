@@ -266,9 +266,11 @@ class DailyBatchStore:
         return row["export_before_sha256"], row["export_after_sha256"]
 
     def discard_prepared(
-        self, batch_id: str, *, expected_generation_id: str
+        self, batch_id: str, *, expected_generation_id: str | None
     ) -> DailyBatchResult:
         """Delete only the exact unpublished generation the caller already loaded."""
+        if expected_generation_id is None:
+            raise BatchConflict("batch generation missing")
         with self.repository.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row = c.execute(
