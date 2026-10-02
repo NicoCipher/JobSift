@@ -166,7 +166,10 @@ def _unresolved_batch(
         row = connection.execute(
             "SELECT batch_id FROM daily_batches "
             "WHERE client_id=? AND destination=? AND status!='delivered' "
-            "AND (status='prepared' OR export_after_sha256 IS NOT NULL) "
+            "AND (status='prepared' OR export_after_sha256 IS NOT NULL "
+            "OR (status='failed' AND delivered_at IS NULL "
+            "AND export_before_sha256 IS NULL AND export_after_sha256 IS NULL "
+            "AND error LIKE 'prepared posting is no longer fresh at delivery:%')) "
             "ORDER BY assembled_at, batch_id LIMIT 1",
             (client_id, destination),
         ).fetchone()
@@ -359,20 +362,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
-    if unresolved is None:
-        # A prior process may have persisted a final-freshness failure and
-        # crashed before the safe discard completed. Recover only that exact
-        # no-journal state; unrelated failures remain durable.
-        local_day = datetime.now(ZoneInfo(profile_timezone)).date().isoformat()
-        prior_today = _batch_by_idempotency(
-            repository,
-            client_id=brief.client_id,
-            destination=destination,
-            idempotency_key=local_day,
-        )
-        if prior_today is not None and _discard_stale_unpublished_release(
-            store, prior_today
-        ):
+    if unresolved is not None:
+        # Recover a crash after final freshness was persisted but before the
+        # safe discard. The helper rechecks the strict no-journal boundary.
+        if _discard_stale_unpublished_release(store, unresolved):
             unresolved = None
 
     if unresolved is not None:
