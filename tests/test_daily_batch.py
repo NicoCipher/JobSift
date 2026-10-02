@@ -831,6 +831,26 @@ def test_legacy_database_preserves_all_existing_tables(repo, tmp_path):
     assert prepare(reopened, request(reopened, tmp_path / "out.csv", jobs)).selected_count == 0
 
 
+def test_recreated_batch_id_cannot_finalize_older_generation(repo, tmp_path):
+    jobs = [posting(1)]
+    seed(repo, jobs)
+    req = request(repo, tmp_path / "out.csv", jobs)
+    first = prepare(repo, req)
+    store = DailyBatchStore(repo)
+    store.discard_prepared(first.batch_id)
+    replacement = prepare(repo, req)
+
+    assert replacement.batch_id == first.batch_id
+    assert replacement.generation_id != first.generation_id
+    with pytest.raises(BatchConflict, match="batch revision changed"):
+        batches.finalize_daily_batch(
+            repository=repo,
+            batch_id=first.batch_id,
+            expected_generation_id=first.generation_id,
+        )
+    assert DailyBatchStore(repo).get(replacement.batch_id).status == "prepared"
+
+
 def test_process_interruption_after_replace_recovers_on_reopen(repo, tmp_path, monkeypatch):
     class Interrupted(BaseException):
         pass
