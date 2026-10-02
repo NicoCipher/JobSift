@@ -140,8 +140,31 @@ def test_canonical_url_gate_rejects_wrong_origin_or_board(value):
 
 
 def test_apply_url_gate():
-    assert valid_apply_url("https://jobs.smartrecruiters.com/acme/1/apply")
-    assert not valid_apply_url("https://jobs.smartrecruiters.com/")
+    assert valid_apply_url(
+        "https://jobs.smartrecruiters.com/acme/1-software-engineer/apply",
+        "acme",
+        "1",
+    )
+    assert valid_apply_url(
+        "https://jobs.smartrecruiters.com/Acme/1-software-engineer?oga=true",
+        "acme",
+        "1",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://example.com/unrelated",
+        "https://jobs.smartrecruiters.com/Other/1-software-engineer",
+        "https://jobs.smartrecruiters.com/acme/2-software-engineer",
+        "https://jobs.smartrecruiters.com.evil/acme/1-software-engineer",
+        "http://jobs.smartrecruiters.com/acme/1-software-engineer",
+        "https://jobs.smartrecruiters.com/acme/1-software-engineer/not-apply",
+    ],
+)
+def test_apply_url_gate_rejects_unbound_destination(value):
+    assert not valid_apply_url(value, "acme", "1")
 
 
 def test_title_prefilter_keeps_missing_index_metadata_and_skips_unrelated_titles():
