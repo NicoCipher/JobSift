@@ -14,6 +14,10 @@ class BatchConflict(ValueError):
     """A key, evidence scope, or destination cannot safely be reused."""
 
 
+class RetryableDestinationConflict(BatchConflict):
+    """Destination state must be corrected or reconciled before retrying."""
+
+
 class BatchModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
