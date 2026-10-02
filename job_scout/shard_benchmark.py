@@ -206,7 +206,9 @@ def _matched_stats(
     evaluated_at,
 ) -> tuple[int, int, int, Counter[str]]:
     active_ids = InventoryRunStore(repository).active_job_ids(
-        run_id, evaluated_at=evaluated_at
+        run_id,
+        retention_hours=72,
+        evaluated_at=evaluated_at,
     )
     if not active_ids:
         return 0, 0, 0, Counter()
@@ -270,6 +272,7 @@ def run_benchmark_fan_in(
             repository=repository,
             run_id=fan_in.run_id,
             brief=brief,
+            retention_hours=72,
             evaluated_at=fan_in.collection_completed_at,
         )
         fresh_matches, employer_count, group_count, suppressions = _matched_stats(
@@ -295,7 +298,9 @@ def run_benchmark_fan_in(
         evaluation=evaluation,
         active_inventory_jobs=len(
             InventoryRunStore(repository).active_job_ids(
-                fan_in.run_id, evaluated_at=fan_in.collection_completed_at
+                fan_in.run_id,
+                retention_hours=72,
+                evaluated_at=fan_in.collection_completed_at,
             )
         ),
         distinct_matched_employers=employer_count,
