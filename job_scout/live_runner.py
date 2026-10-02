@@ -184,10 +184,10 @@ def _discard_stale_unpublished_release(
         "prepared posting is no longer fresh at delivery:"
     ):
         return False
-    before_sha, after_sha = store.export_journal(batch.batch_id)
-    if before_sha is not None or after_sha is not None or batch.delivered_at is not None:
+    try:
+        store.discard_stale_unpublished(batch.batch_id)
+    except BatchConflict:
         return False
-    store.discard_prepared(batch.batch_id)
     return True
 
 
@@ -362,12 +362,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
-    if unresolved is not None and getattr(unresolved, "status", None) == "failed":
-        # Only failed rows can be restart-recovery candidates. Prepared and
-        # journaled unresolved batches must continue through their normal
-        # release/reconciliation paths.
-        if _discard_stale_unpublished_release(store, unresolved):
-            unresolved = None
+    while unresolved is not None and getattr(unresolved, "status", None) == "failed":
+        # Atomic store-side validation prevents races with another runner.
+        if not _discard_stale_unpublished_release(store, unresolved):
+            break
+        # A newer prepared or journaled batch may exist behind the stale row.
+        unresolved = _unresolved_batch(
+            repository, client_id=brief.client_id, destination=destination
+        )
 
     if unresolved is not None:
         # The legacy Live JobSift release workflow predates delivery profiles.
