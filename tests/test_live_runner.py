@@ -50,6 +50,30 @@ def test_stale_release_with_export_journal_is_never_auto_discarded():
     assert discarded == []
 
 
+def test_restart_recovery_discards_only_stale_failed_batch(monkeypatch):
+    discarded = []
+    store = SimpleNamespace(
+        export_journal=lambda _batch_id: (None, None),
+        discard_prepared=lambda batch_id: discarded.append(batch_id),
+    )
+    stale = SimpleNamespace(
+        batch_id="stale-after-crash",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale_posting",
+        delivered_at=None,
+    )
+    ordinary = SimpleNamespace(
+        batch_id="ordinary-failure",
+        status="failed",
+        error="network unavailable",
+        delivered_at=None,
+    )
+
+    assert _discard_stale_unpublished_release(store, stale) is True
+    assert _discard_stale_unpublished_release(store, ordinary) is False
+    assert discarded == ["stale-after-crash"]
+
+
 def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
     DailyBatchStore(repository)
