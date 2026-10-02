@@ -337,7 +337,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         repository, client_id=brief.client_id, destination=destination
     )
 
-    if unresolved is not None:
+    while unresolved is not None:
         # The legacy Live JobSift release workflow predates delivery profiles.
         # If it is releasing a batch for a destination that now has a profile,
         # adopt that profile for this release so pause/quota/reconciliation
@@ -453,9 +453,9 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         "selected_count": stale_batch.selected_count,
                         "error": stale_batch.error,
                     }
-                return _batch_payload(
-                    store, unresolved, action="recovered_after_stale_release"
-                )
+                # Continue this same release loop with the next actionable
+                # batch returned by the transactional recovery state machine.
+                continue
             action = "resumed_release"
         else:
             action = "awaiting_release"
