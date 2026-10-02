@@ -510,8 +510,6 @@ def test_run_scoped_evaluation_does_not_use_last_verified_as_retention_age(
     assert evaluation.total_matched == 1
 
 
-
-
 def test_retention_evidence_overrides_newer_payload_posted_at(
     tmp_path: Path,
 ) -> None:
