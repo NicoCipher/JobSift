@@ -98,3 +98,25 @@ def test_workday_ramp_rejects_unapproved_level():
         assert "Workday refresh limit must be one of" in str(exc)
     else:
         raise AssertionError("unapproved Workday ramp level was accepted")
+
+
+def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
+    from job_scout.shard_benchmark import MAX_BOUNDED_TARGETS, select_registry_subset
+
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry, workday_limit=25)
+    plan, subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        limits=limits,
+    )
+
+    assert MAX_BOUNDED_TARGETS == 100
+    assert plan.total_targets == 124
+    assert len(subset.targets) == 124
+    try:
+        select_registry_subset(registry, target_limits_by_source=limits)
+    except ValueError as exc:
+        assert "bounded benchmark is limited to 100 total targets" in str(exc)
+    else:
+        raise AssertionError("benchmark ceiling was silently widened")
