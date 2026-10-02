@@ -47,6 +47,17 @@ CREATE INDEX IF NOT EXISTS ix_inventory_target_observations_target_completed
   ON inventory_target_observations(target_identity, completed_at);
 CREATE INDEX IF NOT EXISTS ix_inventory_target_observations_source_completed
   ON inventory_target_observations(source, completed_at);
+CREATE TABLE IF NOT EXISTS inventory_target_coverage_state (
+  target_identity TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  first_observed_at TEXT NOT NULL,
+  previous_observed_at TEXT,
+  last_observed_at TEXT NOT NULL,
+  observation_count INTEGER NOT NULL CHECK(observation_count >= 1),
+  last_run_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_inventory_target_coverage_state_source_last
+  ON inventory_target_coverage_state(source, last_observed_at);
 """
 
 
@@ -219,6 +230,51 @@ class InventoryRunStore:
                             normalized_jobs,
                             timestamped,
                             fresh_24h,
+                        ) in observation_values
+                    ],
+                )
+                connection.executemany(
+                    "INSERT INTO inventory_target_coverage_state "
+                    "(target_identity,source,first_observed_at,previous_observed_at,"
+                    "last_observed_at,observation_count,last_run_id) "
+                    "VALUES (?,?,?,NULL,?,1,?) "
+                    "ON CONFLICT(target_identity) DO UPDATE SET "
+                    "source=excluded.source,"
+                    "previous_observed_at=CASE WHEN excluded.last_observed_at>"
+                    "inventory_target_coverage_state.last_observed_at "
+                    "THEN inventory_target_coverage_state.last_observed_at "
+                    "ELSE inventory_target_coverage_state.previous_observed_at END,"
+                    "last_observed_at=CASE WHEN excluded.last_observed_at>"
+                    "inventory_target_coverage_state.last_observed_at "
+                    "THEN excluded.last_observed_at "
+                    "ELSE inventory_target_coverage_state.last_observed_at END,"
+                    "observation_count=CASE WHEN excluded.last_observed_at>"
+                    "inventory_target_coverage_state.last_observed_at "
+                    "THEN inventory_target_coverage_state.observation_count+1 "
+                    "ELSE inventory_target_coverage_state.observation_count END,"
+                    "last_run_id=CASE WHEN excluded.last_observed_at>"
+                    "inventory_target_coverage_state.last_observed_at "
+                    "THEN excluded.last_run_id "
+                    "ELSE inventory_target_coverage_state.last_run_id END",
+                    [
+                        (
+                            target_identity,
+                            source,
+                            completed.isoformat(),
+                            completed.isoformat(),
+                            run_id,
+                        )
+                        for (
+                            target_identity,
+                            source,
+                            _target_status,
+                            _started_at,
+                            completed,
+                            _runtime_ms,
+                            _raw_postings_received,
+                            _normalized_jobs,
+                            _timestamped,
+                            _fresh_24h,
                         ) in observation_values
                     ],
                 )
