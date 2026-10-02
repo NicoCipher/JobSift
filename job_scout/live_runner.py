@@ -715,23 +715,60 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         elif current_profile.delivery_mode != "auto":
             action = "prepared"
         else:
-            try:
-                batch, _reconciliation, _remaining = profile_store.guard_batch_release(
-                    current_profile,
-                    batch.batch_id,
-                    gateway=GoogleSheetsGateway(),
-                )
-            except BatchConflict as error:
-                action = (
-                    "release_blocked_quota"
-                    if "remaining daily quota" in str(error)
-                    else "release_blocked_profile"
-                )
-            else:
-                batch = finalize_daily_batch(
-                    repository=repository, batch_id=batch.batch_id
-                )
+            while True:
+                try:
+                    batch, _reconciliation, _remaining = profile_store.guard_batch_release(
+                        current_profile,
+                        batch.batch_id,
+                        gateway=GoogleSheetsGateway(),
+                    )
+                except BatchConflict as error:
+                    if str(error) == "batch not found":
+                        recovered = store.recover_unresolved(
+                            brief.client_id, destination
+                        )
+                        if recovered is None:
+                            return {
+                                "action": "concurrent_recovery_complete",
+                                "batch_id": batch.batch_id,
+                                "batch_status": batch.status,
+                                "destination_id": getattr(
+                                    batch.request, "destination_id", None
+                                ),
+                                "selected_count": batch.selected_count,
+                            }
+                        batch = recovered
+                        continue
+                    action = (
+                        "release_blocked_quota"
+                        if "remaining daily quota" in str(error)
+                        else "release_blocked_profile"
+                    )
+                    break
+                try:
+                    batch = finalize_daily_batch(
+                        repository=repository, batch_id=batch.batch_id
+                    )
+                except BatchConflict as error:
+                    if str(error) != "batch not found":
+                        raise
+                    recovered = store.recover_unresolved(
+                        brief.client_id, destination
+                    )
+                    if recovered is None:
+                        return {
+                            "action": "concurrent_recovery_complete",
+                            "batch_id": batch.batch_id,
+                            "batch_status": batch.status,
+                            "destination_id": getattr(
+                                batch.request, "destination_id", None
+                            ),
+                            "selected_count": batch.selected_count,
+                        }
+                    batch = recovered
+                    continue
                 action = "released" if batch.status == "delivered" else "release_failed"
+                break
     payload = _batch_payload(
         store,
         batch,
