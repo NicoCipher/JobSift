@@ -531,7 +531,7 @@ class SmartRecruitersCollector:
             "company_identifier": (
                 item.company.identifier
                 if item.company and item.company.identifier
-                else target.board_id
+                else board
             ),
             "company_name": item.company.name if item.company else None,
             "released_date": item.releasedDate.isoformat() if item.releasedDate else None,
