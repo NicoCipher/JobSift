@@ -27,6 +27,25 @@ CREATE TABLE IF NOT EXISTS inventory_run_jobs (
 );
 CREATE INDEX IF NOT EXISTS ix_inventory_run_jobs_run
   ON inventory_run_jobs(run_id, job_id);
+CREATE TABLE IF NOT EXISTS inventory_target_observations (
+  run_id TEXT NOT NULL REFERENCES inventory_runs(run_id) ON DELETE CASCADE,
+  target_identity TEXT NOT NULL,
+  source TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  runtime_ms INTEGER NOT NULL CHECK(runtime_ms >= 0),
+  raw_postings_received INTEGER NOT NULL CHECK(raw_postings_received >= 0),
+  postings_with_trustworthy_timestamps INTEGER NOT NULL
+    CHECK(postings_with_trustworthy_timestamps >= 0),
+  postings_at_most_24h_old INTEGER NOT NULL
+    CHECK(postings_at_most_24h_old >= 0),
+  PRIMARY KEY(run_id, target_identity)
+);
+CREATE INDEX IF NOT EXISTS ix_inventory_target_observations_target_completed
+  ON inventory_target_observations(target_identity, completed_at);
+CREATE INDEX IF NOT EXISTS ix_inventory_target_observations_source_completed
+  ON inventory_target_observations(source, completed_at);
 """
 
 
@@ -134,6 +153,9 @@ class InventoryRunStore:
         jobs: Iterable[Job],
         memberships: Iterable[tuple[str, Job]],
         stale_jobs: Iterable[Job] = (),
+        target_observations: Iterable[
+            tuple[str, str, str, datetime, datetime, int, int, int, int]
+        ] = (),
         pruned_at: datetime | None = None,
         status: str,
         completed_at: datetime,
@@ -144,6 +166,7 @@ class InventoryRunStore:
         job_values = list(jobs)
         membership_values = list(memberships)
         stale_values = list(stale_jobs)
+        observation_values = list(target_observations)
         now = datetime.now(UTC).isoformat()
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -161,6 +184,39 @@ class InventoryRunStore:
                     [
                         (run_id, job.id, target_identity)
                         for target_identity, job in membership_values
+                    ],
+                )
+            if observation_values:
+                connection.executemany(
+                    "INSERT INTO inventory_target_observations "
+                    "(run_id,target_identity,source,started_at,completed_at,status,"
+                    "runtime_ms,raw_postings_received,"
+                    "postings_with_trustworthy_timestamps,"
+                    "postings_at_most_24h_old) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    [
+                        (
+                            run_id,
+                            target_identity,
+                            source,
+                            started_at.isoformat(),
+                            completed.isoformat(),
+                            target_status,
+                            runtime_ms,
+                            raw_postings_received,
+                            timestamped,
+                            fresh_24h,
+                        )
+                        for (
+                            target_identity,
+                            source,
+                            target_status,
+                            started_at,
+                            completed,
+                            runtime_ms,
+                            raw_postings_received,
+                            timestamped,
+                            fresh_24h,
+                        ) in observation_values
                     ],
                 )
             updated = connection.execute(
