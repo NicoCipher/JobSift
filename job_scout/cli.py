@@ -432,7 +432,9 @@ def main() -> None:
                         gateway=GoogleSheetsGateway(),
                     )
                     result = finalize_daily_batch(
-                        repository=repository, batch_id=result.batch_id
+                        repository=repository,
+                        batch_id=result.batch_id,
+                        expected_generation_id=result.generation_id,
                     )
                 else:
                     result = batch_store.get(args.batch_id)
@@ -492,7 +494,11 @@ def main() -> None:
                             "profile-attributed client Sheet batches must be released "
                             "through delivery-profile release-batch"
                         )
-                result = finalize_daily_batch(repository=repository, batch_id=result.batch_id)
+                result = finalize_daily_batch(
+                    repository=repository,
+                    batch_id=result.batch_id,
+                    expected_generation_id=result.generation_id,
+                )
                 rows = store.export_rows(result.batch_id)
             print(
                 json.dumps(
