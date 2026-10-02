@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from job_scout.dedupe.resolver import DEDUPE_VERSION
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchItem, DailyBatchResult
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 BATCH_SCHEMA = """
 CREATE TABLE IF NOT EXISTS daily_batches (
-  batch_id TEXT PRIMARY KEY, client_id TEXT NOT NULL, destination TEXT NOT NULL,
+  batch_id TEXT PRIMARY KEY, generation_id TEXT, client_id TEXT NOT NULL, destination TEXT NOT NULL,
   idempotency_key TEXT NOT NULL, requested_quota INTEGER NOT NULL CHECK(requested_quota > 0),
   selected_count INTEGER NOT NULL CHECK(selected_count >= 0 AND selected_count <= requested_quota),
   shortfall INTEGER NOT NULL CHECK(shortfall = requested_quota - selected_count),
@@ -93,6 +93,18 @@ class DailyBatchStore:
         self.repository = repository
         with repository.connect() as connection:
             connection.executescript(BATCH_SCHEMA)
+            columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(daily_batches)")
+            }
+            if "generation_id" not in columns:
+                connection.execute("ALTER TABLE daily_batches ADD COLUMN generation_id TEXT")
+            for row in connection.execute(
+                "SELECT batch_id FROM daily_batches WHERE generation_id IS NULL"
+            ).fetchall():
+                connection.execute(
+                    "UPDATE daily_batches SET generation_id=? WHERE batch_id=?",
+                    (str(uuid4()), row["batch_id"]),
+                )
 
     def _candidates(
         self,
@@ -199,6 +211,9 @@ class DailyBatchStore:
         ).fetchall()
         return DailyBatchResult(
             batch_id=batch_id,
+            generation_id=(
+                row["generation_id"] if "generation_id" in row.keys() else None
+            ),
             request=json.loads(row["request_json"]),
             status=row["status"],
             assembled_at=row["assembled_at"],
@@ -218,16 +233,23 @@ class DailyBatchStore:
         with self.repository.connect() as c:
             return self._load(c, batch_id)
 
-    def export_journal(self, batch_id: str) -> tuple[str | None, str | None]:
-        """Return the frozen destination digests for release/recovery checks."""
+    def export_journal(
+        self, batch_id: str, *, expected_generation_id: str | None = None
+    ) -> tuple[str | None, str | None]:
+        """Return frozen destination digests for one exact batch generation."""
         with self.repository.connect() as c:
             row = c.execute(
-                "SELECT export_before_sha256,export_after_sha256 "
+                "SELECT generation_id,export_before_sha256,export_after_sha256 "
                 "FROM daily_batches WHERE batch_id=?",
                 (batch_id,),
             ).fetchone()
         if row is None:
             raise BatchConflict("batch not found")
+        if (
+            expected_generation_id is not None
+            and row["generation_id"] != expected_generation_id
+        ):
+            raise BatchConflict("batch revision changed")
         return row["export_before_sha256"], row["export_after_sha256"]
 
     def discard_prepared(self, batch_id: str) -> DailyBatchResult:
@@ -391,11 +413,12 @@ class DailyBatchStore:
                 )
             )
             c.execute(
-                "INSERT INTO daily_batches (batch_id,client_id,destination,idempotency_key,"
+                "INSERT INTO daily_batches (batch_id,generation_id,client_id,destination,idempotency_key,"
                 "requested_quota,selected_count,shortfall,status,assembled_at,request_json,"
-                "counts_json,dedupe_version) VALUES (?,?,?,?,?,?,?,'prepared',?,?,?,?)",
+                "counts_json,dedupe_version) VALUES (?,?,?,?,?,?,?,?,'prepared',?,?,?,?)",
                 (
                     batch_id,
+                    str(uuid4()),
                     request.client_id,
                     request.destination,
                     request.idempotency_key,
@@ -474,21 +497,51 @@ class DailyBatchStore:
             ):
                 raise BatchConflict("prepared evidence or delivery state changed")
 
-    def fail(self, batch_id, error):
+    @staticmethod
+    def _require_generation(
+        result: DailyBatchResult, expected_generation_id: str | None
+    ) -> str:
+        generation_id = expected_generation_id or result.generation_id
+        if generation_id is None:
+            raise BatchConflict("batch generation missing")
+        if result.generation_id != generation_id:
+            raise BatchConflict("batch revision changed")
+        return generation_id
+
+    def fail(
+        self,
+        batch_id,
+        error,
+        *,
+        expected_generation_id: str | None = None,
+    ):
         with self.repository.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            result = self._load(c, batch_id)
+            generation_id = self._require_generation(result, expected_generation_id)
             c.execute(
                 "UPDATE daily_batches SET status='failed',error=? WHERE batch_id=? "
-                "AND status!='delivered'",
-                (str(error), batch_id),
+                "AND generation_id=? AND status!='delivered'",
+                (str(error), batch_id, generation_id),
             )
-        return self.get(batch_id)
+            return self._load(c, batch_id)
 
-    def finalize(self, batch_id, plan, inspect, publish):
-        """Journal commits before IO; delivery marks commit only after durable file verification."""
+    def finalize(
+        self,
+        batch_id,
+        plan,
+        inspect,
+        publish,
+        *,
+        expected_generation_id: str | None = None,
+    ):
+        """Journal and deliver only the exact generation that was guarded."""
+        generation_id = expected_generation_id
         try:
             with self.repository.connect() as c:
                 c.execute("BEGIN IMMEDIATE")
                 result = self._load(c, batch_id)
+                generation_id = self._require_generation(result, generation_id)
                 if result.status == "delivered":
                     return result
                 pending = c.execute(
@@ -520,6 +573,7 @@ class DailyBatchStore:
             with self.repository.connect() as c:
                 c.execute("BEGIN IMMEDIATE")
                 result = self._load(c, batch_id)
+                self._require_generation(result, generation_id)
                 if result.status == "delivered":
                     return result
                 row = c.execute(
@@ -573,4 +627,12 @@ class DailyBatchStore:
                 )
                 return self._load(c, batch_id)
         except (OSError, sqlite3.Error, ValueError, csv.Error) as error:
-            return self.fail(batch_id, error)
+            if isinstance(error, BatchConflict) and str(error) in {
+                "batch not found",
+                "batch revision changed",
+                "batch generation missing",
+            }:
+                raise
+            return self.fail(
+                batch_id, error, expected_generation_id=generation_id
+            )
