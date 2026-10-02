@@ -252,32 +252,46 @@ class DailyBatchStore:
             c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
             return result
 
-    def discard_stale_unpublished(self, batch_id: str) -> DailyBatchResult:
-        """Atomically delete only a final-freshness failure with no export state."""
+    def recover_unresolved(self, client_id: str, destination: str) -> DailyBatchResult | None:
+        """Resolve safe stale failures and return the next batch requiring action.
+
+        State machine, evaluated under one write lock:
+        - stale final-freshness failure + no journal/delivery -> delete and continue;
+        - prepared -> return for release;
+        - any journaled non-delivered batch -> return for reconciliation;
+        - every other failed/no-journal batch -> leave durable and ignore here.
+        """
         with self.repository.connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            row = c.execute(
-                "SELECT status,error,delivered_at,export_before_sha256,export_after_sha256 "
-                "FROM daily_batches WHERE batch_id=?",
-                (batch_id,),
-            ).fetchone()
-            if row is None:
-                raise BatchConflict("batch not found")
-            if (
-                row["status"] != "failed"
-                or not (row["error"] or "").startswith(
-                    "prepared posting is no longer fresh at delivery:"
+            while True:
+                row = c.execute(
+                    "SELECT batch_id,status,error,delivered_at,export_before_sha256,"
+                    "export_after_sha256 FROM daily_batches "
+                    "WHERE client_id=? AND destination=? AND status!='delivered' "
+                    "AND (status='prepared' OR export_before_sha256 IS NOT NULL "
+                    "OR export_after_sha256 IS NOT NULL "
+                    "OR (status='failed' AND delivered_at IS NULL "
+                    "AND error LIKE 'prepared posting is no longer fresh at delivery:%')) "
+                    "ORDER BY assembled_at,batch_id LIMIT 1",
+                    (client_id, destination),
+                ).fetchone()
+                if row is None:
+                    return None
+                stale_unpublished = (
+                    row["status"] == "failed"
+                    and (row["error"] or "").startswith(
+                        "prepared posting is no longer fresh at delivery:"
+                    )
+                    and row["delivered_at"] is None
+                    and row["export_before_sha256"] is None
+                    and row["export_after_sha256"] is None
                 )
-                or row["delivered_at"] is not None
-                or row["export_before_sha256"] is not None
-                or row["export_after_sha256"] is not None
-            ):
-                raise BatchConflict("batch is not a discardable stale unpublished failure")
-            result = self._load(c, batch_id)
-            c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
-            c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
-            c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
-            return result
+                if not stale_unpublished:
+                    return self._load(c, row["batch_id"])
+                batch_id = row["batch_id"]
+                c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
+                c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
+                c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
 
     def export_rows(self, batch_id: str) -> list[dict[str, str]]:
         """Return the frozen rows for operator review, never mutable current postings."""
