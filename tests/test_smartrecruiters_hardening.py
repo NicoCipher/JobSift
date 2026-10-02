@@ -519,14 +519,7 @@ def test_single_board_cli_exposes_smartrecruiters(monkeypatch, tmp_path):
     import job_scout.cli as cli
 
     client = tmp_path / "client.json"
-    client.write_text(
-        json.dumps(
-            {
-                "client_id": "cli-smartrecruiters",
-                "target_roles": ["Software Engineer"],
-            }
-        )
-    )
+    client.write_text("{}")
     captured = {}
 
     def fake_run_pipeline(**kwargs):
@@ -539,6 +532,7 @@ def test_single_board_cli_exposes_smartrecruiters(monkeypatch, tmp_path):
 
         return Summary()
 
+    monkeypatch.setattr(cli, "load_search_brief", lambda _: object())
     monkeypatch.setattr(cli, "run_pipeline", fake_run_pipeline)
     monkeypatch.setattr(
         sys,
