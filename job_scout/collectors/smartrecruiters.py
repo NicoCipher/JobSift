@@ -302,8 +302,8 @@ class SmartRecruitersCollector:
                     self.last_counts["vanished"] += 1
                     continue
                 detail = self._merge_index_evidence(detail, item)
-                self._validate_detail_identity(detail, item, target)
-                jobs.append(self._normalize(detail, target))
+                self._validate_detail_identity(detail, item, board)
+                jobs.append(self._normalize(detail, target, board=board))
             except httpx.RequestError as exc:
                 errors.append(f"detail[{item.id}] failed: {type(exc).__name__}")
                 self.last_counts["quarantined"] += 1
@@ -339,7 +339,7 @@ class SmartRecruitersCollector:
     def _validate_detail_identity(
         detail: _PostingDetails,
         index: _Posting,
-        target: SourceTarget,
+        board: str,
     ) -> None:
         if detail.id != index.id:
             raise ValueError("hydrated posting id does not match indexed posting")
@@ -353,7 +353,7 @@ class SmartRecruitersCollector:
             or posting_url.port not in {None, 443}
             or posting_url.username is not None
             or len(parts) != 2
-            or parts[0].casefold() != target.board_id.casefold()
+            or parts[0].casefold() != board.casefold()
             or not (parts[1] == index.id or parts[1].startswith(index.id + "-"))
         ):
             raise ValueError("hydrated canonical URL does not match requested posting")
@@ -367,7 +367,7 @@ class SmartRecruitersCollector:
                 or apply_url.username is not None
                 or apply_url.password is not None
                 or len(apply_parts) not in {2, 3}
-                or apply_parts[0].casefold() != target.board_id.casefold()
+                or apply_parts[0].casefold() != board.casefold()
                 or not (
                     apply_parts[1] == index.id
                     or apply_parts[1].startswith(index.id + "-")
@@ -381,7 +381,7 @@ class SmartRecruitersCollector:
                     "hydrated apply URL does not match requested posting"
                 )
         identifier = detail.company.identifier if detail.company else None
-        if identifier and identifier.casefold() != target.board_id.casefold():
+        if identifier and identifier.casefold() != board.casefold():
             raise ValueError("hydrated posting company does not match requested target")
 
     @staticmethod
@@ -509,7 +509,14 @@ class SmartRecruitersCollector:
             return RemoteStatus.REMOTE
         return RemoteStatus.UNKNOWN
 
-    def _normalize(self, item: _PostingDetails, target: SourceTarget) -> Job:
+    def _normalize(
+        self,
+        item: _PostingDetails,
+        target: SourceTarget,
+        *,
+        board: str | None = None,
+    ) -> Job:
+        board = target.board_id.strip() if board is None else board
         description, description_html = self._description(item)
         location_text, country, region, city = self._location(item)
         employment = self._employment(item.typeOfEmployment)
@@ -545,12 +552,12 @@ class SmartRecruitersCollector:
             id=str(
                 uuid.uuid5(
                     uuid.NAMESPACE_URL,
-                    f"smartrecruiters:{target.board_id.casefold()}:{source_id}",
+                    f"smartrecruiters:{board.casefold()}:{source_id}",
                 )
             ),
             source=self.source,
             source_job_id=source_id,
-            source_board_id=target.board_id.casefold(),
+            source_board_id=board.casefold(),
             title=item.name,
             company=target.company,
             employer_id=target.employer_id,
