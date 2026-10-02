@@ -485,6 +485,7 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
         captured.append(request.idempotency_key)
         return SimpleNamespace(
             batch_id=f"batch-{len(captured)}",
+            generation_id=f"generation-{len(captured)}",
             selected_count=0,
         )
 
