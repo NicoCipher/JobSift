@@ -163,6 +163,31 @@ def _is_concurrent_batch_recovery(error: BatchConflict) -> bool:
     return str(error) in {"batch not found", "batch revision changed"}
 
 
+def _is_stale_release_failure(batch: DailyBatchResult) -> bool:
+    return batch.status == "failed" and (batch.error or "").startswith(
+        "prepared posting is no longer fresh at delivery:"
+    )
+
+
+def _recover_after_stale_release(
+    store: DailyBatchStore,
+    *,
+    client_id: str,
+    destination: str,
+) -> tuple[str, DailyBatchResult | None]:
+    """Classify stale-release recovery from the store state machine.
+
+    recover_unresolved deletes every safe stale/no-journal failure before
+    returning. A stale failure returned here therefore requires reconciliation.
+    """
+    recovered = store.recover_unresolved(client_id, destination)
+    if recovered is None:
+        return "discarded", None
+    if _is_stale_release_failure(recovered):
+        return "reconcile", recovered
+    return "continue", recovered
+
+
 def _unresolved_batch(
     repository: SQLiteRepository, *, client_id: str, destination: str
 ) -> DailyBatchResult | None:
@@ -475,17 +500,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 if unresolved is None:
                     return {"action": "concurrent_recovery_complete"}
                 continue
-            if (
-                unresolved.status == "failed"
-                and (unresolved.error or "").startswith(
-                    "prepared posting is no longer fresh at delivery:"
-                )
-            ):
+            if _is_stale_release_failure(unresolved):
                 stale_batch = unresolved
-                unresolved = store.recover_unresolved(
-                    brief.client_id, destination
+                disposition, recovered = _recover_after_stale_release(
+                    store,
+                    client_id=brief.client_id,
+                    destination=destination,
                 )
-                if unresolved is None:
+                if disposition == "discarded":
                     return {
                         "action": "stale_unpublished_discarded",
                         "batch_id": stale_batch.batch_id,
@@ -496,38 +518,13 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         "selected_count": stale_batch.selected_count,
                         "error": stale_batch.error,
                     }
-                if (
-                    unresolved.status == "failed"
-                    and (unresolved.error or "").startswith(
-                        "prepared posting is no longer fresh at delivery:"
+                if disposition == "reconcile":
+                    return _batch_payload(
+                        store,
+                        recovered,
+                        action="stale_release_requires_reconciliation",
                     )
-                ):
-                    try:
-                        before_sha, after_sha = store.export_journal(
-                            unresolved.batch_id,
-                            expected_generation_id=unresolved.generation_id,
-                        )
-                    except BatchConflict as error:
-                        if not _is_concurrent_batch_recovery(error):
-                            raise
-                        unresolved = store.recover_unresolved(
-                            brief.client_id, destination
-                        )
-                        if unresolved is None:
-                            return {"action": "concurrent_recovery_complete"}
-                        continue
-                    if before_sha is not None or after_sha is not None:
-                        # This is the retained journaled failure itself.
-                        # External Sheet state may be uncertain, so never spin
-                        # or discard it; surface it for reconciliation.
-                        return _batch_payload(
-                            store,
-                            unresolved,
-                            action="stale_release_requires_reconciliation",
-                        )
-                # Safe cleanup removed the stale batch. A replacement may
-                # legitimately reuse the deterministic batch ID, so classify
-                # the returned state rather than comparing identities.
+                unresolved = recovered
                 continue
             action = "resumed_release"
         else:
@@ -789,17 +786,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         }
                     batch = recovered
                     continue
-                if (
-                    batch.status == "failed"
-                    and (batch.error or "").startswith(
-                        "prepared posting is no longer fresh at delivery:"
-                    )
-                ):
+                if _is_stale_release_failure(batch):
                     stale_batch = batch
-                    recovered = store.recover_unresolved(
-                        brief.client_id, destination
+                    disposition, recovered = _recover_after_stale_release(
+                        store,
+                        client_id=brief.client_id,
+                        destination=destination,
                     )
-                    if recovered is None:
+                    if disposition == "discarded":
                         return {
                             "action": "stale_unpublished_discarded",
                             "batch_id": stale_batch.batch_id,
@@ -810,36 +804,15 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                             "selected_count": stale_batch.selected_count,
                             "error": stale_batch.error,
                         }
-                    if (
-                        recovered.status == "failed"
-                        and (recovered.error or "").startswith(
-                            "prepared posting is no longer fresh at delivery:"
+                    if disposition == "reconcile":
+                        return _batch_payload(
+                            store,
+                            recovered,
+                            action="stale_release_requires_reconciliation",
+                            sourcing=report,
+                            evaluation=evaluation,
+                            retention=retention,
                         )
-                    ):
-                        try:
-                            before_sha, after_sha = store.export_journal(
-                                recovered.batch_id,
-                                expected_generation_id=recovered.generation_id,
-                            )
-                        except BatchConflict as error:
-                            if not _is_concurrent_batch_recovery(error):
-                                raise
-                            recovered = store.recover_unresolved(
-                                brief.client_id, destination
-                            )
-                            if recovered is None:
-                                return {"action": "concurrent_recovery_complete"}
-                            batch = recovered
-                            continue
-                        if before_sha is not None or after_sha is not None:
-                            return _batch_payload(
-                                store,
-                                recovered,
-                                action="stale_release_requires_reconciliation",
-                                sourcing=report,
-                                evaluation=evaluation,
-                                retention=retention,
-                            )
                     batch = recovered
                     continue
                 action = "released" if batch.status == "delivered" else "release_failed"
