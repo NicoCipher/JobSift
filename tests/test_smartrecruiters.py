@@ -209,6 +209,66 @@ def test_smartrecruiters_detail_404_is_counted_as_vanished_not_target_failure() 
     assert collector.last_counts["quarantined"] == 0
 
 
+@pytest.mark.parametrize("status_code", [400, 422])
+def test_smartrecruiters_posting_specific_4xx_is_quarantined_and_collection_continues(
+    status_code: int,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/companies/acme/postings":
+            return httpx.Response(
+                200,
+                json={
+                    "limit": 100,
+                    "offset": 0,
+                    "totalFound": 2,
+                    "content": [posting("1"), posting("2")],
+                },
+                request=request,
+            )
+        if request.url.path.endswith("/1"):
+            return httpx.Response(status_code, text="posting-specific rejection", request=request)
+        return httpx.Response(200, json=detail("2"), request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = SmartRecruitersCollector(client)
+        result = collector.collect(target())
+
+    assert result.status is CollectionStatus.PARTIAL
+    assert [job.source_job_id for job in result.jobs] == ["2"]
+    assert collector.last_counts["detail_requests"] == 2
+    assert collector.last_counts["quarantined"] == 1
+    assert result.errors == [f"detail[1] HTTP {status_code}"]
+
+
+def test_smartrecruiters_detail_410_is_vanished_and_collection_continues() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/companies/acme/postings":
+            return httpx.Response(
+                200,
+                json={
+                    "limit": 100,
+                    "offset": 0,
+                    "totalFound": 2,
+                    "content": [posting("1"), posting("2")],
+                },
+                request=request,
+            )
+        if request.url.path.endswith("/1"):
+            return httpx.Response(410, text="Gone", request=request)
+        return httpx.Response(200, json=detail("2"), request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = SmartRecruitersCollector(client)
+        result = collector.collect(target())
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert [job.source_job_id for job in result.jobs] == ["2"]
+    assert collector.last_counts["detail_requests"] == 2
+    assert collector.last_counts["vanished"] == 1
+    assert collector.last_counts["quarantined"] == 0
+    assert result.errors == []
+
+
 def test_smartrecruiters_mismatched_detail_identity_is_quarantined() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/companies/acme/postings":
