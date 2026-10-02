@@ -48,6 +48,37 @@ def _job_payload(job: Job) -> dict[str, object]:
     return payload
 
 
+def _fresh_24h(job: Job, evaluated_at: datetime) -> bool:
+    if job.posted_at is None:
+        return False
+    posted_at = job.posted_at.replace(tzinfo=job.posted_at.tzinfo or UTC).astimezone(UTC)
+    evaluated_at = evaluated_at.replace(tzinfo=evaluated_at.tzinfo or UTC).astimezone(UTC)
+    age_seconds = (evaluated_at - posted_at).total_seconds()
+    return -300 <= age_seconds <= 24 * 3600
+
+
+def _target_observation_rows(
+    artifacts: list[ShardCollectionArtifact],
+) -> list[tuple[str, str, str, datetime, datetime, int, int, int, int]]:
+    rows = []
+    for artifact in artifacts:
+        for target in artifact.targets:
+            rows.append(
+                (
+                    target.target_identity,
+                    target.source,
+                    target.status.value,
+                    target.started_at,
+                    target.completed_at,
+                    target.runtime_ms,
+                    target.raw_postings_received,
+                    sum(job.posted_at is not None for job in target.jobs),
+                    sum(_fresh_24h(job, target.completed_at) for job in target.jobs),
+                )
+            )
+    return rows
+
+
 class FanInMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -316,6 +347,7 @@ def persist_shard_artifacts(
         jobs=jobs,
         memberships=membership_jobs,
         stale_jobs=stale_jobs,
+        target_observations=_target_observation_rows(ordered),
         pruned_at=retention_evaluated_at,
         status=status,
         completed_at=persisted_at,
