@@ -159,6 +159,7 @@ jobs:
           mkdir -p refresh-result
           python -m job_scout.inventory_refresh fan-in \
             --registry refresh-plan/registry.json \
+            --parent-registry config/source_registries/production_active_v1.json \
             --manifest refresh-plan/manifest.json \
             --artifacts-dir shard-artifacts \
             --database "$JOBSIFT_DATABASE" \
