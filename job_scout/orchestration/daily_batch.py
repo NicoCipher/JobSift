@@ -13,9 +13,9 @@ from job_scout.delivery_destinations import (
 from job_scout.domain.daily_batch import (
     BatchConflict,
     DailyBatchCounts,
-    RetryableDestinationConflict,
     DailyBatchRequest,
     DailyBatchResult,
+    RetryableDestinationConflict,
 )
 from job_scout.domain.models import MatchDecision
 from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
