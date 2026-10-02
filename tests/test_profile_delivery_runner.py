@@ -54,3 +54,27 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
 
     assert events == ["reconcile", "run"]
     assert result[0]["action"] == "quota_reached"
+
+
+def test_profile_runner_main_fails_when_batch_delivery_failed(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOBSIFT_DATABASE", str(tmp_path / "jobs.db"))
+    monkeypatch.setenv("JOBSIFT_PLAN_DIR", str(tmp_path))
+    monkeypatch.setenv("JOBSIFT_REPORTS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(
+        profile_delivery_runner,
+        "run_active_profiles",
+        lambda **_kwargs: [
+            {
+                "profile_id": "profile-a",
+                "action": "resumed_release",
+                "batch_status": "failed",
+            }
+        ],
+    )
+
+    try:
+        profile_delivery_runner.main()
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("failed delivery batch must fail the operational runner")

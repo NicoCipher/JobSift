@@ -188,3 +188,16 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "--refresh-plan refresh-plan/plan.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
+
+
+def test_live_refresh_delivers_before_retention_cleanup():
+    workflow = Path(".github/workflows/refresh-live-inventory.yml").read_text(
+        encoding="utf-8"
+    )
+
+    fan_in = workflow.index("python -m job_scout.inventory_refresh fan-in")
+    deliver = workflow.index("Deliver to active client profiles")
+    prune = workflow.index("python -m job_scout.inventory_refresh prune")
+
+    assert "--skip-retention" in workflow[fan_in:deliver]
+    assert fan_in < deliver < prune

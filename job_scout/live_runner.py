@@ -517,19 +517,25 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "source_failures": list(_source_failures(report)),
             }
 
-    retention = repository.prune_stale_inventory(
-        retention_hours=config.inventory_retention_hours
-    )
+    # Retention is maintenance, not a prerequisite for matching. Inventory reads
+    # enforce the same retention window independently, so cleanup can run outside
+    # the delivery critical path.
+    retention = None
 
     if report is not None:
         evaluation = evaluate_inventory_run(
             repository=repository,
             run_id=report.run_id,
             brief=brief,
+            retention_hours=config.inventory_retention_hours,
             evaluated_at=report.completed_at,
             match_scope_id=match_scope_id,
         )
-        candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
+        candidate_ids = InventoryRunStore(repository).active_job_ids(
+            report.run_id,
+            retention_hours=config.inventory_retention_hours,
+            evaluated_at=report.completed_at,
+        )
         scope = f"{plan.plan_id}:{report.run_id}"
         failures = _source_failures(report)
         completeness = "complete" if report.status == "success" else "partial"

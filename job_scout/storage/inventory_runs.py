@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from job_scout.domain.models import Job
 
@@ -206,14 +206,30 @@ class InventoryRunStore:
             ).fetchall()
         return tuple(row[0] for row in rows)
 
-    def active_job_ids(self, run_id: str) -> tuple[str, ...]:
-        """Return only full, active payloads that are valid for client evaluation."""
+    def active_job_ids(
+        self,
+        run_id: str,
+        *,
+        retention_hours: int = 72,
+        evaluated_at: datetime | None = None,
+    ) -> tuple[str, ...]:
+        """Return full active payloads verified inside the retention window."""
+        if retention_hours < 1:
+            raise ValueError("retention_hours must be at least 1")
+        evaluation_time = evaluated_at or datetime.now(UTC)
+        evaluation_time = (
+            evaluation_time.replace(tzinfo=UTC)
+            if evaluation_time.tzinfo is None
+            else evaluation_time.astimezone(UTC)
+        )
+        cutoff = evaluation_time - timedelta(hours=retention_hours)
         with self.repository.connect() as connection:
             rows = connection.execute(
                 "SELECT DISTINCT r.job_id FROM inventory_run_jobs r "
                 "JOIN jobs j ON j.id=r.job_id "
-                "WHERE r.run_id=? AND j.lifecycle!='closed' ORDER BY r.job_id",
-                (run_id,),
+                "WHERE r.run_id=? AND j.lifecycle!='closed' AND j.last_verified_at>=? "
+                "ORDER BY r.job_id",
+                (run_id, cutoff.isoformat()),
             ).fetchall()
         return tuple(row[0] for row in rows)
 

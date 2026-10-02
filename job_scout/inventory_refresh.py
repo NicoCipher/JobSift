@@ -290,6 +290,12 @@ def main() -> None:
     fan_in.add_argument("--database", type=Path, required=True)
     fan_in.add_argument("--output", type=Path, required=True)
     fan_in.add_argument("--retention-hours", type=int, default=72)
+    fan_in.add_argument("--skip-retention", action="store_true")
+
+    prune = commands.add_parser("prune")
+    prune.add_argument("--database", type=Path, required=True)
+    prune.add_argument("--output", type=Path, required=True)
+    prune.add_argument("--retention-hours", type=int, default=72)
 
     args = parser.parse_args()
     try:
@@ -322,6 +328,23 @@ def main() -> None:
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
+            return
+
+        if args.command == "prune":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            retention_started = time.perf_counter()
+            retention = repository.prune_stale_inventory(
+                retention_hours=args.retention_hours
+            )
+            payload = {
+                "retention": retention,
+                "retention_seconds": round(
+                    time.perf_counter() - retention_started, 3
+                ),
+            }
+            _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
             return
 
         registry = load_production_registry(args.registry)
@@ -398,22 +421,25 @@ def main() -> None:
             ),
             flush=True,
         )
-        retention_started = time.perf_counter()
-        retention = repository.prune_stale_inventory(
-            retention_hours=args.retention_hours
-        )
-        retention_seconds = time.perf_counter() - retention_started
-        print(
-            json.dumps(
-                {
-                    "event": "inventory_refresh_prune_complete",
-                    "elapsed_ms": round(retention_seconds * 1000),
-                    **retention,
-                },
-                sort_keys=True,
-            ),
-            flush=True,
-        )
+        retention = {}
+        retention_seconds = 0.0
+        if not args.skip_retention:
+            retention_started = time.perf_counter()
+            retention = repository.prune_stale_inventory(
+                retention_hours=args.retention_hours
+            )
+            retention_seconds = time.perf_counter() - retention_started
+            print(
+                json.dumps(
+                    {
+                        "event": "inventory_refresh_prune_complete",
+                        "elapsed_ms": round(retention_seconds * 1000),
+                        **retention,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
         payload = {
             "fan_in": report.model_dump(mode="json"),
             "retention": retention,

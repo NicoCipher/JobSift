@@ -163,6 +163,7 @@ jobs:
             --artifacts-dir shard-artifacts \
             --database "$JOBSIFT_DATABASE" \
             --retention-hours "$JOBSIFT_INVENTORY_RETENTION_HOURS" \
+            --skip-retention \
             --output refresh-result/report.json
 
       - name: Configure Google credentials
@@ -173,6 +174,14 @@ jobs:
 
       - name: Deliver to active client profiles
         run: python -m job_scout.profile_delivery_runner
+
+      - name: Prune stale inventory
+        if: ${{ always() }}
+        run: |
+          python -m job_scout.inventory_refresh prune \
+            --database "$JOBSIFT_DATABASE" \
+            --retention-hours "$JOBSIFT_INVENTORY_RETENTION_HOURS" \
+            --output refresh-result/retention.json
 
       - uses: actions/upload-artifact@v4
         if: always()

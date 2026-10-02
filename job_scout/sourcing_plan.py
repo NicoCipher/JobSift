@@ -509,16 +509,20 @@ def evaluate_inventory_run(
     repository: SQLiteRepository,
     run_id: str,
     brief: SearchBrief,
+    retention_hours: int = 72,
     evaluated_at: datetime | None = None,
     match_scope_id: str | None = None,
 ) -> InventoryEvaluationReport:
-    """Evaluate one shared inventory run for one client without recollecting sources."""
+    """Evaluate one retained shared-inventory run without recollecting sources."""
+    if retention_hours < 1:
+        raise ValueError("retention_hours must be at least 1")
     evaluation_time = evaluated_at or datetime.now(UTC)
     evaluation_time = (
         evaluation_time.replace(tzinfo=UTC)
         if evaluation_time.tzinfo is None
         else evaluation_time.astimezone(UTC)
     )
+    cutoff = evaluation_time - timedelta(hours=retention_hours)
     matched = 0
     rejected = 0
     evaluated = 0
@@ -527,8 +531,9 @@ def evaluate_inventory_run(
         cursor = connection.execute(
             "SELECT DISTINCT j.id,j.payload_json FROM inventory_run_jobs r "
             "JOIN jobs j ON j.id=r.job_id "
-            "WHERE r.run_id=? AND j.lifecycle!='closed' ORDER BY j.id",
-            (run_id,),
+            "WHERE r.run_id=? AND j.lifecycle!='closed' AND j.last_verified_at>=? "
+            "ORDER BY j.id",
+            (run_id, cutoff.isoformat()),
         )
         for row in cursor:
             job = Job.model_validate_json(row[1])
