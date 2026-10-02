@@ -533,6 +533,7 @@ def test_single_board_cli_exposes_smartrecruiters(monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli, "load_search_brief", lambda _: object())
     monkeypatch.setattr(cli, "run_pipeline", fake_run_pipeline)
+    monkeypatch.setattr(cli, "load_search_brief", lambda _: object())
     monkeypatch.setattr(
         sys,
         "argv",
