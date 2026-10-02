@@ -346,13 +346,13 @@ def test_benchmark_match_yield_applies_production_freshness_policy(tmp_path: Pat
     )
 
     assert report.evaluation is not None
-    assert report.evaluation.semantic_matches_before_freshness == 4
-    assert report.evaluation.freshness_eligible_matches == 2
+    assert report.evaluation.semantic_matches_before_freshness == 5
+    assert report.evaluation.freshness_eligible_matches == 3
     assert report.evaluation.stale_posting_suppressions == 1
     assert report.evaluation.unknown_age_suppressions == 1
     assert report.evaluation.invalid_time_suppressions == 0
-    assert report.distinct_matched_employers == 2
-    assert report.distinct_matched_delivery_groups == 2
+    assert report.distinct_matched_employers == 3
+    assert report.distinct_matched_delivery_groups == 3
 
 
 def test_benchmark_plan_records_bounded_workday_detail_concurrency() -> None:
@@ -391,5 +391,5 @@ def test_benchmark_plan_cli_builds_matrix(tmp_path, monkeypatch, capsys):
         args.extend(["--limit", f"{source}=1", "--shards", f"{source}=1"])
     monkeypatch.setattr(sys, "argv", args)
     main()
-    assert len(json.loads((output / "matrix.json").read_text())["include"]) == 4
-    assert json.loads(capsys.readouterr().out)["total_targets"] == 4
+    assert len(json.loads((output / "matrix.json").read_text())["include"]) == 5
+    assert json.loads(capsys.readouterr().out)["total_targets"] == 5
