@@ -393,7 +393,7 @@ class SQLiteRepository:
                     for job in values
                 ],
             )
-        return len(rows)
+        return len(values)
 
     def prune_stale_inventory(
         self,
