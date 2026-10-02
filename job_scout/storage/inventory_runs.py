@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from job_scout.domain.models import Job
+from job_scout.retention import retention_basis
 
 INVENTORY_RUN_SCHEMA = """
 CREATE TABLE IF NOT EXISTS inventory_runs (
@@ -213,7 +214,7 @@ class InventoryRunStore:
         retention_hours: int = 72,
         evaluated_at: datetime | None = None,
     ) -> tuple[str, ...]:
-        """Return full active payloads verified inside the retention window."""
+        """Return full active payloads inside the shared retention window."""
         if retention_hours < 1:
             raise ValueError("retention_hours must be at least 1")
         evaluation_time = evaluated_at or datetime.now(UTC)
@@ -223,15 +224,32 @@ class InventoryRunStore:
             else evaluation_time.astimezone(UTC)
         )
         cutoff = evaluation_time - timedelta(hours=retention_hours)
+        active: list[str] = []
         with self.repository.connect() as connection:
             rows = connection.execute(
-                "SELECT DISTINCT r.job_id FROM inventory_run_jobs r "
+                "SELECT DISTINCT r.job_id,j.payload_json,j.first_seen_at,"
+                "e.posted_at AS retention_posted_at FROM inventory_run_jobs r "
                 "JOIN jobs j ON j.id=r.job_id "
-                "WHERE r.run_id=? AND j.lifecycle!='closed' AND j.last_verified_at>=? "
+                "LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                "WHERE r.run_id=? AND j.lifecycle!='closed' "
                 "ORDER BY r.job_id",
-                (run_id, cutoff.isoformat()),
+                (run_id,),
             ).fetchall()
-        return tuple(row[0] for row in rows)
+        for row in rows:
+            job = Job.model_validate_json(row["payload_json"])
+            retention_posted_at = (
+                datetime.fromisoformat(row["retention_posted_at"])
+                if row["retention_posted_at"]
+                else None
+            )
+            basis = retention_basis(
+                retention_posted_at=retention_posted_at,
+                posted_at=job.posted_at,
+                first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+            )
+            if basis >= cutoff:
+                active.append(row["job_id"])
+        return tuple(active)
 
     def target_job_ids(self, run_id: str, target_identity: str) -> tuple[str, ...]:
         with self.repository.connect() as connection:
