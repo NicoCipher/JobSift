@@ -526,8 +526,16 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
         run_once=True,
         discard_prepared=True,
     )
-    batch = SimpleNamespace(batch_id="batch-1", selected_count=5)
-    store = SimpleNamespace(discard_prepared=lambda batch_id: batch)
+    batch = SimpleNamespace(
+        batch_id="batch-1", generation_id="generation-1", selected_count=5
+    )
+    discarded = []
+
+    def discard_prepared(batch_id, *, expected_generation_id):
+        discarded.append((batch_id, expected_generation_id))
+        return batch
+
+    store = SimpleNamespace(discard_prepared=discard_prepared)
     monkeypatch.setattr(
         live_runner,
         "_runtime_plan",
@@ -556,6 +564,7 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     assert result["action"] == "discarded_prepared"
     assert result["batch_id"] == "batch-1"
     assert result["selected_count"] == 5
+    assert discarded == [("batch-1", "generation-1")]
 
 def test_validation_mode_refuses_cloud_repository(tmp_path, monkeypatch):
     config = LiveRunnerConfig(
