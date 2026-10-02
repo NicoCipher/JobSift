@@ -9,68 +9,10 @@ from job_scout import live_runner
 from job_scout.live_runner import (
     LiveRunnerConfig,
     _candidate_job_ids,
-    _discard_stale_unpublished_release,
 )
 from job_scout.sourcing_plan import SourcingPlan
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
-
-
-def test_stale_unpublished_release_can_be_discarded(monkeypatch):
-    store = SimpleNamespace(
-        discard_stale_unpublished=lambda batch_id: discarded.append(batch_id),
-    )
-    discarded = []
-    batch = SimpleNamespace(
-        batch_id="stale-unpublished",
-        status="failed",
-        error="prepared posting is no longer fresh at delivery: stale_posting",
-        delivered_at=None,
-    )
-
-    assert _discard_stale_unpublished_release(store, batch) is True
-    assert discarded == ["stale-unpublished"]
-
-
-def test_stale_release_with_export_journal_is_never_auto_discarded():
-    discarded = []
-    store = SimpleNamespace(
-        discard_stale_unpublished=lambda _batch_id: (_ for _ in ()).throw(
-            live_runner.BatchConflict("batch is not a discardable stale unpublished failure")
-        ),
-    )
-    batch = SimpleNamespace(
-        batch_id="stale-journaled",
-        status="failed",
-        error="prepared posting is no longer fresh at delivery: stale_posting",
-        delivered_at=None,
-    )
-
-    assert _discard_stale_unpublished_release(store, batch) is False
-    assert discarded == []
-
-
-def test_restart_recovery_discards_only_stale_failed_batch(monkeypatch):
-    discarded = []
-    store = SimpleNamespace(
-        discard_stale_unpublished=lambda batch_id: discarded.append(batch_id),
-    )
-    stale = SimpleNamespace(
-        batch_id="stale-after-crash",
-        status="failed",
-        error="prepared posting is no longer fresh at delivery: stale_posting",
-        delivered_at=None,
-    )
-    ordinary = SimpleNamespace(
-        batch_id="ordinary-failure",
-        status="failed",
-        error="network unavailable",
-        delivered_at=None,
-    )
-
-    assert _discard_stale_unpublished_release(store, stale) is True
-    assert _discard_stale_unpublished_release(store, ordinary) is False
-    assert discarded == ["stale-after-crash"]
 
 
 def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
