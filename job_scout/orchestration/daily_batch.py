@@ -240,7 +240,11 @@ def finalize_daily_batch(
         try:
             publisher = BatchSheetPublisher(result, sheets_gateway or GoogleSheetsGateway())
             return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
-        except (BatchConflict, OSError, ValueError) as error:
+        except BatchConflict as error:
+            if str(error).startswith("prepared posting is no longer fresh at delivery:"):
+                return store.fail(batch_id, error)
+            raise
+        except (OSError, ValueError) as error:
             return store.fail(batch_id, error)
     if result.request.destination.startswith("client-sheet:"):
         try:
