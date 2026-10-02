@@ -178,6 +178,7 @@ class SmartRecruitersCollector:
 
         indexed: list[_Posting] = []
         errors: list[str] = []
+        terminal_status: CollectionStatus | None = None
         total_found: int | None = None
         offset = 0
         seen_pages: set[tuple[str, ...]] = set()
@@ -197,6 +198,7 @@ class SmartRecruitersCollector:
                 if failure is not None:
                     if indexed:
                         errors.extend(failure.errors)
+                        terminal_status = failure.status
                         break
                     return failure
                 payload = _ListResult.model_validate(response.json())
@@ -245,10 +247,12 @@ class SmartRecruitersCollector:
             if not indexed:
                 return self._failure(target, CollectionStatus.NETWORK_FAILURE, type(exc).__name__)
             errors.append(f"list pagination interrupted: {type(exc).__name__}")
+            terminal_status = CollectionStatus.NETWORK_FAILURE
         except (ValueError, ValidationError) as exc:
             if not indexed:
                 return self._failure(target, CollectionStatus.PARSE_FAILURE, str(exc))
             errors.append(f"list payload rejected: {exc}")
+            terminal_status = CollectionStatus.PARSE_FAILURE
         except httpx.HTTPStatusError as exc:
             if not indexed:
                 return self._failure(
@@ -257,10 +261,10 @@ class SmartRecruitersCollector:
                     f"HTTP {exc.response.status_code}",
                 )
             errors.append(f"list pagination HTTP {exc.response.status_code}")
+            terminal_status = CollectionStatus.PROVIDER_ERROR
 
         self.last_counts["indexed"] = len(indexed)
         jobs: list[Job] = []
-        terminal_status = None
         seen_postings: set[str] = set()
         for item in indexed:
             if item.id in seen_postings:
@@ -283,10 +287,7 @@ class SmartRecruitersCollector:
                     # but it is not evidence that the company target is broken.
                     self.last_counts["vanished"] += 1
                     continue
-                if (
-                    400 <= response.status_code < 500
-                    and response.status_code not in {401, 403, 429}
-                ):
+                if response.status_code in {400, 422}:
                     errors.append(f"detail[{item.id}] HTTP {response.status_code}")
                     self.last_counts["quarantined"] += 1
                     continue
