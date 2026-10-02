@@ -277,11 +277,18 @@ class SmartRecruitersCollector:
             try:
                 self.last_counts["detail_requests"] += 1
                 response = self.client.get(f"{self.base_url}/{board}/postings/{item.id}")
-                if response.status_code == 404:
+                if response.status_code in {404, 410}:
                     # Public indexes and detail reads are not atomic. A posting
                     # that closes between the two calls is no longer eligible,
                     # but it is not evidence that the company target is broken.
                     self.last_counts["vanished"] += 1
+                    continue
+                if (
+                    400 <= response.status_code < 500
+                    and response.status_code not in {401, 403, 429}
+                ):
+                    errors.append(f"detail[{item.id}] HTTP {response.status_code}")
+                    self.last_counts["quarantined"] += 1
                     continue
                 failure = self._http_failure(target, response)
                 if failure is not None:
