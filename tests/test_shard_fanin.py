@@ -285,7 +285,7 @@ def test_fan_in_retention_routes_expired_payloads_directly_to_identity_ledger(
             "SELECT source_job_id,payload_json FROM jobs ORDER BY source_job_id"
         ).fetchall()
         ledger = connection.execute(
-            "SELECT source_job_id FROM job_identity_ledger ORDER BY source_job_id"
+            "SELECT source_job_id,pruned_at FROM job_identity_ledger ORDER BY source_job_id"
         ).fetchall()
         memberships = connection.execute(
             "SELECT job_id FROM inventory_run_jobs WHERE run_id=?",
@@ -294,6 +294,7 @@ def test_fan_in_retention_routes_expired_payloads_directly_to_identity_ledger(
 
     assert [row["source_job_id"] for row in jobs] == ["job-b"]
     assert [row["source_job_id"] for row in ledger] == ["job-a"]
+    assert ledger[0]["pruned_at"] == PERSISTED.isoformat()
     assert len(memberships) == 1
 
 
