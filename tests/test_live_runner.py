@@ -95,6 +95,53 @@ def test_recovery_state_machine_discards_stale_then_returns_newer_prepared(tmp_p
         ).fetchone() is None
 
 
+def test_recovery_state_machine_retains_journaled_stale_failure(tmp_path, monkeypatch):
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    store = DailyBatchStore(repository)
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
+            "dedupe_version,error,export_before_sha256) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "journaled-stale",
+                "client-a",
+                "client-sheet://jobs",
+                "scope-journaled",
+                1,
+                0,
+                1,
+                "failed",
+                "2026-10-02T12:00:00+00:00",
+                "{}",
+                "{}",
+                "test",
+                "prepared posting is no longer fresh at delivery: stale_posting",
+                "a" * 64,
+            ),
+        )
+
+    monkeypatch.setattr(
+        DailyBatchStore,
+        "_load",
+        staticmethod(
+            lambda _c, batch_id: SimpleNamespace(
+                batch_id=batch_id,
+                status="failed",
+                error="prepared posting is no longer fresh at delivery: stale_posting",
+            )
+        ),
+    )
+    result = store.recover_unresolved("client-a", "client-sheet://jobs")
+    assert result.batch_id == "journaled-stale"
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM daily_batches WHERE batch_id='journaled-stale'"
+        ).fetchone() is not None
+
+
 def test_unresolved_batch_ignores_delivered_export_journal(tmp_path):
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
     DailyBatchStore(repository)
