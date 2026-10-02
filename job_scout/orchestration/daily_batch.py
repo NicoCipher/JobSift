@@ -256,13 +256,17 @@ def finalize_daily_batch(
         except BatchConflict as error:
             if str(error).startswith("prepared posting is no longer fresh at delivery:"):
                 return store.fail(
-                batch_id, error, expected_generation_id=generation_id
-            )
+                    batch_id,
+                    error,
+                    expected_generation_id=generation_id,
+                )
             raise
         except (OSError, ValueError) as error:
             return store.fail(
-                batch_id, error, expected_generation_id=generation_id
-            )
+            batch_id,
+            error,
+            expected_generation_id=generation_id,
+        )
     if result.request.destination.startswith("client-sheet:"):
         try:
             destination_id = parse_logical_destination(result.request.destination)
