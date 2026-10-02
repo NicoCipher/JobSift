@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import time
+import math
 from collections import Counter
 from pathlib import Path
 
@@ -37,6 +38,39 @@ DEFAULT_SHARDS = {
     "smartrecruiters": 1,
 }
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
+MAX_REFRESH_TARGETS = 125
+WORKDAY_RAMP_LEVELS = (1, 5, 10, 20, 25)
+
+
+def workday_limit_for_cohort(cohort: int) -> int:
+    """Ramp Workday coverage by UTC-day cohorts instead of making a one-shot jump."""
+    if cohort < 0:
+        raise ValueError("cohort must be non-negative")
+    day = cohort // 24
+    return WORKDAY_RAMP_LEVELS[min(day, len(WORKDAY_RAMP_LEVELS) - 1)]
+
+
+def default_refresh_limits(
+    registry: ProductionSourceRegistry,
+    *,
+    cohort: int,
+) -> dict[str, int]:
+    limits = {
+        source: DEFAULT_LIMITS[source]
+        for source in PROVIDERS
+        if source in registry.target_counts_by_source
+    }
+    if "workday" in limits:
+        limits["workday"] = min(
+            workday_limit_for_cohort(cohort),
+            registry.target_counts_by_source["workday"],
+        )
+    # SmartRecruiters is additive only after explicit registry admission.
+    if "smartrecruiters" in limits and "greenhouse" in limits:
+        limits["greenhouse"] -= limits["smartrecruiters"]
+    if sum(limits.values()) > MAX_REFRESH_TARGETS:
+        raise ValueError("default refresh cohort exceeds safety ceiling")
+    return limits
 
 
 def _stable(values):
@@ -49,14 +83,19 @@ def _stable(values):
     )
 
 
-def _refresh_limits(registry: ProductionSourceRegistry, limits: dict[str, int] | None) -> dict[str, int]:
+def _refresh_limits(
+    registry: ProductionSourceRegistry,
+    limits: dict[str, int] | None,
+    *,
+    cohort: int,
+) -> dict[str, int]:
     if limits is not None:
-        return dict(limits)
-    defaults = {source: DEFAULT_LIMITS[source] for source in PROVIDERS if source in registry.target_counts_by_source}
-    # Keep the existing 100-target ceiling when the new provider is admitted.
-    if "smartrecruiters" in defaults and "greenhouse" in defaults:
-        defaults["greenhouse"] -= defaults["smartrecruiters"]
-    return defaults
+        values = dict(limits)
+    else:
+        values = default_refresh_limits(registry, cohort=cohort)
+    if sum(values.values()) > MAX_REFRESH_TARGETS:
+        raise ValueError(f"refresh cohort exceeds {MAX_REFRESH_TARGETS}-target safety ceiling")
+    return values
 
 
 def rotating_registry(
@@ -69,7 +108,7 @@ def rotating_registry(
     if cohort < 0:
         raise ValueError("cohort must be non-negative")
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
-    limits = _refresh_limits(registry, limits)
+    limits = _refresh_limits(registry, limits, cohort=cohort)
     if set(limits) != set(providers) or any(value < 1 for value in limits.values()):
         raise ValueError("refresh limits must contain positive counts for every provider")
 
@@ -121,8 +160,15 @@ def build_refresh_plan(
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
-    limits = _refresh_limits(registry, limits)
-    shards = dict(shards) if shards is not None else {source: DEFAULT_SHARDS[source] for source in providers}
+    limits = _refresh_limits(registry, limits, cohort=cohort)
+    if shards is None:
+        shards = {source: DEFAULT_SHARDS[source] for source in providers}
+        if "workday" in shards:
+            # Keep Workday shards small enough to isolate provider failures while
+            # bounding matrix growth. Detail concurrency remains independently capped.
+            shards["workday"] = min(limits["workday"], max(1, math.ceil(limits["workday"] / 5)))
+    else:
+        shards = dict(shards)
     rotating = rotating_registry(registry, cohort=cohort, limits=limits)
     plan, subset, manifest = build_benchmark_plan(
         rotating,
