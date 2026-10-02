@@ -548,11 +548,13 @@ def test_sheet_header_and_drift_fail_closed(repo):
     batch = prepare(repo, request(repo, destination, [job]))
     gateway = FakeSheets()
     gateway.values[0][2] = "Wrong"
-    failed = batches.finalize_daily_batch(
-        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
-    )
-    assert failed.status == "failed"
+    with pytest.raises(BatchConflict, match="header"):
+        batches.finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
+    assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
     assert gateway.append_calls == 0
+
     gateway.values[0][2] = "Job Link"
     gateway.fail_before = True
     assert (
@@ -561,12 +563,13 @@ def test_sheet_header_and_drift_fail_closed(repo):
         ).status
         == "failed"
     )
+
     # An external edit after journaling cannot be silently overwritten.
     gateway.values.append(["manual", "", "https://example.com/manual"])
-    retry = batches.finalize_daily_batch(
-        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
-    )
-    assert retry.status == "failed"
+    with pytest.raises(BatchConflict, match="reconcile"):
+        batches.finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
     assert gateway.append_calls == 1
 
 
@@ -577,12 +580,19 @@ def test_sheet_internal_blank_row_rejected_before_append(repo):
     batch = prepare(repo, request(repo, destination, [job]))
     gateway = FakeSheets()
     gateway.values.extend([[], ["existing", "company", "https://example.com/existing"]])
-    failed = batches.finalize_daily_batch(
+    with pytest.raises(BatchConflict, match="blank row"):
+        batches.finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
+    assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
+    assert gateway.append_calls == 0
+
+    gateway.values.pop(1)
+    delivered = batches.finalize_daily_batch(
         repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
     )
-    assert failed.status == "failed"
-    assert gateway.append_calls == 0
-    assert len(gateway.values) == 3
+    assert delivered.status == "delivered"
+    assert gateway.append_calls == 1
 
 
 @pytest.mark.parametrize("quota", [0, -1, True, 1.5, "3"])
