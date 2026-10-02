@@ -513,10 +513,9 @@ def test_hydrated_canonical_url_must_match_posting_identity(url):
 
 
 def test_single_board_cli_exposes_smartrecruiters(monkeypatch, tmp_path):
-    import json
     import sys
 
-    import job_scout.cli as cli
+    from job_scout import cli
 
     client = tmp_path / "client.json"
     client.write_text("{}")
