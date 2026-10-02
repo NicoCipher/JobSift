@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS inventory_target_observations (
   status TEXT NOT NULL,
   runtime_ms INTEGER NOT NULL CHECK(runtime_ms >= 0),
   raw_postings_received INTEGER NOT NULL CHECK(raw_postings_received >= 0),
+  normalized_jobs INTEGER NOT NULL CHECK(normalized_jobs >= 0),
   postings_with_trustworthy_timestamps INTEGER NOT NULL
     CHECK(postings_with_trustworthy_timestamps >= 0),
   postings_at_most_24h_old INTEGER NOT NULL
@@ -154,7 +155,7 @@ class InventoryRunStore:
         memberships: Iterable[tuple[str, Job]],
         stale_jobs: Iterable[Job] = (),
         target_observations: Iterable[
-            tuple[str, str, str, datetime, datetime, int, int, int, int]
+            tuple[str, str, str, datetime, datetime, int, int, int, int, int]
         ] = (),
         pruned_at: datetime | None = None,
         status: str,
@@ -190,9 +191,9 @@ class InventoryRunStore:
                 connection.executemany(
                     "INSERT INTO inventory_target_observations "
                     "(run_id,target_identity,source,started_at,completed_at,status,"
-                    "runtime_ms,raw_postings_received,"
+                    "runtime_ms,raw_postings_received,normalized_jobs,"
                     "postings_with_trustworthy_timestamps,"
-                    "postings_at_most_24h_old) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "postings_at_most_24h_old) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     [
                         (
                             run_id,
@@ -203,6 +204,7 @@ class InventoryRunStore:
                             target_status,
                             runtime_ms,
                             raw_postings_received,
+                            normalized_jobs,
                             timestamped,
                             fresh_24h,
                         )
@@ -214,6 +216,7 @@ class InventoryRunStore:
                             completed,
                             runtime_ms,
                             raw_postings_received,
+                            normalized_jobs,
                             timestamped,
                             fresh_24h,
                         ) in observation_values
