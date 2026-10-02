@@ -118,6 +118,10 @@ CREATE TABLE IF NOT EXISTS job_identity_ledger (
   was_delivered INTEGER NOT NULL CHECK(was_delivered IN (0,1)),
   PRIMARY KEY(source, source_board_id, source_job_id)
 );
+CREATE TABLE IF NOT EXISTS job_retention_evidence (
+  job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+  posted_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS group_deliveries (
   group_id TEXT NOT NULL REFERENCES delivery_groups(id),
   client_id TEXT NOT NULL, destination TEXT NOT NULL,
@@ -258,6 +262,9 @@ class SQLiteRepository:
                     job.model_dump_json(),
                 ),
             )
+            connection.execute(
+                "DELETE FROM job_retention_evidence WHERE job_id=?", (job.id,)
+            )
             self._assign_group(connection, job)
             return JobLifecycle.NEW
 
@@ -279,6 +286,9 @@ class SQLiteRepository:
                 job.model_dump_json(),
                 job.id,
             ),
+        )
+        connection.execute(
+            "DELETE FROM job_retention_evidence WHERE job_id=?", (job.id,)
         )
         self._assign_group(connection, job)
         return lifecycle
@@ -351,6 +361,21 @@ class SQLiteRepository:
                 ],
             )
             connection.executemany(
+                "INSERT OR REPLACE INTO job_retention_evidence (job_id,posted_at) "
+                "SELECT id,? FROM jobs "
+                "WHERE source=? AND source_board_id=? AND source_job_id=?",
+                [
+                    (
+                        self._aware(job.posted_at).isoformat(),
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                    )
+                    for job in values
+                    if job.posted_at is not None
+                ],
+            )
+            connection.executemany(
                 "INSERT INTO job_identity_ledger "
                 "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
                 "first_seen_at,last_seen_at,pruned_at,was_delivered) "
@@ -402,12 +427,20 @@ class SQLiteRepository:
                 ).rowcount
 
             rows = connection.execute(
-                "SELECT id,first_seen_at,last_seen_at,payload_json FROM jobs ORDER BY id"
+                "SELECT j.id,j.canonical_url,j.first_seen_at,j.last_seen_at,j.payload_json,"
+                "e.posted_at AS retention_posted_at "
+                "FROM jobs j LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                "ORDER BY j.id"
             ).fetchall()
             for row in rows:
                 job = Job.model_validate_json(row["payload_json"])
                 first_seen = datetime.fromisoformat(row["first_seen_at"])
-                basis = self._aware(job.posted_at or first_seen)
+                retention_posted_at = (
+                    datetime.fromisoformat(row["retention_posted_at"])
+                    if row["retention_posted_at"]
+                    else None
+                )
+                basis = self._aware(retention_posted_at or job.posted_at or first_seen)
                 if basis.timestamp() >= cutoff:
                     continue
 
@@ -451,15 +484,21 @@ class SQLiteRepository:
                 )
 
                 connection.execute(
-                    "INSERT OR REPLACE INTO job_identity_ledger "
+                    "INSERT INTO job_identity_ledger "
                     "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
                     "first_seen_at,last_seen_at,pruned_at,was_delivered) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+                    "canonical_url=excluded.canonical_url,"
+                    "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
+                    "last_seen_at=excluded.last_seen_at,"
+                    "pruned_at=excluded.pruned_at,"
+                    "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
                     (
                         job.source,
                         job.source_board_id,
                         job.source_job_id,
-                        str(job.canonical_url),
+                        row["canonical_url"],
                         job.employer_id,
                         job.company,
                         row["first_seen_at"],
@@ -485,6 +524,9 @@ class SQLiteRepository:
                     connection.execute(
                         "UPDATE jobs SET payload_json=?, lifecycle=? WHERE id=?",
                         (compact.model_dump_json(), JobLifecycle.CLOSED.value, job.id),
+                    )
+                    connection.execute(
+                        "DELETE FROM job_retention_evidence WHERE job_id=?", (job.id,)
                     )
                     counts["compacted_jobs"] += 1
                     continue
