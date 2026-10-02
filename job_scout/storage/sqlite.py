@@ -328,21 +328,6 @@ class SQLiteRepository:
         if not values:
             return 0
         current = self._aware(pruned_at or datetime.now(UTC)).isoformat()
-        rows = [
-            (
-                job.source,
-                job.source_board_id,
-                job.source_job_id,
-                str(job.canonical_url),
-                job.employer_id,
-                job.company,
-                job.discovered_at.isoformat(),
-                job.last_seen_at.isoformat(),
-                current,
-                0,
-            )
-            for job in values
-        ]
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.executemany(
@@ -379,7 +364,9 @@ class SQLiteRepository:
                 "INSERT INTO job_identity_ledger "
                 "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
                 "first_seen_at,last_seen_at,pruned_at,was_delivered) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "VALUES (?,?,?,?,?,?,"
+                "COALESCE((SELECT first_seen_at FROM jobs "
+                "WHERE source=? AND source_board_id=? AND source_job_id=?),?),?,?,?) "
                 "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
                 "canonical_url=excluded.canonical_url,"
                 "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
@@ -387,7 +374,24 @@ class SQLiteRepository:
                 "last_seen_at=excluded.last_seen_at,"
                 "pruned_at=excluded.pruned_at,"
                 "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
-                rows,
+                [
+                    (
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                        str(job.canonical_url),
+                        job.employer_id,
+                        job.company,
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                        job.discovered_at.isoformat(),
+                        job.last_seen_at.isoformat(),
+                        current,
+                        0,
+                    )
+                    for job in values
+                ],
             )
         return len(rows)
 
