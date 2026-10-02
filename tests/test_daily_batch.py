@@ -499,6 +499,47 @@ def test_sheet_release_recovers_uncertain_append_and_preserves_status(repo):
     )
 
 
+def test_legacy_sheet_freshness_conflict_is_persisted_as_failed(repo):
+    job = posting(1, posted_at=NOW - timedelta(hours=23))
+    seed(repo, [job])
+    destination = sheet_destination("example123", "Sheet1")
+    batch = prepare(
+        repo,
+        request(
+            repo,
+            destination,
+            [job],
+            max_posting_age_hours=24,
+            freshness_evaluated_at=NOW,
+        ),
+    )
+    assert batch.status == "prepared"
+
+    with repo.connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
+            ).fetchone()[0]
+        )
+        payload["posted_at"] = (NOW - timedelta(hours=25)).isoformat()
+        connection.execute(
+            "UPDATE jobs SET payload_json=? WHERE id=?",
+            (json.dumps(payload), job.id),
+        )
+
+    failed = batches.finalize_daily_batch(
+        repository=repo,
+        batch_id=batch.batch_id,
+        sheets_gateway=FakeSheets(),
+    )
+
+    assert failed.status == "failed"
+    assert failed.error == (
+        "prepared posting is no longer fresh at delivery: stale_posting"
+    )
+    assert DailyBatchStore(repo).export_journal(batch.batch_id) == (None, None)
+
+
 def test_sheet_header_and_drift_fail_closed(repo):
     job = posting(1)
     seed(repo, [job])
