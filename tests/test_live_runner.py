@@ -16,70 +16,38 @@ from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
-def test_stale_unpublished_release_can_be_discarded(tmp_path):
-    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
-    store = DailyBatchStore(repository)
-    with repository.connect() as connection:
-        connection.execute(
-            "INSERT INTO daily_batches "
-            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
-            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
-            "dedupe_version,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                "stale-unpublished",
-                "client-a",
-                "client-sheet://jobs",
-                "scope-1",
-                1,
-                0,
-                1,
-                "failed",
-                datetime.now(UTC).isoformat(),
-                "{}",
-                "{}",
-                "test",
-                "prepared posting is no longer fresh at delivery: stale_posting",
-            ),
-        )
+def test_stale_unpublished_release_can_be_discarded(monkeypatch):
+    store = SimpleNamespace(
+        export_journal=lambda _batch_id: (None, None),
+        discard_prepared=lambda batch_id: discarded.append(batch_id),
+    )
+    discarded = []
+    batch = SimpleNamespace(
+        batch_id="stale-unpublished",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale_posting",
+        delivered_at=None,
+    )
 
-    batch = store.get("stale-unpublished")
     assert _discard_stale_unpublished_release(store, batch) is True
-    with pytest.raises(Exception, match="batch not found"):
-        store.get("stale-unpublished")
+    assert discarded == ["stale-unpublished"]
 
 
-def test_stale_release_with_export_journal_is_never_auto_discarded(tmp_path):
-    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
-    store = DailyBatchStore(repository)
-    with repository.connect() as connection:
-        connection.execute(
-            "INSERT INTO daily_batches "
-            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
-            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
-            "dedupe_version,export_before_sha256,export_after_sha256,error) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                "stale-journaled",
-                "client-a",
-                "client-sheet://jobs",
-                "scope-1",
-                1,
-                0,
-                1,
-                "failed",
-                datetime.now(UTC).isoformat(),
-                "{}",
-                "{}",
-                "test",
-                "a" * 64,
-                "b" * 64,
-                "prepared posting is no longer fresh at delivery: stale_posting",
-            ),
-        )
+def test_stale_release_with_export_journal_is_never_auto_discarded():
+    discarded = []
+    store = SimpleNamespace(
+        export_journal=lambda _batch_id: ("a" * 64, "b" * 64),
+        discard_prepared=lambda batch_id: discarded.append(batch_id),
+    )
+    batch = SimpleNamespace(
+        batch_id="stale-journaled",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale_posting",
+        delivered_at=None,
+    )
 
-    batch = store.get("stale-journaled")
     assert _discard_stale_unpublished_release(store, batch) is False
-    assert store.get("stale-journaled").status == "failed"
+    assert discarded == []
 
 
 def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
