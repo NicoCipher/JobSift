@@ -566,10 +566,11 @@ def test_sheet_header_and_drift_fail_closed(repo):
 
     # An external edit after journaling cannot be silently overwritten.
     gateway.values.append(["manual", "", "https://example.com/manual"])
-    with pytest.raises(BatchConflict, match="reconcile"):
-        batches.finalize_daily_batch(
-            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
-        )
+    retry = batches.finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert retry.status == "failed"
+    assert "reconcile" in (retry.error or "")
     assert gateway.append_calls == 1
 
 
