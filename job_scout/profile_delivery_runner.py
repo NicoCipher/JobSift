@@ -157,7 +157,17 @@ def main() -> None:
         control_id=control_id,
     )
     print(json.dumps({"profiles": results}, sort_keys=True))
-    if any(result.get("action") == "profile_runner_error" for result in results):
+    failed_actions = {
+        "profile_runner_error",
+        "sourcing_failed",
+        "partial_sourcing_blocked",
+        "release_blocked_quota",
+        "release_blocked_profile",
+    }
+    if any(
+        result.get("action") in failed_actions or result.get("batch_status") == "failed"
+        for result in results
+    ):
         raise SystemExit(1)
 
 
