@@ -93,10 +93,10 @@ jobs:
       - name: Collect ${{ matrix.shard_id }}
         run: |
           mkdir -p shard-output
-          python -m job_scout.shard_benchmark collect \
+          python -m job_scout.inventory_refresh collect \
             --registry refresh-plan/registry.json \
             --manifest refresh-plan/manifest.json \
-            --benchmark-plan refresh-plan/plan.json \
+            --refresh-plan refresh-plan/plan.json \
             --shard-id "${{ matrix.shard_id }}" \
             --output "shard-output/${{ matrix.shard_id }}.json"
 
