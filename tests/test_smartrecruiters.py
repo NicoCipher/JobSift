@@ -111,6 +111,42 @@ def test_smartrecruiters_paginates_then_hydrates_canonical_postings() -> None:
     assert job.raw_metadata["provider_contract"] == "smartrecruiters-posting-api-v1"
 
 
+def test_smartrecruiters_strips_board_once_for_request_validation_and_job_identity() -> None:
+    spaced_target = SourceTarget(
+        board_id=" Acme ",
+        company="Acme Inc",
+        employer_id="acme",
+    )
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        if request.url.path == "/v1/companies/Acme/postings":
+            return httpx.Response(
+                200,
+                json={
+                    "limit": 100,
+                    "offset": 0,
+                    "totalFound": 1,
+                    "content": [posting("1")],
+                },
+                request=request,
+            )
+        assert request.url.path == "/v1/companies/Acme/postings/1"
+        return httpx.Response(200, json=detail("1"), request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = SmartRecruitersCollector(client).collect(spaced_target)
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert len(result.jobs) == 1
+    assert result.jobs[0].source_board_id == "acme"
+    assert requests == [
+        "/v1/companies/Acme/postings",
+        "/v1/companies/Acme/postings/1",
+    ]
+
+
 def test_smartrecruiters_public_list_rate_limit_is_explicit() -> None:
     transport = httpx.MockTransport(
         lambda request: httpx.Response(429, text="Too many requests", request=request)
