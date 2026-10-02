@@ -265,16 +265,21 @@ class DailyBatchStore:
             raise BatchConflict("batch revision changed")
         return row["export_before_sha256"], row["export_after_sha256"]
 
-    def discard_prepared(self, batch_id: str) -> DailyBatchResult:
-        """Delete only an unpublished snapshot; never erase uncertain delivery state."""
+    def discard_prepared(
+        self, batch_id: str, *, expected_generation_id: str
+    ) -> DailyBatchResult:
+        """Delete only the exact unpublished generation the caller already loaded."""
         with self.repository.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row = c.execute(
-                "SELECT status,delivered_at,export_after_sha256 FROM daily_batches WHERE batch_id=?",
+                "SELECT generation_id,status,delivered_at,export_after_sha256 "
+                "FROM daily_batches WHERE batch_id=?",
                 (batch_id,),
             ).fetchone()
             if row is None:
                 raise BatchConflict("batch not found")
+            if row["generation_id"] != expected_generation_id:
+                raise BatchConflict("batch revision changed")
             if (
                 row["status"] not in {"prepared", "failed"}
                 or row["delivered_at"] is not None
@@ -282,9 +287,22 @@ class DailyBatchStore:
             ):
                 raise BatchConflict("only an unpublished batch can be discarded")
             result = self._load(c, batch_id)
-            c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
-            c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
-            c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
+            c.execute(
+                "DELETE FROM daily_batch_candidates WHERE batch_id=? AND EXISTS "
+                "(SELECT 1 FROM daily_batches WHERE batch_id=? AND generation_id=?)",
+                (batch_id, batch_id, expected_generation_id),
+            )
+            c.execute(
+                "DELETE FROM daily_batch_items WHERE batch_id=? AND EXISTS "
+                "(SELECT 1 FROM daily_batches WHERE batch_id=? AND generation_id=?)",
+                (batch_id, batch_id, expected_generation_id),
+            )
+            deleted = c.execute(
+                "DELETE FROM daily_batches WHERE batch_id=? AND generation_id=?",
+                (batch_id, expected_generation_id),
+            ).rowcount
+            if deleted != 1:
+                raise BatchConflict("batch revision changed")
             return result
 
     def recover_unresolved(self, client_id: str, destination: str) -> DailyBatchResult | None:
