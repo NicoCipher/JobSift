@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import time
 import math
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -42,27 +42,23 @@ MAX_REFRESH_TARGETS = 125
 WORKDAY_RAMP_LEVELS = (1, 5, 10, 20, 25)
 
 
-def workday_limit_for_cohort(cohort: int) -> int:
-    """Ramp Workday coverage by UTC-day cohorts instead of making a one-shot jump."""
-    if cohort < 0:
-        raise ValueError("cohort must be non-negative")
-    day = cohort // 24
-    return WORKDAY_RAMP_LEVELS[min(day, len(WORKDAY_RAMP_LEVELS) - 1)]
-
-
 def default_refresh_limits(
     registry: ProductionSourceRegistry,
     *,
-    cohort: int,
+    workday_limit: int | None = None,
 ) -> dict[str, int]:
     limits = {
         source: DEFAULT_LIMITS[source]
         for source in PROVIDERS
         if source in registry.target_counts_by_source
     }
-    if "workday" in limits:
+    if "workday" in limits and workday_limit is not None:
+        if workday_limit not in WORKDAY_RAMP_LEVELS:
+            raise ValueError(
+                f"Workday refresh limit must be one of {WORKDAY_RAMP_LEVELS}"
+            )
         limits["workday"] = min(
-            workday_limit_for_cohort(cohort),
+            workday_limit,
             registry.target_counts_by_source["workday"],
         )
     # SmartRecruiters is additive only after explicit registry admission.
@@ -92,7 +88,7 @@ def _refresh_limits(
     if limits is not None:
         values = dict(limits)
     else:
-        values = default_refresh_limits(registry, cohort=cohort)
+        values = default_refresh_limits(registry)
     if sum(values.values()) > MAX_REFRESH_TARGETS:
         raise ValueError(f"refresh cohort exceeds {MAX_REFRESH_TARGETS}-target safety ceiling")
     return values
@@ -187,6 +183,13 @@ def main() -> None:
     plan.add_argument("--registry", type=Path, required=True)
     plan.add_argument("--cohort", type=int, required=True)
     plan.add_argument("--output-dir", type=Path, required=True)
+    plan.add_argument(
+        "--workday-limit",
+        type=int,
+        choices=WORKDAY_RAMP_LEVELS,
+        default=DEFAULT_LIMITS["workday"],
+        help="Explicit guarded Workday ramp level; never auto-escalates.",
+    )
 
     fan_in = commands.add_parser("fan-in")
     fan_in.add_argument("--registry", type=Path, required=True)
@@ -200,9 +203,14 @@ def main() -> None:
     try:
         if args.command == "plan":
             registry = load_production_registry(args.registry)
+            limits = default_refresh_limits(
+                registry,
+                workday_limit=args.workday_limit,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
+                limits=limits,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
