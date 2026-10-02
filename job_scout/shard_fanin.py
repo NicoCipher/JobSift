@@ -224,6 +224,7 @@ def persist_shard_artifacts(
     distinct_memberships = list(dict.fromkeys(membership_keys))
     retained_identities = set(jobs_by_identity)
     stale_jobs: list[Job] = []
+    retention_evaluated_at: datetime | None = None
     if payload_retention_hours is not None:
         if payload_retention_hours < 1:
             raise ValueError("payload_retention_hours must be at least 1")
@@ -302,7 +303,10 @@ def persist_shard_artifacts(
         )
 
     if stale_jobs:
-        repository.record_pruned_identities(stale_jobs)
+        repository.record_pruned_identities(
+            stale_jobs,
+            pruned_at=retention_evaluated_at,
+        )
     jobs = [
         jobs_by_identity[identity]
         for identity in sorted(retained_identities)
