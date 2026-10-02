@@ -13,6 +13,7 @@ from job_scout.delivery_destinations import (
 from job_scout.domain.daily_batch import (
     BatchConflict,
     DailyBatchCounts,
+    RetryableDestinationConflict,
     DailyBatchRequest,
     DailyBatchResult,
 )
@@ -285,6 +286,8 @@ def finalize_daily_batch(
                 publisher.publish,
                 expected_generation_id=generation_id,
             )
+        except RetryableDestinationConflict:
+            raise
         except (BatchConflict, OSError, ValueError) as error:
             return store.fail(
                 batch_id, error, expected_generation_id=generation_id
