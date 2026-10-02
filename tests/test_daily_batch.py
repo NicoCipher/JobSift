@@ -191,7 +191,9 @@ def test_failed_unpublished_batch_is_discardable(repo, tmp_path):
     failed = DailyBatchStore(repo).fail(prepared.batch_id, "posting expired before release")
 
     assert failed.status == "failed"
-    discarded = DailyBatchStore(repo).discard_prepared(failed.batch_id)
+    discarded = DailyBatchStore(repo).discard_prepared(
+        failed.batch_id, expected_generation_id=failed.generation_id
+    )
     assert discarded.status == "failed"
     with pytest.raises(BatchConflict, match="batch not found"):
         DailyBatchStore(repo).get(failed.batch_id)
@@ -203,7 +205,9 @@ def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
     req = request(repo, tmp_path / "out.csv", [job])
     prepared = prepare(repo, req)
 
-    discarded = DailyBatchStore(repo).discard_prepared(prepared.batch_id)
+    discarded = DailyBatchStore(repo).discard_prepared(
+        prepared.batch_id, expected_generation_id=prepared.generation_id
+    )
     assert discarded.batch_id == prepared.batch_id
     assert discarded.status == "prepared"
     with pytest.raises(BatchConflict, match="batch not found"):
@@ -216,7 +220,9 @@ def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
     delivered = finalize(repo, replacement)
     assert delivered.status == "delivered"
     with pytest.raises(BatchConflict, match="only an unpublished batch"):
-        DailyBatchStore(repo).discard_prepared(delivered.batch_id)
+        DailyBatchStore(repo).discard_prepared(
+            delivered.batch_id, expected_generation_id=delivered.generation_id
+        )
 
 
 def test_company_cap_returns_distinct_employers_and_honest_shortfall(repo, tmp_path):
@@ -866,7 +872,9 @@ def test_recreated_batch_id_cannot_finalize_older_generation(repo, tmp_path):
     req = request(repo, tmp_path / "out.csv", jobs)
     first = prepare(repo, req)
     store = DailyBatchStore(repo)
-    store.discard_prepared(first.batch_id)
+    store.discard_prepared(
+        first.batch_id, expected_generation_id=first.generation_id
+    )
     replacement = prepare(repo, req)
 
     assert replacement.batch_id == first.batch_id
@@ -879,6 +887,29 @@ def test_recreated_batch_id_cannot_finalize_older_generation(repo, tmp_path):
         )
     assert DailyBatchStore(repo).get(replacement.batch_id).status == "prepared"
 
+
+
+def test_recreated_batch_id_cannot_be_discarded_by_older_generation(repo, tmp_path):
+    jobs = [posting(1)]
+    seed(repo, jobs)
+    req = request(repo, tmp_path / "out.csv", jobs)
+    first = prepare(repo, req)
+    store = DailyBatchStore(repo)
+    store.discard_prepared(
+        first.batch_id, expected_generation_id=first.generation_id
+    )
+    replacement = prepare(repo, req)
+
+    assert replacement.batch_id == first.batch_id
+    assert replacement.generation_id != first.generation_id
+    with pytest.raises(BatchConflict, match="batch revision changed"):
+        store.discard_prepared(
+            first.batch_id, expected_generation_id=first.generation_id
+        )
+
+    current = store.get(replacement.batch_id)
+    assert current.generation_id == replacement.generation_id
+    assert current.status == "prepared"
 
 def test_process_interruption_after_replace_recovers_on_reopen(repo, tmp_path, monkeypatch):
     class Interrupted(BaseException):
