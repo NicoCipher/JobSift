@@ -304,8 +304,15 @@ def test_paused_profile_recovers_already_applied_unresolved_export(
         timezone="Africa/Lagos",
     )
     base(monkeypatch, tmp_path, profile, delivered=1)
-    unresolved = SimpleNamespace(batch_id="batch-1", selected_count=1)
-    recovered = SimpleNamespace(batch_id="batch-1", selected_count=1, status="delivered")
+    unresolved = SimpleNamespace(
+        batch_id="batch-1", generation_id="gen-1", selected_count=1
+    )
+    recovered = SimpleNamespace(
+        batch_id="batch-1",
+        generation_id="gen-1",
+        selected_count=1,
+        status="delivered",
+    )
     monkeypatch.setattr(
         live_runner, "_unresolved_batch", lambda *_, **__: unresolved
     )
@@ -358,8 +365,15 @@ def test_profile_runner_recovers_unresolved_export_before_quota_reached(
         timezone="Africa/Lagos",
     )
     base(monkeypatch, tmp_path, profile, delivered=100)
-    unresolved = SimpleNamespace(batch_id="batch-1", selected_count=1)
-    recovered = SimpleNamespace(batch_id="batch-1", selected_count=1, status="delivered")
+    unresolved = SimpleNamespace(
+        batch_id="batch-1", generation_id="gen-1", selected_count=1
+    )
+    recovered = SimpleNamespace(
+        batch_id="batch-1",
+        generation_id="gen-1",
+        selected_count=1,
+        status="delivered",
+    )
     monkeypatch.setattr(
         live_runner, "_unresolved_batch", lambda *_, **__: unresolved
     )
