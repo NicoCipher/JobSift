@@ -10,15 +10,16 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
+    build_shard_manifest,
     load_production_registry,
     sha256_json,
 )
-from job_scout.shard_benchmark import PROVIDERS, build_shard_plan
+from job_scout.shard_benchmark import PROVIDERS
 from job_scout.shard_collection import ShardCollectionArtifact
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
@@ -40,6 +41,25 @@ DEFAULT_SHARDS = {
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
 MAX_REFRESH_TARGETS = 125
 WORKDAY_RAMP_LEVELS = (1, 5, 10, 20, 25)
+
+
+class RefreshPlan(BaseModel):
+    """Production refresh plan with a ceiling independent of benchmark limits."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    parent_registry_id: str
+    parent_registry_sha256: str
+    refresh_registry_id: str
+    refresh_registry_sha256: str
+    shard_manifest_sha256: str
+    target_limits_by_source: dict[str, int]
+    shard_counts_by_source: dict[str, int]
+    target_counts_by_source: dict[str, int]
+    total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
+    total_shards: int = Field(ge=1)
+    workday_detail_concurrency: int = Field(ge=1, le=8)
+    matrix: dict[str, list[dict[str, str]]]
 
 
 def default_refresh_limits(
@@ -165,13 +185,39 @@ def build_refresh_plan(
             shards["workday"] = min(limits["workday"], max(1, math.ceil(limits["workday"] / 5)))
     else:
         shards = dict(shards)
-    rotating = rotating_registry(registry, cohort=cohort, limits=limits)
-    plan, subset, manifest = build_shard_plan(
-        rotating,
+    if (
+        isinstance(workday_detail_concurrency, bool)
+        or not isinstance(workday_detail_concurrency, int)
+        or not 1 <= workday_detail_concurrency <= 8
+    ):
+        raise ValueError("Workday detail concurrency must be an integer from 1 to 8")
+    if set(shards) != set(providers) or any(value < 1 for value in shards.values()):
+        raise ValueError("refresh shards must contain positive counts for every provider")
+
+    subset = rotating_registry(registry, cohort=cohort, limits=limits)
+    for source in providers:
+        if shards[source] > subset.target_counts_by_source[source]:
+            raise ValueError(f"shard count exceeds selected {source} targets")
+    manifest = build_shard_manifest(subset, shard_counts_by_source=shards)
+    matrix = {
+        "include": [
+            {"shard_id": shard.shard_id, "source": shard.source}
+            for shard in manifest.shards
+        ]
+    }
+    plan = RefreshPlan(
+        parent_registry_id=registry.registry_id,
+        parent_registry_sha256=sha256_json(registry.model_dump(mode="json")),
+        refresh_registry_id=subset.registry_id,
+        refresh_registry_sha256=sha256_json(subset.model_dump(mode="json")),
+        shard_manifest_sha256=manifest.manifest_sha256,
         target_limits_by_source=limits,
         shard_counts_by_source=shards,
+        target_counts_by_source=subset.target_counts_by_source,
+        total_targets=len(subset.targets),
+        total_shards=len(manifest.shards),
         workday_detail_concurrency=workday_detail_concurrency,
-        max_total_targets=MAX_REFRESH_TARGETS,
+        matrix=matrix,
     )
     return plan, subset, manifest
 
