@@ -120,3 +120,71 @@ def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
         assert "bounded benchmark is limited to 100 total targets" in str(exc)
     else:
         raise AssertionError("benchmark ceiling was silently widened")
+
+
+def test_refresh_collector_consumes_refresh_plan_without_benchmark_schema(monkeypatch):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry, workday_limit=25)
+    plan, subset, manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        limits=limits,
+    )
+    captured = {}
+    sentinel = object()
+
+    def fake_collect_shard(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(inventory_refresh, "collect_shard", fake_collect_shard)
+    result = inventory_refresh.collect_refresh_shard(
+        registry=subset,
+        manifest=manifest,
+        plan=plan,
+        shard_id=manifest.shards[0].shard_id,
+    )
+
+    assert result is sentinel
+    assert captured["registry"] is subset
+    assert captured["manifest"] is manifest
+    assert captured["shard_id"] == manifest.shards[0].shard_id
+
+
+def test_refresh_collector_rejects_plan_from_different_registry(monkeypatch):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    plan, subset, manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+    )
+    payload = plan.model_dump(mode="json")
+    payload["refresh_registry_sha256"] = "0" * 64
+    bad_plan = inventory_refresh.RefreshPlan.model_validate(payload)
+    monkeypatch.setattr(
+        inventory_refresh,
+        "collect_shard",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("collector must not run")),
+    )
+
+    try:
+        inventory_refresh.collect_refresh_shard(
+            registry=subset,
+            manifest=manifest,
+            plan=bad_plan,
+            shard_id=manifest.shards[0].shard_id,
+        )
+    except ValueError as exc:
+        assert "refresh plan does not match registry/manifest" in str(exc)
+    else:
+        raise AssertionError("mismatched refresh plan was accepted")
+
+
+def test_live_refresh_workflow_uses_refresh_collector_contract():
+    workflow = Path(".github/workflows/refresh-live-inventory.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "python -m job_scout.inventory_refresh collect" in workflow
+    assert "--refresh-plan refresh-plan/plan.json" in workflow
+    assert "job_scout.shard_benchmark collect" not in workflow
+    assert "--benchmark-plan refresh-plan/plan.json" not in workflow
