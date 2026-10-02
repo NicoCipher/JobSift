@@ -68,14 +68,20 @@ def canonical_posting_url(value: str, board: str) -> bool:
     )
 
 
-def valid_apply_url(value: str) -> bool:
+def valid_apply_url(value: str, board: str, posting_id: str) -> bool:
+    """Require the apply destination to identify the same public SmartRecruiters posting."""
     url = urlsplit(value)
+    parts = url.path.strip("/").split("/")
     return (
         url.scheme == "https"
-        and bool(url.hostname)
-        and bool(url.path.strip("/"))
+        and url.hostname == "jobs.smartrecruiters.com"
+        and url.port in {None, 443}
         and not url.username
         and not url.password
+        and len(parts) in {2, 3}
+        and parts[0].casefold() == board.casefold()
+        and (parts[1] == posting_id or parts[1].startswith(posting_id + "-"))
+        and (len(parts) == 2 or parts[2].casefold() == "apply")
     )
 
 
@@ -196,7 +202,11 @@ def run_benchmark(
         for job in result.jobs:
             canonical_ok = canonical_posting_url(str(job.canonical_url), target.board_id)
             canonical_urls += canonical_ok
-            apply_urls += valid_apply_url(str(job.apply_url)) if job.apply_url else 0
+            apply_urls += (
+                valid_apply_url(str(job.apply_url), target.board_id, job.source_job_id)
+                if job.apply_url
+                else 0
+            )
             if job.posted_at is not None:
                 timestamped += 1
                 age_seconds = (evaluated_at - _aware(job.posted_at)).total_seconds()
