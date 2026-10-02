@@ -136,7 +136,7 @@ def _all(value: int) -> dict[str, int]:
         "ashby": value,
         "workday": value,
         "lever": value,
-        "smartrecruiters": value,
+        "smartrecruiters": min(value, 1),
     }
 
 
