@@ -1,0 +1,21 @@
+{
+  "targets": [
+    {
+      "identifier": "smartrecruiters",
+      "company": "SmartRecruiters Inc",
+      "employer_id": "smartrecruiters"
+    },
+    {
+      "identifier": "ITSearch",
+      "company": "IT Search",
+      "employer_id": "itsearch"
+    },
+    {
+      "identifier": "Jumia4",
+      "company": "Jumia",
+      "employer_id": "jumia"
+    }
+  ],
+  "max_pages": 2,
+  "max_postings": 100
+}

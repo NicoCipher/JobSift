@@ -363,3 +363,21 @@ def test_benchmark_plan_rejects_unsafe_workday_detail_concurrency(value) -> None
             shard_counts_by_source=_all(1),
             workday_detail_concurrency=value,
         )
+
+
+def test_benchmark_plan_cli_builds_matrix(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+
+    from job_scout.shard_benchmark import main
+
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(_registry().model_dump_json())
+    output = tmp_path / "plan"
+    args = ["shard_benchmark", "plan", "--registry", str(registry_path), "--output-dir", str(output)]
+    for source in _all(1):
+        args.extend(["--limit", f"{source}=1", "--shards", f"{source}=1"])
+    monkeypatch.setattr(sys, "argv", args)
+    main()
+    assert len(json.loads((output / "matrix.json").read_text())["include"]) == 4
+    assert json.loads(capsys.readouterr().out)["total_targets"] == 4

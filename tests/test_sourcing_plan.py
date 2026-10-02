@@ -194,6 +194,30 @@ def test_malformed_source_specific_targets_are_rejected(
         plan(tmp_path, [target])
 
 
+def test_smartrecruiters_plan_target_uses_company_identifier_as_stable_board(
+    tmp_path: Path,
+) -> None:
+    sourcing_plan = plan(
+        tmp_path,
+        [
+            {
+                "source": "smartrecruiters",
+                "company": "Acme Inc",
+                "employer_id": "acme",
+                "board": "acme",
+            }
+        ],
+    )
+
+    target = sourcing_plan.targets[0]
+    assert target.target_identity == "smartrecruiters:acme"
+    assert target.source_target() == SourceTarget(
+        board_id="acme",
+        company="Acme Inc",
+        employer_id="acme",
+    )
+
+
 def test_duplicate_identity_is_rejected_before_collector_creation(tmp_path: Path) -> None:
     duplicate = [
         {"source": "greenhouse", "company": "One", "board": "same"},
@@ -205,6 +229,18 @@ def test_duplicate_identity_is_rejected_before_collector_creation(tmp_path: Path
         plan(tmp_path, duplicate)
 
     assert calls == []
+
+
+def test_smartrecruiters_case_variant_duplicate_identity_is_rejected(
+    tmp_path: Path,
+) -> None:
+    duplicate = [
+        {"source": "smartrecruiters", "company": "One", "board": "Acme"},
+        {"source": "smartrecruiters", "company": "Two", "board": "acme"},
+    ]
+
+    with pytest.raises(ValidationError, match="duplicate target identities: smartrecruiters:acme"):
+        plan(tmp_path, duplicate)
 
 
 def test_targets_run_in_declared_order_with_shared_state_and_report(tmp_path: Path) -> None:

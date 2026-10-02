@@ -22,3 +22,28 @@ GREENHOUSE = SourceRegistryEntry(
     last_verified_at=datetime(2026, 9, 3, tzinfo=UTC),
     documentation_reference="https://docs.greenhouse.io/job-board.html",
 )
+
+
+SMARTRECRUITERS = SourceRegistryEntry(
+    name="smartrecruiters",
+    enabled=True,
+    source_type="ats",
+    access_mode="public_api",
+    official_api=True,
+    base_url="https://api.smartrecruiters.com/v1/companies/",
+    authentication_required=False,
+    attribution_required=None,
+    commercial_use_notes=(
+        "Public Posting API exposes active public postings; downstream use must still "
+        "respect provider and employer terms."
+    ),
+    rate_limit_notes="No numeric public limit verified; HTTP 429/throttling stops target hydration.",
+    supports_direct_apply_url=True,
+    supports_description=True,
+    supports_location=True,
+    supports_remote_flag=True,
+    supports_posted_at=True,
+    supports_updated_at=False,
+    last_verified_at=datetime(2026, 10, 1, tzinfo=UTC),
+    documentation_reference="https://developers.smartrecruiters.com/docs/posting-api",
+)

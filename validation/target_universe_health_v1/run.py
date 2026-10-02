@@ -179,21 +179,21 @@ def ordered_full_targets(universe: dict[str, Any]) -> list[dict[str, Any]]:
     if len({record["target_identity"] for record in records}) != len(records):
         raise ValueError("canonical target universe has duplicate target identities")
     return sorted(
-        records, key=lambda record: (SOURCES.index(record["source"]), record["target_identity"])
+        records, key=lambda record: ((SOURCES + ("smartrecruiters",)).index(record["source"]), record["target_identity"])
     )
 
 
-def make_full_manifest(universe: dict[str, Any], *, generated_at: str) -> dict[str, Any]:
+def make_full_manifest(universe: dict[str, Any], *, generated_at: str, universe_path: Path = UNIVERSE) -> dict[str, Any]:
     targets = ordered_full_targets(universe)
     counts = dict(Counter(target["source"] for target in targets))
-    expected_counts = {"greenhouse": 774, "ashby": 678, "workday": 560, "lever": 275}
-    if counts != expected_counts or len(targets) != 2287:
-        raise ValueError(f"unexpected canonical target counts: {counts}, total {len(targets)}")
+    canonical = json.loads(universe_path.read_text())
+    if universe != canonical:
+        raise ValueError("health universe does not match its canonical input file")
     manifest = {
         "validation": "target-universe-health-v1-full",
         "health_contract_version": "v1",
         "target_universe_commit": TARGET_UNIVERSE_COMMIT,
-        "target_universe_sha256": artifact_sha(UNIVERSE),
+        "target_universe_sha256": artifact_sha(universe_path),
         "generated_at": generated_at,
         "source_counts": counts,
         "request_policy": {
@@ -207,37 +207,36 @@ def make_full_manifest(universe: dict[str, Any], *, generated_at: str) -> dict[s
         },
         "targets": targets,
     }
+    if universe_path.resolve() != UNIVERSE.resolve():
+        manifest.pop("target_universe_commit")
     manifest["manifest_sha256"] = sha(manifest)
     return manifest
 
 
-def _verify_manifest(manifest: dict[str, Any], *, full: bool) -> dict[str, Any]:
+def _verify_manifest(manifest: dict[str, Any], *, full: bool, universe_path: Path = UNIVERSE) -> dict[str, Any]:
     unhashed = dict(manifest)
     actual = unhashed.pop("manifest_sha256", None)
-    expected_counts = {"greenhouse": 774, "ashby": 678, "workday": 560, "lever": 275}
+    canonical_targets = ordered_full_targets(json.loads(universe_path.read_text()))
+    expected_counts = dict(Counter(target["source"] for target in canonical_targets))
     if actual != sha(unhashed):
         raise ValueError("health manifest hash is invalid")
-    if manifest.get("target_universe_sha256") != artifact_sha(UNIVERSE):
+    if manifest.get("target_universe_sha256") != artifact_sha(universe_path):
         raise ValueError("health manifest does not match the canonical target universe")
     if full and (
         manifest.get("validation") != "target-universe-health-v1-full"
         or manifest.get("source_counts") != expected_counts
-        or len(manifest.get("targets", [])) != 2287
-        or [target["target_identity"] for target in manifest["targets"]]
-        != [
-            target["target_identity"]
-            for target in ordered_full_targets(json.loads(UNIVERSE.read_text()))
-        ]
+        or len(manifest.get("targets", [])) != len(canonical_targets)
+        or manifest["targets"] != canonical_targets
     ):
         raise ValueError("full manifest does not contain the exact canonical target universe")
     return manifest
 
 
-def load_full_manifest() -> dict[str, Any]:
+def load_full_manifest(universe_path: Path = UNIVERSE) -> dict[str, Any]:
     if FULL_MANIFEST.exists():
-        return _verify_manifest(json.loads(FULL_MANIFEST.read_text(encoding="utf-8")), full=True)
-    universe = json.loads(UNIVERSE.read_text(encoding="utf-8"))
-    manifest = make_full_manifest(universe, generated_at=datetime.now(UTC).isoformat())
+        return _verify_manifest(json.loads(FULL_MANIFEST.read_text(encoding="utf-8")), full=True, universe_path=universe_path)
+    universe = json.loads(universe_path.read_text(encoding="utf-8"))
+    manifest = make_full_manifest(universe, generated_at=datetime.now(UTC).isoformat(), universe_path=universe_path)
     write_json(FULL_MANIFEST, manifest)
     return manifest
 
@@ -403,6 +402,12 @@ class HealthProbe:
                 f"https://api.ashbyhq.com/posting-api/job-board/{quote(coordinates['board'], safe='')}",
                 {"params": {"includeCompensation": "false"}},
             )
+        elif source == "smartrecruiters":
+            method, url, kwargs = (
+                "GET",
+                f"https://api.smartrecruiters.com/v1/companies/{quote(coordinates['board'], safe='')}/postings",
+                {"params": {"destination": "PUBLIC", "limit": 1, "offset": 0}},
+            )
         elif source == "lever":
             host = "api.lever.co" if coordinates["instance"] == "global" else "api.eu.lever.co"
             url = f"https://{host}/v0/postings/{quote(coordinates['site'], safe='')}"
@@ -422,7 +427,19 @@ class HealthProbe:
             return result
         try:
             body = response.json()
-            if source in {"greenhouse", "ashby"}:
+            if source == "smartrecruiters":
+                from job_scout.collectors.smartrecruiters import _ListResult
+
+                listing = _ListResult.model_validate(body)
+                if listing.offset != 0 or len(listing.content) > 1:
+                    raise ValueError("invalid health index pagination")
+                if bool(listing.content) != bool(listing.totalFound):
+                    raise ValueError("health index count/content mismatch")
+                result["first_page_count"] = len(listing.content)
+                result["provider_reported_total"] = listing.totalFound
+                result["current_postings"] = listing.totalFound
+                result["inventory_exact"] = True
+            elif source in {"greenhouse", "ashby"}:
                 count = self._jobs_count(body)
                 if count is None:
                     result["classification"] = "malformed_response"
@@ -513,7 +530,7 @@ def summarize_full(values: list[dict[str, Any]], manifest: dict[str, Any]) -> di
     if len(values) != len(manifest["targets"]):
         raise ValueError("cannot summarize incomplete full health validation")
     per_source: dict[str, Any] = {}
-    for source in SOURCES:
+    for source in (SOURCES + (("smartrecruiters",) if "smartrecruiters" in manifest.get("source_counts", {}) else ())):
         source_values = [value for value in values if value["source"] == source]
         inventories = [
             amount for value in source_values if (amount := inventory_value(value)) is not None
@@ -612,8 +629,7 @@ def full_report(summary: dict[str, Any]) -> str:
         "| Source | Targets | Active | Empty | Invalid | Restricted | Rate limited | Transient | Malformed | Unprocessable | Raw inventory | Median active inventory |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for source in SOURCES:
-        value = summary["per_source"][source]
+    for source, value in summary["per_source"].items():
         counts = value["classifications"]
         lines.append(
             f"| {source} | {value['targets']} | {counts['active']} | {counts['valid_empty']} | {counts['invalid']} | {counts['restricted']} | {counts['rate_limited']} | {counts['transient_failure']} | {counts['malformed_response']} | {counts['unprocessable']} | {value['summed_current_posting_evidence']} | {value['median_current_postings_per_active_target']} |"
@@ -709,9 +725,9 @@ def run_pilot(delay: float) -> dict[str, Any]:
     return payload
 
 
-def run_full(delay: float, batch_size: int) -> dict[str, Any]:
+def run_full(delay: float, batch_size: int, universe_path: Path = UNIVERSE) -> dict[str, Any]:
     with full_run_lock():
-        manifest = load_full_manifest()
+        manifest = load_full_manifest(universe_path)
         pending = [
             target
             for target in manifest["targets"]
@@ -753,6 +769,23 @@ def run_full(delay: float, batch_size: int) -> dict[str, Any]:
     return {"completed": len(values), "total": len(manifest["targets"]), "remaining": remaining}
 
 
+@contextlib.contextmanager
+def full_output_paths(output_dir: Path | None):
+    names = ("FULL_ROOT", "FULL_MANIFEST", "FULL_CHECKPOINTS", "FULL_RESULTS", "FULL_SUMMARY", "FULL_REPORT", "FULL_LOCK")
+    if output_dir is None:
+        yield
+        return
+    if output_dir.resolve() == FULL_ROOT.resolve():
+        raise ValueError("custom health output must not overwrite frozen evidence")
+    saved = {name: globals()[name] for name in names}
+    paths = (output_dir, output_dir / "manifest.json", output_dir / "checkpoints", output_dir / "results.json", output_dir / "summary.json", output_dir / "report.md", output_dir / "run.lock")
+    globals().update(dict(zip(names, paths, strict=True)))
+    try:
+        yield
+    finally:
+        globals().update(saved)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scope", choices=("pilot", "full"), default="pilot")
@@ -760,9 +793,18 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--status", action="store_true")
+    parser.add_argument("--universe", type=Path, default=UNIVERSE)
+    parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.universe.resolve() != UNIVERSE.resolve() and (args.scope != "full" or args.output_dir is None):
+        parser.error("custom universe requires --scope full and a separate --output-dir")
+    with full_output_paths(args.output_dir):
+        execute(args)
+
+
+def execute(args) -> None:
     if args.scope == "pilot":
         manifest = load_manifest()
         if args.status:
@@ -780,7 +822,7 @@ def main() -> None:
             return
         print(json.dumps({"completed": len(run_pilot(args.delay)["results"])}, sort_keys=True))
         return
-    manifest = load_full_manifest()
+    manifest = load_full_manifest(args.universe)
     if args.status:
         values, remaining = write_full_progress(manifest)
         print(
@@ -795,7 +837,7 @@ def main() -> None:
             )
         )
         return
-    print(json.dumps(run_full(args.delay, args.batch_size), sort_keys=True))
+    print(json.dumps(run_full(args.delay, args.batch_size, args.universe), sort_keys=True))
 
 
 if __name__ == "__main__":

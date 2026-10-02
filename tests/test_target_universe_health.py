@@ -161,7 +161,7 @@ def test_checkpoint_resume_and_mismatch_rejection(tmp_path, monkeypatch) -> None
     assert run.completed(target_value, manifest) is None
 
 
-def test_full_manifest_has_exact_canonical_universe() -> None:
+def test_full_manifest_has_exact_canonical_universe(tmp_path) -> None:
     universe = {
         "target_records": [
             *[
@@ -183,7 +183,11 @@ def test_full_manifest_has_exact_canonical_universe() -> None:
             ],
         ]
     }
-    manifest = run.make_full_manifest(universe, generated_at="2026-09-08T00:00:00+00:00")
+    import json
+
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(json.dumps(universe))
+    manifest = run.make_full_manifest(universe, generated_at="2026-09-08T00:00:00+00:00", universe_path=universe_path)
     assert len(manifest["targets"]) == 2287
     assert manifest["source_counts"] == {
         "greenhouse": 774,
@@ -291,7 +295,7 @@ def test_full_batch_resume_does_not_repeat_completed_targets(tmp_path, monkeypat
     monkeypatch.setattr(run, "FULL_RESULTS", tmp_path / "results.json")
     monkeypatch.setattr(run, "FULL_SUMMARY", tmp_path / "summary.json")
     monkeypatch.setattr(run, "FULL_REPORT", tmp_path / "report.md")
-    monkeypatch.setattr(run, "load_full_manifest", lambda: manifest)
+    monkeypatch.setattr(run, "load_full_manifest", lambda *args: manifest)
     calls: list[str] = []
 
     class FakeProbe:

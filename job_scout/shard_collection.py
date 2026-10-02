@@ -13,6 +13,7 @@ from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.base import JobCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.lever import LeverCollector
+from job_scout.collectors.smartrecruiters import SmartRecruitersCollector
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.domain.models import CollectionStatus, Job
 from job_scout.production_registry import (
@@ -33,6 +34,7 @@ def default_collector_factory(source: str) -> JobCollector:
         "ashby": AshbyCollector,
         "workday": WorkdayCollector,
         "lever": LeverCollector,
+        "smartrecruiters": SmartRecruitersCollector,
     }[source]()
 
 
@@ -79,7 +81,7 @@ class ShardTargetResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target_identity: str
-    source: Literal["greenhouse", "ashby", "workday", "lever"]
+    source: Literal["greenhouse", "ashby", "workday", "lever", "smartrecruiters"]
     status: CollectionStatus
     started_at: datetime
     completed_at: datetime
@@ -127,7 +129,7 @@ class ShardCollectionArtifact(BaseModel):
     registry_sha256: str
     shard_manifest_sha256: str
     shard_id: str
-    source: Literal["greenhouse", "ashby", "workday", "lever"]
+    source: Literal["greenhouse", "ashby", "workday", "lever", "smartrecruiters"]
     started_at: datetime
     completed_at: datetime
     metrics: ShardCollectionMetrics

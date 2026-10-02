@@ -38,8 +38,8 @@ def render_report(universe: dict[str, object]) -> str:
         "## Corpus reconciliation",
         "",
         f"- Historical link rows: {total}",
-        f"- Safely derivable four-source rows: {supported} ({supported / total:.1%})",
-        f"- Outside current four-source contracts: {total - supported} ({(total - supported) / total:.1%})",
+        f"- Safely derivable supported-source rows: {supported} ({supported / total:.1%})",
+        f"- Outside current supported-source contracts: {total - supported} ({(total - supported) / total:.1%})",
         "",
         "## Source targets",
         "",
@@ -47,7 +47,8 @@ def render_report(universe: dict[str, object]) -> str:
         "| --- | ---: | ---: | ---: |",
     ]
     recognized = universe["recognized_rows_by_source"]
-    for source in ("greenhouse", "ashby", "workday", "lever"):
+    sources = sorted(set(recognized) | set(targets) | set(distributions))
+    for source in sources:
         distribution = distributions.get(source, {})
         lines.append(
             f"| {source} | {recognized.get(source, 0)} | {targets.get(source, 0)} | "

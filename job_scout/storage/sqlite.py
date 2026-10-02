@@ -317,6 +317,83 @@ class SQLiteRepository:
     def _aware(value: datetime) -> datetime:
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
+    def _record_pruned_identities_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        jobs: Iterable[Job],
+        *,
+        pruned_at: datetime | None = None,
+    ) -> int:
+        """Persist minimal stale identity using an existing transaction."""
+        values = list(jobs)
+        if not values:
+            return 0
+        current = self._aware(pruned_at or datetime.now(UTC)).isoformat()
+        connection.executemany(
+            "UPDATE jobs SET canonical_url=?,last_seen_at=?,last_verified_at=? "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            [
+                (
+                    str(job.canonical_url),
+                    job.last_seen_at.isoformat(),
+                    current,
+                    job.source,
+                    job.source_board_id,
+                    job.source_job_id,
+                )
+                for job in values
+            ],
+        )
+        connection.executemany(
+            "INSERT OR REPLACE INTO job_retention_evidence (job_id,posted_at) "
+            "SELECT id,? FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            [
+                (
+                    self._aware(job.posted_at).isoformat(),
+                    job.source,
+                    job.source_board_id,
+                    job.source_job_id,
+                )
+                for job in values
+                if job.posted_at is not None
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO job_identity_ledger "
+            "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+            "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+            "VALUES (?,?,?,?,?,?,"
+            "COALESCE((SELECT first_seen_at FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?),?),?,?,?) "
+            "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+            "canonical_url=excluded.canonical_url,"
+            "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
+            "company=excluded.company,"
+            "last_seen_at=excluded.last_seen_at,"
+            "pruned_at=excluded.pruned_at,"
+            "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+            [
+                (
+                    job.source,
+                    job.source_board_id,
+                    job.source_job_id,
+                    str(job.canonical_url),
+                    job.employer_id,
+                    job.company,
+                    job.source,
+                    job.source_board_id,
+                    job.source_job_id,
+                    job.discovered_at.isoformat(),
+                    job.last_seen_at.isoformat(),
+                    current,
+                    0,
+                )
+                for job in values
+            ],
+        )
+        return len(values)
+
     def record_pruned_identities(
         self,
         jobs: Iterable[Job],
@@ -327,73 +404,13 @@ class SQLiteRepository:
         values = list(jobs)
         if not values:
             return 0
-        current = self._aware(pruned_at or datetime.now(UTC)).isoformat()
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.executemany(
-                "UPDATE jobs SET canonical_url=?,last_seen_at=?,last_verified_at=? "
-                "WHERE source=? AND source_board_id=? AND source_job_id=?",
-                [
-                    (
-                        str(job.canonical_url),
-                        job.last_seen_at.isoformat(),
-                        current,
-                        job.source,
-                        job.source_board_id,
-                        job.source_job_id,
-                    )
-                    for job in values
-                ],
+            return self._record_pruned_identities_in_connection(
+                connection,
+                values,
+                pruned_at=pruned_at,
             )
-            connection.executemany(
-                "INSERT OR REPLACE INTO job_retention_evidence (job_id,posted_at) "
-                "SELECT id,? FROM jobs "
-                "WHERE source=? AND source_board_id=? AND source_job_id=?",
-                [
-                    (
-                        self._aware(job.posted_at).isoformat(),
-                        job.source,
-                        job.source_board_id,
-                        job.source_job_id,
-                    )
-                    for job in values
-                    if job.posted_at is not None
-                ],
-            )
-            connection.executemany(
-                "INSERT INTO job_identity_ledger "
-                "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
-                "first_seen_at,last_seen_at,pruned_at,was_delivered) "
-                "VALUES (?,?,?,?,?,?,"
-                "COALESCE((SELECT first_seen_at FROM jobs "
-                "WHERE source=? AND source_board_id=? AND source_job_id=?),?),?,?,?) "
-                "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                "canonical_url=excluded.canonical_url,"
-                "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
-                "company=excluded.company,"
-                "last_seen_at=excluded.last_seen_at,"
-                "pruned_at=excluded.pruned_at,"
-                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
-                [
-                    (
-                        job.source,
-                        job.source_board_id,
-                        job.source_job_id,
-                        str(job.canonical_url),
-                        job.employer_id,
-                        job.company,
-                        job.source,
-                        job.source_board_id,
-                        job.source_job_id,
-                        job.discovered_at.isoformat(),
-                        job.last_seen_at.isoformat(),
-                        current,
-                        0,
-                    )
-                    for job in values
-                ],
-            )
-        return len(values)
 
     def prune_stale_inventory(
         self,

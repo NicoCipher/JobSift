@@ -599,8 +599,8 @@ def test_fan_in_resumes_running_receipt_after_persistence_failure(
     registry = _registry()
     manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
     artifacts = [
-        _artifact(registry, manifest, "greenhouse-000"),
-        _artifact(registry, manifest, "greenhouse-001"),
+        _artifact(registry, manifest, "greenhouse-000", stale_board="a"),
+        _artifact(registry, manifest, "greenhouse-001", stale_board="a"),
     ]
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
     original_upsert = repository._upsert_job_in_connection
@@ -628,6 +628,12 @@ def test_fan_in_resumes_running_receipt_after_persistence_failure(
             connection.execute("SELECT COUNT(*) FROM inventory_run_jobs").fetchone()[0]
             == 0
         )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM job_identity_ledger"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM job_retention_evidence"
+        ).fetchone()[0] == 0
     assert row is not None
     assert row["status"] == "running"
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.base import JobCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.lever import LeverCollector
+from job_scout.collectors.smartrecruiters import SmartRecruitersCollector
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.domain.models import (
     CollectionResult,
@@ -118,6 +120,28 @@ class AshbyPlanTarget(_PlanTarget):
         )
 
 
+class SmartRecruitersPlanTarget(_PlanTarget):
+    source: Literal["smartrecruiters"]
+    board: str
+
+    @field_validator("board")
+    @classmethod
+    def board_required(cls, value: str) -> str:
+        value = _coordinate(value)
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", value):
+            raise ValueError("invalid SmartRecruiters company identifier")
+        return value.casefold()
+
+    @property
+    def target_identity(self) -> str:
+        return f"smartrecruiters:{self.board}"
+
+    def source_target(self) -> SourceTarget:
+        return SourceTarget(
+            board_id=self.board.casefold(), company=self.company, employer_id=self.employer_id
+        )
+
+
 class WorkdayPlanTarget(_PlanTarget):
     source: Literal["workday"]
     host: str
@@ -176,7 +200,11 @@ class LeverPlanTarget(_PlanTarget):
 
 
 PlanTarget = Annotated[
-    GreenhousePlanTarget | AshbyPlanTarget | WorkdayPlanTarget | LeverPlanTarget,
+    GreenhousePlanTarget
+    | AshbyPlanTarget
+    | SmartRecruitersPlanTarget
+    | WorkdayPlanTarget
+    | LeverPlanTarget,
     Field(discriminator="source"),
 ]
 
@@ -317,6 +345,7 @@ def default_collector_factory(source: str) -> JobCollector:
     return {
         "greenhouse": GreenhouseCollector,
         "ashby": AshbyCollector,
+        "smartrecruiters": SmartRecruitersCollector,
         "workday": WorkdayCollector,
         "lever": LeverCollector,
     }[source]()
