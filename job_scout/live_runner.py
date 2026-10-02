@@ -359,6 +359,22 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
+    if unresolved is None:
+        # A prior process may have persisted a final-freshness failure and
+        # crashed before the safe discard completed. Recover only that exact
+        # no-journal state; unrelated failures remain durable.
+        local_day = datetime.now(ZoneInfo(profile_timezone)).date().isoformat()
+        prior_today = _batch_by_idempotency(
+            repository,
+            client_id=brief.client_id,
+            destination=destination,
+            idempotency_key=local_day,
+        )
+        if prior_today is not None and _discard_stale_unpublished_release(
+            store, prior_today
+        ):
+            unresolved = None
+
     if unresolved is not None:
         # The legacy Live JobSift release workflow predates delivery profiles.
         # If it is releasing a batch for a destination that now has a profile,
