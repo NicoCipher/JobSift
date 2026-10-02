@@ -173,6 +173,21 @@ def _unresolved_batch(
     return DailyBatchStore(repository).get(row[0]) if row else None
 
 
+def _discard_stale_unpublished_release(
+    store: DailyBatchStore, batch: DailyBatchResult
+) -> bool:
+    """Discard only a freshness-failed snapshot that never reached an export journal."""
+    if batch.status != "failed" or not (batch.error or "").startswith(
+        "prepared posting is no longer fresh at delivery:"
+    ):
+        return False
+    before_sha, after_sha = store.export_journal(batch.batch_id)
+    if before_sha is not None or after_sha is not None or batch.delivered_at is not None:
+        return False
+    store.discard_prepared(batch.batch_id)
+    return True
+
+
 def _candidate_job_ids(
     repository: SQLiteRepository,
     *,
@@ -439,6 +454,17 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             unresolved = finalize_daily_batch(
                 repository=repository, batch_id=unresolved.batch_id
             )
+            if _discard_stale_unpublished_release(store, unresolved):
+                return {
+                    "action": "stale_unpublished_discarded",
+                    "batch_id": unresolved.batch_id,
+                    "batch_status": unresolved.status,
+                    "destination_id": getattr(
+                        unresolved.request, "destination_id", None
+                    ),
+                    "selected_count": unresolved.selected_count,
+                    "error": unresolved.error,
+                }
             action = "resumed_release"
         else:
             action = "awaiting_release"
