@@ -126,6 +126,42 @@ class InventoryRunStore:
             memberships=((target_identity, job.id) for job in jobs),
         )
 
+    def persist_jobs_and_finish(
+        self,
+        *,
+        run_id: str,
+        jobs: Iterable[Job],
+        memberships: Iterable[tuple[str, Job]],
+        status: str,
+        completed_at: datetime,
+    ) -> None:
+        """Persist one validated fan-in payload and finish its running receipt atomically."""
+        if status not in {"success", "partial", "failure"}:
+            raise ValueError("invalid inventory run status")
+        job_values = list(jobs)
+        membership_values = list(memberships)
+        now = datetime.now(UTC).isoformat()
+        with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for job in job_values:
+                self.repository._upsert_job_in_connection(connection, job, now)
+            if membership_values:
+                connection.executemany(
+                    "INSERT OR IGNORE INTO inventory_run_jobs "
+                    "(run_id,job_id,target_identity) VALUES (?,?,?)",
+                    [
+                        (run_id, job.id, target_identity)
+                        for target_identity, job in membership_values
+                    ],
+                )
+            updated = connection.execute(
+                "UPDATE inventory_runs SET status=?,completed_at=? "
+                "WHERE run_id=? AND status='running'",
+                (status, completed_at.isoformat(), run_id),
+            ).rowcount
+            if updated != 1:
+                raise ValueError("running inventory run not found")
+
     def finish(
         self,
         *,
