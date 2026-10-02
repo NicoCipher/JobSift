@@ -810,6 +810,36 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                             "selected_count": stale_batch.selected_count,
                             "error": stale_batch.error,
                         }
+                    if (
+                        recovered.status == "failed"
+                        and (recovered.error or "").startswith(
+                            "prepared posting is no longer fresh at delivery:"
+                        )
+                    ):
+                        try:
+                            before_sha, after_sha = store.export_journal(
+                                recovered.batch_id,
+                                expected_generation_id=recovered.generation_id,
+                            )
+                        except BatchConflict as error:
+                            if not _is_concurrent_batch_recovery(error):
+                                raise
+                            recovered = store.recover_unresolved(
+                                brief.client_id, destination
+                            )
+                            if recovered is None:
+                                return {"action": "concurrent_recovery_complete"}
+                            batch = recovered
+                            continue
+                        if before_sha is not None or after_sha is not None:
+                            return _batch_payload(
+                                store,
+                                recovered,
+                                action="stale_release_requires_reconciliation",
+                                sourcing=report,
+                                evaluation=evaluation,
+                                retention=retention,
+                            )
                     batch = recovered
                     continue
                 action = "released" if batch.status == "delivered" else "release_failed"
