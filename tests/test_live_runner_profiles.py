@@ -476,7 +476,7 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
     )
     store = SimpleNamespace(
         evidence_digest=lambda *_, **__: "b" * 64,
-        discard_prepared=lambda _batch_id: None,
+        discard_prepared=lambda _batch_id, *, expected_generation_id: None,
     )
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     captured = []
@@ -566,13 +566,19 @@ def test_review_profile_discards_empty_scope_so_next_refresh_can_run(
     discarded = []
     store = SimpleNamespace(
         evidence_digest=lambda *_, **__: "b" * 64,
-        discard_prepared=lambda batch_id: discarded.append(batch_id),
+        discard_prepared=lambda batch_id, *, expected_generation_id: discarded.append(
+            (batch_id, expected_generation_id)
+        ),
     )
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     monkeypatch.setattr(
         live_runner,
         "prepare_daily_batch",
-        lambda **_: SimpleNamespace(batch_id="empty-batch", selected_count=0),
+        lambda **_: SimpleNamespace(
+            batch_id="empty-batch",
+            generation_id="empty-generation",
+            selected_count=0,
+        ),
     )
     monkeypatch.setattr(
         live_runner,
@@ -590,5 +596,5 @@ def test_review_profile_discards_empty_scope_so_next_refresh_can_run(
     assert result["action"] == "empty_review_scope"
     assert result["batch_status"] == "discarded"
     assert result["selected_count"] == 0
-    assert discarded == ["empty-batch"]
+    assert discarded == [("empty-batch", "empty-generation")]
 
