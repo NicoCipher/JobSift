@@ -309,7 +309,7 @@ class ClientSheetPublisher:
         if batch_target is not None:
             index = self.header.index(batch_target)
             if any(row[index] == self.result.batch_id for row in values[1:]):
-                raise BatchConflict(
+                raise RetryableDestinationConflict(
                     "batch marker already exists without a delivery journal"
                 )
         additions = self._rows(frozen)
