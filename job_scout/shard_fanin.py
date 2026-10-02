@@ -255,11 +255,15 @@ def persist_shard_artifacts(
     )
     status = _status(metrics)
     artifact_set_sha = _artifact_set_sha(ordered)
+    retention_identity = (
+        "none" if payload_retention_hours is None else str(payload_retention_hours)
+    )
     run_id = str(
         uuid5(
             NAMESPACE_URL,
             "inventory-fanin:"
-            f"{registry.registry_id}:{manifest.manifest_sha256}:{artifact_set_sha}",
+            f"{registry.registry_id}:{manifest.manifest_sha256}:{artifact_set_sha}:"
+            f"retention-hours={retention_identity}",
         )
     )
     registry_sha = sha256_json(registry.model_dump(mode="json"))
