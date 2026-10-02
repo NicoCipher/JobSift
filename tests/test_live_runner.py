@@ -51,43 +51,48 @@ def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
     )
 
 
-def test_unresolved_batch_recovers_exact_stale_failed_unpublished_state(tmp_path, monkeypatch):
+def test_recovery_state_machine_discards_stale_then_returns_newer_prepared(tmp_path, monkeypatch):
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
-    DailyBatchStore(repository)
+    store = DailyBatchStore(repository)
     with repository.connect() as connection:
-        connection.execute(
-            "INSERT INTO daily_batches "
-            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
-            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
-            "dedupe_version,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        for batch_id, key, status, error, assembled_at in (
             (
                 "stale-profile-scope",
-                "client-a",
-                "client-sheet://jobs",
-                "2026-10-02:scope-abc123",
-                1,
-                0,
-                1,
+                "2026-10-02:scope-old",
                 "failed",
-                datetime.now(UTC).isoformat(),
-                "{}",
-                "{}",
-                "test",
                 "prepared posting is no longer fresh at delivery: stale_posting",
+                "2026-10-02T12:00:00+00:00",
             ),
-        )
+            (
+                "newer-prepared",
+                "2026-10-02:scope-new",
+                "prepared",
+                None,
+                "2026-10-02T12:01:00+00:00",
+            ),
+        ):
+            connection.execute(
+                "INSERT INTO daily_batches "
+                "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+                "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
+                "dedupe_version,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    batch_id, "client-a", "client-sheet://jobs", key, 1, 0, 1,
+                    status, assembled_at, "{}", "{}", "test", error,
+                ),
+            )
 
     monkeypatch.setattr(
         DailyBatchStore,
-        "get",
-        lambda self, batch_id: SimpleNamespace(batch_id=batch_id),
+        "_load",
+        staticmethod(lambda _c, batch_id: SimpleNamespace(batch_id=batch_id)),
     )
-    result = live_runner._unresolved_batch(
-        repository,
-        client_id="client-a",
-        destination="client-sheet://jobs",
-    )
-    assert result.batch_id == "stale-profile-scope"
+    result = store.recover_unresolved("client-a", "client-sheet://jobs")
+    assert result.batch_id == "newer-prepared"
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM daily_batches WHERE batch_id='stale-profile-scope'"
+        ).fetchone() is None
 
 
 def test_unresolved_batch_ignores_delivered_export_journal(tmp_path):
