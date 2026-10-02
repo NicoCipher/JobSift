@@ -59,7 +59,7 @@ def _fresh_24h(job: Job, evaluated_at: datetime) -> bool:
 
 def _target_observation_rows(
     artifacts: list[ShardCollectionArtifact],
-) -> list[tuple[str, str, str, datetime, datetime, int, int, int, int]]:
+) -> list[tuple[str, str, str, datetime, datetime, int, int, int, int, int]]:
     rows = []
     for artifact in artifacts:
         for target in artifact.targets:
@@ -72,6 +72,7 @@ def _target_observation_rows(
                     target.completed_at,
                     target.runtime_ms,
                     target.raw_postings_received,
+                    len(target.jobs),
                     sum(job.posted_at is not None for job in target.jobs),
                     sum(_fresh_24h(job, target.completed_at) for job in target.jobs),
                 )
