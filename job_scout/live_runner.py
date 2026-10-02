@@ -517,9 +517,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "source_failures": list(_source_failures(report)),
             }
 
-    retention = repository.prune_stale_inventory(
-        retention_hours=config.inventory_retention_hours
-    )
+    # Retention is maintenance, not a prerequisite for matching. Inventory reads
+    # enforce the same retention window independently, so cleanup can run outside
+    # the delivery critical path.
+    retention = None
 
     if report is not None:
         evaluation = evaluate_inventory_run(
