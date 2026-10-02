@@ -315,6 +315,7 @@ def test_shared_inventory_collects_once_then_evaluates_multiple_clients(tmp_path
         repository=repository,
         run_id=inventory.run_id,
         brief=first_brief,
+        retention_hours=72,
         evaluated_at=inventory.completed_at,
     )
     second_brief = SearchBrief(
@@ -326,6 +327,7 @@ def test_shared_inventory_collects_once_then_evaluates_multiple_clients(tmp_path
         repository=repository,
         run_id=inventory.run_id,
         brief=second_brief,
+        retention_hours=72,
         evaluated_at=inventory.completed_at,
     )
 
@@ -394,11 +396,14 @@ def test_prune_then_evaluate_preserves_authoritative_match_for_retained_stale_in
         repository=repository,
         run_id=run_id,
         brief=brief,
+        retention_hours=72,
         evaluated_at=now,
     )
 
     assert inventory.job_ids(run_id) == (posting.id,)
-    candidate_ids = inventory.active_job_ids(run_id)
+    candidate_ids = inventory.active_job_ids(
+        run_id, retention_hours=72, evaluated_at=now
+    )
     assert candidate_ids == ()
     assert evaluation.total_evaluated == 0
     assert DailyBatchStore(repository).evidence_digest("client-one", candidate_ids)
