@@ -432,17 +432,30 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             unresolved = finalize_daily_batch(
                 repository=repository, batch_id=unresolved.batch_id
             )
-            if _discard_stale_unpublished_release(store, unresolved):
-                return {
-                    "action": "stale_unpublished_discarded",
-                    "batch_id": unresolved.batch_id,
-                    "batch_status": unresolved.status,
-                    "destination_id": getattr(
-                        unresolved.request, "destination_id", None
-                    ),
-                    "selected_count": unresolved.selected_count,
-                    "error": unresolved.error,
-                }
+            if (
+                unresolved.status == "failed"
+                and (unresolved.error or "").startswith(
+                    "prepared posting is no longer fresh at delivery:"
+                )
+            ):
+                stale_batch = unresolved
+                unresolved = store.recover_unresolved(
+                    brief.client_id, destination
+                )
+                if unresolved is None:
+                    return {
+                        "action": "stale_unpublished_discarded",
+                        "batch_id": stale_batch.batch_id,
+                        "batch_status": stale_batch.status,
+                        "destination_id": getattr(
+                            stale_batch.request, "destination_id", None
+                        ),
+                        "selected_count": stale_batch.selected_count,
+                        "error": stale_batch.error,
+                    }
+                return _batch_payload(
+                    store, unresolved, action="recovered_after_stale_release"
+                )
             action = "resumed_release"
         else:
             action = "awaiting_release"
