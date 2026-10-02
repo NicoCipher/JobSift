@@ -283,6 +283,9 @@ def persist_shard_artifacts(
     if not created and existing.status != "running":
         if existing.completed_at is None:
             raise ValueError("completed inventory run is missing completion time")
+        replay_metrics = metrics.model_copy(
+            update={"inventory_memberships": inventory.membership_count(run_id)}
+        )
         return FanInReport(
             run_id=run_id,
             inventory_plan_id=registry.registry_id,
@@ -295,7 +298,7 @@ def persist_shard_artifacts(
             persisted_at=existing.completed_at,
             status=existing.status,
             replayed=True,
-            metrics=metrics,
+            metrics=replay_metrics,
         )
 
     if stale_jobs:
