@@ -201,7 +201,7 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
     monkeypatch.setattr(
         live_runner,
         "InventoryRunStore",
-        lambda _: SimpleNamespace(active_job_ids=lambda _run: ("job-1",)),
+        lambda _: SimpleNamespace(active_job_ids=lambda _run, **kwargs: ("job-1",)),
     )
     store = SimpleNamespace(evidence_digest=lambda *_, **__: "b" * 64)
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
@@ -458,7 +458,7 @@ def test_profile_idempotency_changes_with_inventory_evaluation_scope(
     monkeypatch.setattr(
         live_runner,
         "InventoryRunStore",
-        lambda _: SimpleNamespace(active_job_ids=lambda _run: ()),
+        lambda _: SimpleNamespace(active_job_ids=lambda _run, **kwargs: ()),
     )
     store = SimpleNamespace(
         evidence_digest=lambda *_, **__: "b" * 64,
@@ -546,7 +546,7 @@ def test_review_profile_discards_empty_scope_so_next_refresh_can_run(
     monkeypatch.setattr(
         live_runner,
         "InventoryRunStore",
-        lambda _: SimpleNamespace(active_job_ids=lambda _run: ()),
+        lambda _: SimpleNamespace(active_job_ids=lambda _run, **kwargs: ()),
     )
 
     discarded = []
