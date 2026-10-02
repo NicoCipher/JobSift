@@ -7,7 +7,11 @@ from typing import Protocol
 from urllib.parse import quote, unquote, urlparse
 
 from job_scout.delivery_destinations import ClientSheetDestination
-from job_scout.domain.daily_batch import BatchConflict, DailyBatchResult
+from job_scout.domain.daily_batch import (
+    BatchConflict,
+    DailyBatchResult,
+    RetryableDestinationConflict,
+)
 from job_scout.export.csv_exporter import CSV_COLUMNS
 from job_scout.storage.daily_batches import digest
 
@@ -161,11 +165,11 @@ class BatchSheetPublisher:
     def _read(self) -> list[list[str]]:
         values = self.gateway.read_rows(self.spreadsheet_id, self.tab)
         if not values or values[0] != SHEET_COLUMNS:
-            raise BatchConflict("Google Sheets header differs from the delivery contract")
+            raise RetryableDestinationConflict("Google Sheets header differs from the delivery contract")
         if any(len(row) > len(SHEET_COLUMNS) for row in values[1:]):
-            raise BatchConflict("Google Sheets rows exceed the delivery contract")
+            raise RetryableDestinationConflict("Google Sheets rows exceed the delivery contract")
         if any(not any(row) for row in values[1:]):
-            raise BatchConflict("Google Sheets contains an internal blank row; remove it before release")
+            raise RetryableDestinationConflict("Google Sheets contains an internal blank row; remove it before release")
         return [row + [""] * (len(SHEET_COLUMNS) - len(row)) for row in values]
 
     @staticmethod
@@ -191,7 +195,7 @@ class BatchSheetPublisher:
     def plan(self, frozen: list[dict[str, str]]) -> tuple[str, str]:
         values = self._read()
         if any(row[6] == self.result.batch_id for row in values[1:]):
-            raise BatchConflict("batch marker already exists without a delivery journal")
+            raise RetryableDestinationConflict("batch marker already exists without a delivery journal")
         additions = self._rows(frozen)
         return self._digest(values), self._digest(values + additions)
 
@@ -203,10 +207,10 @@ class BatchSheetPublisher:
         if current == after:
             return
         if current != before:
-            raise BatchConflict("Google Sheets changed; reconcile before retry")
+            raise RetryableDestinationConflict("Google Sheets changed; reconcile before retry")
         self.gateway.append_rows(self.spreadsheet_id, self.tab, self._rows(frozen))
         if self.inspect() != after:
-            raise BatchConflict("Google Sheets append could not be verified; reconcile")
+            raise RetryableDestinationConflict("Google Sheets append could not be verified; reconcile")
 
 class ClientSheetPublisher:
     """Publish a frozen batch into a client-owned, explicitly mapped Sheet."""
@@ -242,9 +246,9 @@ class ClientSheetPublisher:
             if item.get("sheet_id") == self.destination.sheet_id
         ]
         if len(current) != 1:
-            raise BatchConflict("registered Google Sheet tab no longer exists")
+            raise RetryableDestinationConflict("registered Google Sheet tab no longer exists")
         if current[0].get("title") != self.destination.tab_name:
-            raise BatchConflict(
+            raise RetryableDestinationConflict(
                 "Google Sheet tab was renamed; refresh the destination registration"
             )
 
@@ -252,16 +256,16 @@ class ClientSheetPublisher:
             self.destination.spreadsheet_id, self.destination.tab_name
         )
         if not values or tuple(values[0]) != self.destination.header:
-            raise BatchConflict(
+            raise RetryableDestinationConflict(
                 "Google Sheets header differs from the registered client schema"
             )
         width = len(self.header)
         if any(len(row) > width for row in values[1:]):
-            raise BatchConflict(
+            raise RetryableDestinationConflict(
                 "Google Sheets rows exceed the registered header width"
             )
         if any(not any(row) for row in values[1:-1]):
-            raise BatchConflict(
+            raise RetryableDestinationConflict(
                 "Google Sheets contains an internal blank row; reconcile before release"
             )
         return [row + [""] * (width - len(row)) for row in values]
@@ -319,12 +323,12 @@ class ClientSheetPublisher:
         if current == after:
             return
         if current != before:
-            raise BatchConflict("Google Sheets changed; reconcile before retry")
+            raise RetryableDestinationConflict("Google Sheets changed; reconcile before retry")
         self.gateway.append_table_rows(
             self.destination.spreadsheet_id,
             self.destination.tab_name,
             self._rows(frozen),
         )
         if self.inspect() != after:
-            raise BatchConflict("Google Sheets append could not be verified; reconcile")
+            raise RetryableDestinationConflict("Google Sheets append could not be verified; reconcile")
 
