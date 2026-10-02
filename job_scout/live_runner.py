@@ -162,38 +162,8 @@ def _batch_by_idempotency(
 def _unresolved_batch(
     repository: SQLiteRepository, *, client_id: str, destination: str
 ) -> DailyBatchResult | None:
-    with repository.connect() as connection:
-        row = connection.execute(
-            "SELECT batch_id FROM daily_batches "
-            "WHERE client_id=? AND destination=? AND status!='delivered' "
-            "AND (status='prepared' OR export_after_sha256 IS NOT NULL "
-            "OR (status='failed' AND delivered_at IS NULL "
-            "AND export_before_sha256 IS NULL AND export_after_sha256 IS NULL "
-            "AND error LIKE 'prepared posting is no longer fresh at delivery:%')) "
-            "ORDER BY assembled_at, batch_id LIMIT 1",
-            (client_id, destination),
-        ).fetchone()
-    return DailyBatchStore(repository).get(row[0]) if row else None
-
-
-def _discard_stale_unpublished_release(
-    store: DailyBatchStore, batch: DailyBatchResult
-) -> bool:
-    """Discard only a freshness-failed snapshot that never reached an export journal."""
-    if batch.status != "failed" or not (batch.error or "").startswith(
-        "prepared posting is no longer fresh at delivery:"
-    ):
-        return False
-    try:
-        store.discard_stale_unpublished(batch.batch_id)
-    except BatchConflict as error:
-        # Another runner may already have completed the same safe cleanup.
-        # Treat only disappearance as cleanup; every other conflict remains unsafe.
-        if str(error) == "batch not found":
-            return True
-        return False
-    return True
-
+    """Delegate unresolved delivery recovery to the transactional state machine."""
+    return DailyBatchStore(repository).recover_unresolved(client_id, destination)
 
 def _candidate_job_ids(
     repository: SQLiteRepository,
@@ -366,14 +336,6 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
-    while unresolved is not None and getattr(unresolved, "status", None) == "failed":
-        # Atomic store-side validation prevents races with another runner.
-        if not _discard_stale_unpublished_release(store, unresolved):
-            break
-        # A newer prepared or journaled batch may exist behind the stale row.
-        unresolved = _unresolved_batch(
-            repository, client_id=brief.client_id, destination=destination
-        )
 
     if unresolved is not None:
         # The legacy Live JobSift release workflow predates delivery profiles.
