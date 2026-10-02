@@ -11,6 +11,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from job_scout.dedupe.resolver import delivery_keys, representative_key
 from job_scout.domain.models import Job, JobLifecycle, JobMatch
+from job_scout.retention import retention_basis
 
 
 class CompatibleRow:
@@ -451,6 +452,7 @@ class SQLiteRepository:
                 "SELECT j.id,j.canonical_url,j.first_seen_at,j.last_seen_at,j.payload_json,"
                 "e.posted_at AS retention_posted_at "
                 "FROM jobs j LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                "WHERE j.lifecycle!='closed' "
                 "ORDER BY j.id"
             ).fetchall()
             for row in rows:
@@ -461,7 +463,11 @@ class SQLiteRepository:
                     if row["retention_posted_at"]
                     else None
                 )
-                basis = self._aware(retention_posted_at or job.posted_at or first_seen)
+                basis = retention_basis(
+                    retention_posted_at=retention_posted_at,
+                    posted_at=job.posted_at,
+                    first_seen_at=first_seen,
+                )
                 if basis.timestamp() >= cutoff:
                     continue
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from job_scout import sourcing_plan
@@ -66,6 +66,47 @@ def test_recent_inventory_returns_only_delivery_eligible_candidate_ids(
     assert report.total_matched == 1
     assert report.total_rejected == 1
     assert candidate_ids == ("eligible",)
+
+
+def test_recent_inventory_rejects_old_posting_reverified_now(tmp_path, monkeypatch):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    now = datetime.now(UTC)
+    old = now - timedelta(hours=80)
+    stale = posting("stale", "Software Engineer").model_copy(
+        update={
+            "posted_at": old,
+            "discovered_at": old,
+            "last_seen_at": now,
+        }
+    )
+    repo.upsert_job(stale)
+
+    with repo.connect() as connection:
+        last_verified_at = datetime.fromisoformat(
+            connection.execute(
+                "SELECT last_verified_at FROM jobs WHERE id=?", (stale.id,)
+            ).fetchone()[0]
+        )
+    assert last_verified_at >= now - timedelta(hours=72)
+
+    monkeypatch.setattr(
+        sourcing_plan,
+        "match_job",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("expired payload must not reach matching")
+        ),
+    )
+
+    report, candidate_ids = sourcing_plan.evaluate_recent_inventory(
+        repository=repo,
+        brief=SimpleNamespace(client_id="client-a"),
+        retention_hours=72,
+        evaluated_at=now,
+    )
+
+    assert report.total_evaluated == 0
+    assert report.total_matched == 0
+    assert candidate_ids == ()
 
 def test_recent_inventory_persists_revision_scoped_matches(tmp_path, monkeypatch):
     repo = SQLiteRepository(tmp_path / "jobs.db")

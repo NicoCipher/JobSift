@@ -31,6 +31,7 @@ from job_scout.domain.models import (
 )
 from job_scout.matching.matcher import match_job
 from job_scout.orchestration.pipeline import PipelineSummary, run_pipeline
+from job_scout.retention import retention_basis
 from job_scout.search_brief import load_search_brief
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
@@ -509,7 +510,7 @@ def evaluate_inventory_run(
     repository: SQLiteRepository,
     run_id: str,
     brief: SearchBrief,
-    retention_hours: int = 72,
+    retention_hours: int,
     evaluated_at: datetime | None = None,
     match_scope_id: str | None = None,
 ) -> InventoryEvaluationReport:
@@ -529,14 +530,28 @@ def evaluate_inventory_run(
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
-            "SELECT DISTINCT j.id,j.payload_json FROM inventory_run_jobs r "
+            "SELECT DISTINCT j.id,j.payload_json,j.first_seen_at,"
+            "e.posted_at AS retention_posted_at FROM inventory_run_jobs r "
             "JOIN jobs j ON j.id=r.job_id "
-            "WHERE r.run_id=? AND j.lifecycle!='closed' AND j.last_verified_at>=? "
+            "LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+            "WHERE r.run_id=? AND j.lifecycle!='closed' "
             "ORDER BY j.id",
-            (run_id, cutoff.isoformat()),
+            (run_id,),
         )
         for row in cursor:
-            job = Job.model_validate_json(row[1])
+            job = Job.model_validate_json(row["payload_json"])
+            retention_posted_at = (
+                datetime.fromisoformat(row["retention_posted_at"])
+                if row["retention_posted_at"]
+                else None
+            )
+            basis = retention_basis(
+                retention_posted_at=retention_posted_at,
+                posted_at=job.posted_at,
+                first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+            )
+            if basis < cutoff:
+                continue
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )
@@ -579,9 +594,9 @@ def evaluate_recent_inventory(
 ) -> tuple[InventoryEvaluationReport, tuple[str, ...]]:
     """Evaluate the currently retained shared inventory for one client.
 
-    Collection is intentionally separate. Only active payloads verified inside
-    the retention window participate; posting freshness is still enforced later
-    by daily-batch assembly using the SearchBrief freshness policy.
+    Collection is intentionally separate. Only active payloads whose shared
+    retention basis is inside the retention window participate; posting freshness
+    is still enforced later by daily-batch assembly using the SearchBrief policy.
     """
     if retention_hours < 1:
         raise ValueError("retention_hours must be at least 1")
@@ -599,13 +614,26 @@ def evaluate_recent_inventory(
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
-            "SELECT id,payload_json FROM jobs "
-            "WHERE lifecycle!='closed' AND last_verified_at>=? "
-            "ORDER BY id",
-            (cutoff.isoformat(),),
+            "SELECT j.id,j.payload_json,j.first_seen_at,"
+            "e.posted_at AS retention_posted_at "
+            "FROM jobs j LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+            "WHERE j.lifecycle!='closed' "
+            "ORDER BY j.id"
         )
         for row in cursor:
             job = Job.model_validate_json(row["payload_json"])
+            retention_posted_at = (
+                datetime.fromisoformat(row["retention_posted_at"])
+                if row["retention_posted_at"]
+                else None
+            )
+            basis = retention_basis(
+                retention_posted_at=retention_posted_at,
+                posted_at=job.posted_at,
+                first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+            )
+            if basis < cutoff:
+                continue
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )

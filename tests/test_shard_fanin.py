@@ -170,7 +170,13 @@ def test_fan_in_persists_once_and_replays_without_mutating_artifacts(tmp_path: P
     assert first.metrics.inventory_memberships == 2
 
     store = InventoryRunStore(repository)
-    assert len(store.active_job_ids(first.run_id)) == 2
+    assert len(
+        store.active_job_ids(
+            first.run_id,
+            retention_hours=72,
+            evaluated_at=first.collection_completed_at,
+        )
+    ) == 2
     assert store.get(first.run_id) is not None
     assert store.get(first.run_id).status == "success"
 
@@ -507,7 +513,13 @@ def test_fan_in_replay_identity_includes_retention_policy(
     assert wider.replayed is False
     assert strict.metrics.inventory_memberships == 1
     assert wider.metrics.inventory_memberships == 2
-    assert len(InventoryRunStore(repository).active_job_ids(wider.run_id)) == 2
+    assert len(
+        InventoryRunStore(repository).active_job_ids(
+            wider.run_id,
+            retention_hours=168,
+            evaluated_at=PERSISTED,
+        )
+    ) == 2
 
 
 def test_completed_replay_reports_persisted_memberships_after_cutoff_moves(

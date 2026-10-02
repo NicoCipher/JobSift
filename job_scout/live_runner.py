@@ -607,9 +607,9 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 "source_failures": list(_source_failures(report)),
             }
 
-    # Retention is maintenance, not a prerequisite for matching. Inventory reads
-    # enforce the same retention window independently, so cleanup can run outside
-    # the delivery critical path.
+    # Retention cleanup is maintenance, not a prerequisite for matching.
+    # Inventory reads independently enforce the same payload-age basis, so cleanup
+    # can run outside the delivery critical path without widening eligibility.
     retention = None
 
     if report is not None:

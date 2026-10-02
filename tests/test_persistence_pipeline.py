@@ -149,3 +149,31 @@ def test_stale_inventory_deletes_undelivered_and_compacts_delivered_jobs(tmp_pat
         ).fetchall()
         assert [row[0] for row in ledger] == [1, 0]
 
+def test_prune_skips_already_compacted_closed_payloads(tmp_path) -> None:
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    now = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
+    delivered = _stored_job(
+        "closed-payload", posted_at=now - timedelta(hours=80)
+    )
+    repo.upsert_job(delivered)
+    repo.mark_exported(delivered.id, "client", "gsheet://sheet/Sheet1")
+
+    first = repo.prune_stale_inventory(retention_hours=72, now=now)
+    assert first["compacted_jobs"] == 1
+
+    # Closed rows must not be reparsed on every maintenance pass.
+    with repo.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET payload_json=? WHERE id=?",
+            ("not-json", delivered.id),
+        )
+
+    second = repo.prune_stale_inventory(retention_hours=72, now=now)
+
+    assert second["deleted_jobs"] == 0
+    assert second["compacted_jobs"] == 0
+    with repo.connect() as connection:
+        assert connection.execute(
+            "SELECT lifecycle FROM jobs WHERE id=?", (delivered.id,)
+        ).fetchone()[0] == "closed"
+

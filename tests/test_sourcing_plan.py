@@ -315,6 +315,7 @@ def test_shared_inventory_collects_once_then_evaluates_multiple_clients(tmp_path
         repository=repository,
         run_id=inventory.run_id,
         brief=first_brief,
+        retention_hours=72,
         evaluated_at=inventory.completed_at,
     )
     second_brief = SearchBrief(
@@ -326,6 +327,7 @@ def test_shared_inventory_collects_once_then_evaluates_multiple_clients(tmp_path
         repository=repository,
         run_id=inventory.run_id,
         brief=second_brief,
+        retention_hours=72,
         evaluated_at=inventory.completed_at,
     )
 
@@ -394,23 +396,33 @@ def test_prune_then_evaluate_preserves_authoritative_match_for_retained_stale_in
         repository=repository,
         run_id=run_id,
         brief=brief,
+        retention_hours=72,
         evaluated_at=now,
     )
 
     assert inventory.job_ids(run_id) == (posting.id,)
-    candidate_ids = inventory.active_job_ids(run_id)
+    candidate_ids = inventory.active_job_ids(
+        run_id, retention_hours=72, evaluated_at=now
+    )
     assert candidate_ids == ()
     assert evaluation.total_evaluated == 0
     assert DailyBatchStore(repository).evidence_digest("client-one", candidate_ids)
 
 
-def test_run_scoped_evaluation_enforces_retention_without_pruning(
+def test_run_scoped_evaluation_rejects_old_posting_reverified_now(
     tmp_path: Path,
 ) -> None:
     repository = SQLiteRepository(tmp_path / "shared.sqlite3")
     now = datetime.now(UTC)
     target = plan(tmp_path, [targets()[0]]).targets[0].source_target()
-    posting = fixture_job("greenhouse", target)
+    old = now - timedelta(hours=80)
+    posting = fixture_job("greenhouse", target).model_copy(
+        update={
+            "posted_at": old,
+            "discovered_at": old,
+            "last_seen_at": now,
+        }
+    )
     repository.upsert_job(posting)
 
     inventory = InventoryRunStore(repository)
@@ -423,12 +435,13 @@ def test_run_scoped_evaluation_enforces_retention_without_pruning(
     )
     inventory.finish(run_id=run_id, status="success", completed_at=now)
 
-    old_verified_at = (now - timedelta(hours=80)).isoformat()
     with repository.connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET last_verified_at=?, lifecycle='seen' WHERE id=?",
-            (old_verified_at, posting.id),
+        last_verified_at = datetime.fromisoformat(
+            connection.execute(
+                "SELECT last_verified_at FROM jobs WHERE id=?", (posting.id,)
+            ).fetchone()[0]
         )
+    assert last_verified_at >= now - timedelta(hours=72)
 
     brief = SearchBrief(
         client_id="client-one",
@@ -450,6 +463,107 @@ def test_run_scoped_evaluation_enforces_retention_without_pruning(
     assert evaluation.total_evaluated == 0
     assert evaluation.total_matched == 0
 
+
+def test_run_scoped_evaluation_does_not_use_last_verified_as_retention_age(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteRepository(tmp_path / "shared.sqlite3")
+    now = datetime.now(UTC)
+    target = plan(tmp_path, [targets()[0]]).targets[0].source_target()
+    posting = fixture_job("greenhouse", target).model_copy(
+        update={
+            "posted_at": now - timedelta(hours=1),
+            "discovered_at": now - timedelta(hours=1),
+            "last_seen_at": now - timedelta(hours=1),
+        }
+    )
+    repository.upsert_job(posting)
+
+    inventory = InventoryRunStore(repository)
+    run_id = "inventory-verification-age-regression"
+    inventory.create(run_id=run_id, plan_id="mixed-plan", started_at=now)
+    inventory.add_jobs(
+        run_id=run_id,
+        target_identity="greenhouse:green",
+        jobs=[posting],
+    )
+    inventory.finish(run_id=run_id, status="success", completed_at=now)
+
+    with repository.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET last_verified_at=? WHERE id=?",
+            ((now - timedelta(hours=80)).isoformat(), posting.id),
+        )
+
+    brief = SearchBrief(
+        client_id="client-one",
+        target_roles=["Support Engineer"],
+        management_roles=RuleIntent.IGNORE,
+    )
+    evaluation = evaluate_inventory_run(
+        repository=repository,
+        run_id=run_id,
+        brief=brief,
+        retention_hours=72,
+        evaluated_at=now,
+    )
+
+    assert inventory.active_job_ids(
+        run_id, retention_hours=72, evaluated_at=now
+    ) == (posting.id,)
+    assert evaluation.total_evaluated == 1
+    assert evaluation.total_matched == 1
+
+
+def test_retention_evidence_overrides_newer_payload_posted_at(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteRepository(tmp_path / "shared.sqlite3")
+    now = datetime.now(UTC)
+    target = plan(tmp_path, [targets()[0]]).targets[0].source_target()
+    posting = fixture_job("greenhouse", target).model_copy(
+        update={
+            "posted_at": now - timedelta(hours=1),
+            "discovered_at": now - timedelta(hours=1),
+            "last_seen_at": now,
+        }
+    )
+    repository.upsert_job(posting)
+
+    inventory = InventoryRunStore(repository)
+    run_id = "inventory-retention-evidence-regression"
+    inventory.create(run_id=run_id, plan_id="mixed-plan", started_at=now)
+    inventory.add_jobs(
+        run_id=run_id,
+        target_identity="greenhouse:green",
+        jobs=[posting],
+    )
+    inventory.finish(run_id=run_id, status="success", completed_at=now)
+
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO job_retention_evidence (job_id,posted_at) "
+            "VALUES (?,?)",
+            (posting.id, (now - timedelta(hours=80)).isoformat()),
+        )
+
+    brief = SearchBrief(
+        client_id="client-one",
+        target_roles=["Support Engineer"],
+        management_roles=RuleIntent.IGNORE,
+    )
+    evaluation = evaluate_inventory_run(
+        repository=repository,
+        run_id=run_id,
+        brief=brief,
+        retention_hours=72,
+        evaluated_at=now,
+    )
+
+    assert inventory.active_job_ids(
+        run_id, retention_hours=72, evaluated_at=now
+    ) == ()
+    assert evaluation.total_evaluated == 0
 
 def test_failure_is_isolated_and_reported_without_closure_claim(tmp_path: Path) -> None:
     sourcing_plan = plan(tmp_path)
