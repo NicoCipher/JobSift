@@ -93,6 +93,10 @@ class DailyBatchStore:
         self.repository = repository
         with repository.connect() as connection:
             connection.executescript(BATCH_SCHEMA)
+            # Serialize the legacy-column check, ALTER, and backfill. A second
+            # initializer waits here, then re-reads the post-migration schema
+            # instead of racing the same ALTER TABLE.
+            connection.execute("BEGIN IMMEDIATE")
             columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(daily_batches)")
             }
@@ -209,11 +213,15 @@ class DailyBatchStore:
         items = c.execute(
             "SELECT * FROM daily_batch_items WHERE batch_id=? ORDER BY ordinal", (batch_id,)
         ).fetchall()
+        try:
+            generation_id = row["generation_id"]
+        except (IndexError, KeyError):
+            # Read-only inspection may encounter a pre-migration database.
+            # Normal store construction migrates/backfills before loading.
+            generation_id = None
         return DailyBatchResult(
             batch_id=batch_id,
-            generation_id=(
-                row["generation_id"] if "generation_id" in row else None
-            ),
+            generation_id=generation_id,
             request=json.loads(row["request_json"]),
             status=row["status"],
             assembled_at=row["assembled_at"],
