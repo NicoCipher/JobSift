@@ -18,8 +18,7 @@ from job_scout.storage.sqlite import SQLiteRepository
 
 def test_stale_unpublished_release_can_be_discarded(monkeypatch):
     store = SimpleNamespace(
-        export_journal=lambda _batch_id: (None, None),
-        discard_prepared=lambda batch_id: discarded.append(batch_id),
+        discard_stale_unpublished=lambda batch_id: discarded.append(batch_id),
     )
     discarded = []
     batch = SimpleNamespace(
@@ -36,8 +35,9 @@ def test_stale_unpublished_release_can_be_discarded(monkeypatch):
 def test_stale_release_with_export_journal_is_never_auto_discarded():
     discarded = []
     store = SimpleNamespace(
-        export_journal=lambda _batch_id: ("a" * 64, "b" * 64),
-        discard_prepared=lambda batch_id: discarded.append(batch_id),
+        discard_stale_unpublished=lambda _batch_id: (_ for _ in ()).throw(
+            live_runner.BatchConflict("batch is not a discardable stale unpublished failure")
+        ),
     )
     batch = SimpleNamespace(
         batch_id="stale-journaled",
@@ -53,8 +53,7 @@ def test_stale_release_with_export_journal_is_never_auto_discarded():
 def test_restart_recovery_discards_only_stale_failed_batch(monkeypatch):
     discarded = []
     store = SimpleNamespace(
-        export_journal=lambda _batch_id: (None, None),
-        discard_prepared=lambda batch_id: discarded.append(batch_id),
+        discard_stale_unpublished=lambda batch_id: discarded.append(batch_id),
     )
     stale = SimpleNamespace(
         batch_id="stale-after-crash",
