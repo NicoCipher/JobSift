@@ -336,6 +336,21 @@ class SQLiteRepository:
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.executemany(
+                "UPDATE jobs SET canonical_url=?,last_seen_at=?,last_verified_at=? "
+                "WHERE source=? AND source_board_id=? AND source_job_id=?",
+                [
+                    (
+                        str(job.canonical_url),
+                        job.last_seen_at.isoformat(),
+                        current,
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                    )
+                    for job in values
+                ],
+            )
+            connection.executemany(
                 "INSERT INTO job_identity_ledger "
                 "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
                 "first_seen_at,last_seen_at,pruned_at,was_delivered) "
