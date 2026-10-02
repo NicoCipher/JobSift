@@ -115,20 +115,26 @@ jobs:
             SMARTRECRUITERS_SHARDS=1
             WORKDAY_DETAIL_CONCURRENCY=4
           fi
-          python -m job_scout.shard_benchmark plan \
-            --registry config/source_registries/production_active_v1.json \
-            --output-dir benchmark-plan \
-            --limit "greenhouse=$GREENHOUSE_TARGETS" \
-            --limit "ashby=$ASHBY_TARGETS" \
-            --limit "workday=$WORKDAY_TARGETS" \
-            --limit "lever=$LEVER_TARGETS" \
-            --limit "smartrecruiters=$SMARTRECRUITERS_TARGETS" \
-            --shards "greenhouse=$GREENHOUSE_SHARDS" \
-            --shards "ashby=$ASHBY_SHARDS" \
-            --shards "workday=$WORKDAY_SHARDS" \
-            --shards "lever=$LEVER_SHARDS" \
-            --shards "smartrecruiters=$SMARTRECRUITERS_SHARDS" \
+          PLAN_ARGS=(
+            --registry config/source_registries/production_active_v1.json
+            --output-dir benchmark-plan
+            --limit "greenhouse=$GREENHOUSE_TARGETS"
+            --limit "ashby=$ASHBY_TARGETS"
+            --limit "workday=$WORKDAY_TARGETS"
+            --limit "lever=$LEVER_TARGETS"
+            --shards "greenhouse=$GREENHOUSE_SHARDS"
+            --shards "ashby=$ASHBY_SHARDS"
+            --shards "workday=$WORKDAY_SHARDS"
+            --shards "lever=$LEVER_SHARDS"
             --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY"
+          )
+          if python -c 'import json,sys; d=json.load(open(sys.argv[1])); raise SystemExit(0 if d.get("target_counts_by_source", {}).get("smartrecruiters", 0) else 1)' config/source_registries/production_active_v1.json; then
+            PLAN_ARGS+=(
+              --limit "smartrecruiters=$SMARTRECRUITERS_TARGETS"
+              --shards "smartrecruiters=$SMARTRECRUITERS_SHARDS"
+            )
+          fi
+          python -m job_scout.shard_benchmark plan "${PLAN_ARGS[@]}"
 
       - name: Export worker matrix
         id: matrix
