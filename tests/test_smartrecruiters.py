@@ -161,6 +161,45 @@ def test_smartrecruiters_bad_detail_is_quarantined_without_losing_valid_jobs() -
     assert result.errors
 
 
+@pytest.mark.parametrize(
+    "apply_url",
+    [
+        "https://example.com/unrelated",
+        "https://jobs.smartrecruiters.com/Other/1-software-engineer",
+        "https://jobs.smartrecruiters.com/acme/2-software-engineer",
+        "https://jobs.smartrecruiters.com.evil/acme/1-software-engineer",
+        "http://jobs.smartrecruiters.com/acme/1-software-engineer",
+        "https://jobs.smartrecruiters.com/acme/1-software-engineer/not-apply",
+    ],
+)
+def test_smartrecruiters_rejects_unbound_apply_url_before_normalizing(apply_url: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/companies/acme/postings":
+            return httpx.Response(
+                200,
+                json={
+                    "limit": 100,
+                    "offset": 0,
+                    "totalFound": 1,
+                    "content": [posting("1")],
+                },
+                request=request,
+            )
+        body = detail("1")
+        body["applyUrl"] = apply_url
+        return httpx.Response(200, json=body, request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = SmartRecruitersCollector(client)
+        result = collector.collect(target())
+
+    assert result.status is CollectionStatus.PARTIAL
+    assert result.jobs == []
+    assert collector.last_counts["hydrated"] == 0
+    assert collector.last_counts["quarantined"] == 1
+    assert "apply URL does not match requested posting" in result.errors[0]
+
+
 def test_smartrecruiters_false_remote_flag_does_not_invent_onsite() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/companies/acme/postings":
