@@ -7,7 +7,7 @@ import hashlib
 import json
 import math
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import UTC, datetime
 from functools import partial
 from itertools import pairwise
@@ -72,6 +72,9 @@ class CoverageProof(BaseModel):
 
     registry_id: str
     registry_sha256: str
+    cohort_sequence_assumption: str = (
+        "consecutive cohort indices with unchanged provider limits"
+    )
     providers: list[ProviderCoverageProof]
     all_targets_reached: bool
 
@@ -128,6 +131,7 @@ class ObservedCoverageReport(BaseModel):
     selected_registry_id: str
     generated_at: datetime
     observation_history_started_at: datetime | None
+    revisit_sample_scope: str = "current run compared with each target's prior observation"
     providers: list[ProviderObservedCoverage]
     targets: list[TargetObservationTelemetry]
 
@@ -310,7 +314,9 @@ def build_observed_coverage_report(
     selected_registry: ProductionSourceRegistry,
     generated_at: datetime,
 ) -> ObservedCoverageReport:
-    # Ensure the lightweight observation schema exists before querying history.
+    # Query only the current run plus one compact row per known target. The full
+    # observation ledger remains available for audit, but reporting stays bounded
+    # as history grows.
     InventoryRunStore(repository)
     approved_by_source = {
         source: {
@@ -323,46 +329,51 @@ def build_observed_coverage_report(
     selected_limits = selected_registry.target_counts_by_source
     if not set(selected_limits) <= set(approved_by_source):
         raise ValueError("selected refresh registry contains an unapproved provider")
-    parent_targets = {
-        target.target_identity for target in parent_registry.targets
-    }
-    if any(target.target_identity not in parent_targets for target in selected_registry.targets):
+    parent_targets = {target.target_identity for target in parent_registry.targets}
+    if any(
+        target.target_identity not in parent_targets
+        for target in selected_registry.targets
+    ):
         raise ValueError("selected refresh registry contains a target outside parent registry")
 
     with repository.connect() as connection:
         current_rows = connection.execute(
-            "SELECT run_id,target_identity,source,started_at,completed_at,status,"
-            "runtime_ms,raw_postings_received,normalized_jobs,"
-            "postings_with_trustworthy_timestamps,postings_at_most_24h_old "
-            "FROM inventory_target_observations WHERE run_id=? "
-            "ORDER BY source,target_identity",
+            "SELECT o.run_id,o.target_identity,o.source,o.started_at,o.completed_at,"
+            "o.status,o.runtime_ms,o.raw_postings_received,o.normalized_jobs,"
+            "o.postings_with_trustworthy_timestamps,o.postings_at_most_24h_old,"
+            "(SELECT MAX(p.completed_at) FROM inventory_target_observations p "
+            "WHERE p.target_identity=o.target_identity "
+            "AND p.completed_at<o.completed_at) AS previous_completed_at "
+            "FROM inventory_target_observations o WHERE o.run_id=? "
+            "ORDER BY o.source,o.target_identity",
             (run_id,),
         ).fetchall()
-        history_rows = connection.execute(
-            "SELECT run_id,target_identity,source,completed_at "
-            "FROM inventory_target_observations "
-            "ORDER BY source,target_identity,completed_at,run_id"
+        state_rows = connection.execute(
+            "SELECT target_identity,source,first_observed_at,previous_observed_at,"
+            "last_observed_at,observation_count,last_run_id "
+            "FROM inventory_target_coverage_state "
+            "ORDER BY source,target_identity"
         ).fetchall()
 
-    history_by_target: dict[str, list[tuple[str, datetime]]] = defaultdict(list)
-    history_started_at: datetime | None = None
-    for row in history_rows:
-        if row["target_identity"] not in parent_targets:
-            continue
-        completed_at = datetime.fromisoformat(row["completed_at"])
-        history_by_target[row["target_identity"]].append((row["run_id"], completed_at))
-        if history_started_at is None or completed_at < history_started_at:
-            history_started_at = completed_at
+    state_by_target = {
+        row["target_identity"]: row
+        for row in state_rows
+        if row["target_identity"] in parent_targets
+    }
+    first_observed = [
+        datetime.fromisoformat(row["first_observed_at"])
+        for row in state_by_target.values()
+    ]
+    history_started_at = min(first_observed) if first_observed else None
 
     target_reports: list[TargetObservationTelemetry] = []
     for row in current_rows:
         completed_at = datetime.fromisoformat(row["completed_at"])
-        previous = [
-            observed_at
-            for observed_run, observed_at in history_by_target[row["target_identity"]]
-            if observed_run != run_id and observed_at < completed_at
-        ]
-        previous_completed_at = max(previous) if previous else None
+        previous_completed_at = (
+            datetime.fromisoformat(row["previous_completed_at"])
+            if row["previous_completed_at"]
+            else None
+        )
         revisit_hours = (
             round((completed_at - previous_completed_at).total_seconds() / 3600, 3)
             if previous_completed_at is not None
@@ -394,20 +405,16 @@ def build_observed_coverage_report(
     for source in sorted(selected_limits):
         approved = approved_by_source[source]
         current = [row for row in target_reports if row.source == source]
-        observed = approved.intersection(history_by_target)
-        all_revisit_gaps: list[float] = []
-        last_observed: list[datetime] = []
-        for target_identity in approved:
-            times = sorted(
-                observed_at
-                for _run, observed_at in history_by_target.get(target_identity, [])
-            )
-            if times:
-                last_observed.append(times[-1])
-            all_revisit_gaps.extend(
-                (nxt - prior).total_seconds() / 3600
-                for prior, nxt in pairwise(times)
-            )
+        observed = approved.intersection(state_by_target)
+        current_revisit_gaps = [
+            row.revisit_hours
+            for row in current
+            if row.revisit_hours is not None
+        ]
+        last_observed = [
+            datetime.fromisoformat(state_by_target[target_identity]["last_observed_at"])
+            for target_identity in observed
+        ]
         normalized_jobs = sum(row.normalized_jobs for row in current)
         timestamped = sum(
             row.postings_with_trustworthy_timestamps for row in current
@@ -440,13 +447,13 @@ def build_observed_coverage_report(
                 approved_targets_observed_ever=len(observed),
                 approved_targets_never_observed=len(approved) - len(observed),
                 observed_coverage_rate=round(len(observed) / len(approved), 6),
-                revisit_samples=len(all_revisit_gaps),
+                revisit_samples=len(current_revisit_gaps),
                 p95_observed_revisit_hours=_percentile_float(
-                    all_revisit_gaps, 0.95
+                    current_revisit_gaps, 0.95
                 ),
                 max_observed_revisit_hours=(
-                    round(max(all_revisit_gaps), 3)
-                    if all_revisit_gaps
+                    round(max(current_revisit_gaps), 3)
+                    if current_revisit_gaps
                     else None
                 ),
                 max_hours_since_last_observation=(
@@ -479,7 +486,6 @@ def build_observed_coverage_report(
         providers=providers,
         targets=target_reports,
     )
-
 
 def _stable(values):
     return sorted(
