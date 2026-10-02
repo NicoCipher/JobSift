@@ -362,9 +362,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
-    if unresolved is not None:
-        # Recover a crash after final freshness was persisted but before the
-        # safe discard. The helper rechecks the strict no-journal boundary.
+    if unresolved is not None and getattr(unresolved, "status", None) == "failed":
+        # Only failed rows can be restart-recovery candidates. Prepared and
+        # journaled unresolved batches must continue through their normal
+        # release/reconciliation paths.
         if _discard_stale_unpublished_release(store, unresolved):
             unresolved = None
 
