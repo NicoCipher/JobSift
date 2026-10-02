@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 
 from job_scout.collectors.smartrecruiters import SmartRecruitersCollector
 from job_scout.domain.models import CollectionStatus, EmploymentType, RemoteStatus, SourceTarget
