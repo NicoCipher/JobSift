@@ -159,6 +159,10 @@ def _batch_by_idempotency(
     return DailyBatchStore(repository).get(row[0]) if row else None
 
 
+def _is_concurrent_batch_recovery(error: BatchConflict) -> bool:
+    return str(error) in {"batch not found", "batch revision changed"}
+
+
 def _unresolved_batch(
     repository: SQLiteRepository, *, client_id: str, destination: str
 ) -> DailyBatchResult | None:
@@ -390,7 +394,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                     )
                 )
             except BatchConflict as error:
-                if str(error) == "batch not found":
+                if _is_concurrent_batch_recovery(error):
                     unresolved = store.recover_unresolved(
                         brief.client_id, destination
                     )
@@ -416,10 +420,12 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 }
             try:
                 unresolved = finalize_daily_batch(
-                    repository=repository, batch_id=unresolved.batch_id
+                    repository=repository,
+                    batch_id=unresolved.batch_id,
+                    expected_generation_id=unresolved.generation_id,
                 )
             except BatchConflict as error:
-                if str(error) != "batch not found":
+                if not _is_concurrent_batch_recovery(error):
                     raise
                 unresolved = store.recover_unresolved(
                     brief.client_id, destination
@@ -440,7 +446,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         )
                     )
                 except BatchConflict as error:
-                    if str(error) == "batch not found":
+                    if _is_concurrent_batch_recovery(error):
                         unresolved = store.recover_unresolved(
                             brief.client_id, destination
                         )
@@ -455,10 +461,12 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                     return _batch_payload(store, unresolved, action=action)
             try:
                 unresolved = finalize_daily_batch(
-                    repository=repository, batch_id=unresolved.batch_id
+                    repository=repository,
+                    batch_id=unresolved.batch_id,
+                    expected_generation_id=unresolved.generation_id,
                 )
             except BatchConflict as error:
-                if str(error) != "batch not found":
+                if not _is_concurrent_batch_recovery(error):
                     raise
                 unresolved = store.recover_unresolved(
                     brief.client_id, destination
@@ -493,9 +501,20 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         "prepared posting is no longer fresh at delivery:"
                     )
                 ):
-                    before_sha, after_sha = store.export_journal(
-                        unresolved.batch_id
-                    )
+                    try:
+                        before_sha, after_sha = store.export_journal(
+                            unresolved.batch_id,
+                            expected_generation_id=unresolved.generation_id,
+                        )
+                    except BatchConflict as error:
+                        if not _is_concurrent_batch_recovery(error):
+                            raise
+                        unresolved = store.recover_unresolved(
+                            brief.client_id, destination
+                        )
+                        if unresolved is None:
+                            return {"action": "concurrent_recovery_complete"}
+                        continue
                     if before_sha is not None or after_sha is not None:
                         # This is the retained journaled failure itself.
                         # External Sheet state may be uncertain, so never spin
@@ -723,7 +742,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         gateway=GoogleSheetsGateway(),
                     )
                 except BatchConflict as error:
-                    if str(error) == "batch not found":
+                    if _is_concurrent_batch_recovery(error):
                         recovered = store.recover_unresolved(
                             brief.client_id, destination
                         )
@@ -747,7 +766,9 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                     break
                 try:
                     batch = finalize_daily_batch(
-                        repository=repository, batch_id=batch.batch_id
+                        repository=repository,
+                        batch_id=batch.batch_id,
+                        expected_generation_id=batch.generation_id,
                     )
                 except BatchConflict as error:
                     if str(error) != "batch not found":
@@ -764,6 +785,29 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                                 batch.request, "destination_id", None
                             ),
                             "selected_count": batch.selected_count,
+                        }
+                    batch = recovered
+                    continue
+                if (
+                    batch.status == "failed"
+                    and (batch.error or "").startswith(
+                        "prepared posting is no longer fresh at delivery:"
+                    )
+                ):
+                    stale_batch = batch
+                    recovered = store.recover_unresolved(
+                        brief.client_id, destination
+                    )
+                    if recovered is None:
+                        return {
+                            "action": "stale_unpublished_discarded",
+                            "batch_id": stale_batch.batch_id,
+                            "batch_status": stale_batch.status,
+                            "destination_id": getattr(
+                                stale_batch.request, "destination_id", None
+                            ),
+                            "selected_count": stale_batch.selected_count,
+                            "error": stale_batch.error,
                         }
                     batch = recovered
                     continue
