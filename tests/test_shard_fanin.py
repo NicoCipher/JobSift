@@ -374,7 +374,9 @@ def test_incoming_stale_posted_at_prunes_existing_recent_payload(
 ) -> None:
     registry = _registry()
     manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
-    target = next(target for target in registry.targets if target.board_id == "a")
+    target = next(
+        target for target in registry.targets if target.target_identity == "greenhouse:a"
+    )
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
 
     stored_recent = _job(target.source_target())
