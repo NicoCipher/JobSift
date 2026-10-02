@@ -211,7 +211,7 @@ class InventoryRunStore:
         self,
         run_id: str,
         *,
-        retention_hours: int = 72,
+        retention_hours: int,
         evaluated_at: datetime | None = None,
     ) -> tuple[str, ...]:
         """Return full active payloads inside the shared retention window."""
