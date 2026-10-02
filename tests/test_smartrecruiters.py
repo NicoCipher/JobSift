@@ -210,6 +210,65 @@ def test_smartrecruiters_detail_404_is_counted_as_vanished_not_target_failure() 
     assert collector.last_counts["quarantined"] == 0
 
 
+def test_smartrecruiters_later_page_rate_limit_status_survives_empty_hydration() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/companies/acme/postings":
+            offset = int(request.url.params["offset"])
+            if offset == 0:
+                return httpx.Response(
+                    200,
+                    json={
+                        "limit": 1,
+                        "offset": 0,
+                        "totalFound": 2,
+                        "content": [posting("1")],
+                    },
+                    request=request,
+                )
+            return httpx.Response(429, text="Too many requests", request=request)
+        pytest.fail("title filter should suppress hydration")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = SmartRecruitersCollector(client, title_filter=lambda _title: False)
+        collector.page_size = 1
+        result = collector.collect(target())
+
+    assert result.status is CollectionStatus.RATE_LIMITED
+    assert result.jobs == []
+    assert collector.last_counts["list_requests"] == 2
+    assert collector.last_counts["detail_requests"] == 0
+    assert result.errors == ["HTTP 429"]
+
+
+@pytest.mark.parametrize("status_code", [405, 407, 408])
+def test_smartrecruiters_unclassified_detail_4xx_is_target_wide(
+    status_code: int,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/companies/acme/postings":
+            return httpx.Response(
+                200,
+                json={
+                    "limit": 100,
+                    "offset": 0,
+                    "totalFound": 2,
+                    "content": [posting("1"), posting("2")],
+                },
+                request=request,
+            )
+        return httpx.Response(status_code, text="request-wide failure", request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = SmartRecruitersCollector(client)
+        result = collector.collect(target())
+
+    assert result.status is CollectionStatus.PROVIDER_ERROR
+    assert result.jobs == []
+    assert collector.last_counts["detail_requests"] == 1
+    assert collector.last_counts["quarantined"] == 1
+    assert result.errors == [f"detail[1] HTTP {status_code}"]
+
+
 @pytest.mark.parametrize("status_code", [400, 422])
 def test_smartrecruiters_posting_specific_4xx_is_quarantined_and_collection_continues(
     status_code: int,
