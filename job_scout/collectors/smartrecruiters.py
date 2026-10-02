@@ -357,6 +357,29 @@ class SmartRecruitersCollector:
             or not (parts[1] == index.id or parts[1].startswith(index.id + "-"))
         ):
             raise ValueError("hydrated canonical URL does not match requested posting")
+        if detail.applyUrl is not None:
+            apply_url = urlsplit(str(detail.applyUrl))
+            apply_parts = apply_url.path.strip("/").split("/")
+            if (
+                apply_url.scheme != "https"
+                or apply_url.hostname != "jobs.smartrecruiters.com"
+                or apply_url.port not in {None, 443}
+                or apply_url.username is not None
+                or apply_url.password is not None
+                or len(apply_parts) not in {2, 3}
+                or apply_parts[0].casefold() != target.board_id.casefold()
+                or not (
+                    apply_parts[1] == index.id
+                    or apply_parts[1].startswith(index.id + "-")
+                )
+                or (
+                    len(apply_parts) == 3
+                    and apply_parts[2].casefold() != "apply"
+                )
+            ):
+                raise ValueError(
+                    "hydrated apply URL does not match requested posting"
+                )
         identifier = detail.company.identifier if detail.company else None
         if identifier and identifier.casefold() != target.board_id.casefold():
             raise ValueError("hydrated posting company does not match requested target")
