@@ -1,6 +1,9 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from job_scout import inventory_refresh
+from job_scout.storage.inventory_runs import InventoryRunStore
+from job_scout.storage.sqlite import SQLiteRepository
 
 REGISTRY = Path("config/source_registries/production_active_v1.json")
 
@@ -28,6 +31,118 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
     assert first != second
     assert subset1.target_counts_by_source == {k: v for k, v in inventory_refresh.DEFAULT_LIMITS.items() if k in registry.target_counts_by_source}
     assert manifest1.registry_id == subset1.registry_id
+
+
+def test_default_rotation_proves_full_registry_coverage():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry)
+
+    proof = inventory_refresh.build_coverage_proof(registry, limits=limits)
+
+    assert proof.all_targets_reached is True
+    assert {item.source for item in proof.providers} == set(limits)
+    for item in proof.providers:
+        assert item.all_targets_reached is True
+        assert item.deterministic_wraparound is True
+        assert item.worst_case_full_coverage_cohorts <= item.max_revisit_gap_cohorts
+        assert item.visits_per_target_min >= 1
+        assert item.visits_per_target_max >= item.visits_per_target_min
+
+    workday = next(item for item in proof.providers if item.source == "workday")
+    assert workday.targets_per_cohort == 1
+    assert workday.selection_period_cohorts == registry.target_counts_by_source["workday"]
+    assert workday.max_revisit_gap_cohorts == registry.target_counts_by_source["workday"]
+    assert workday.worst_case_full_coverage_cohorts == registry.target_counts_by_source["workday"]
+
+
+def test_coverage_math_handles_non_coprime_rotation():
+    proof = inventory_refresh._provider_coverage_proof(
+        source="example",
+        registry_targets=12,
+        targets_per_cohort=4,
+    )
+
+    assert proof.selection_period_cohorts == 3
+    assert proof.visits_per_target_min == 1
+    assert proof.visits_per_target_max == 1
+    assert proof.max_revisit_gap_cohorts == 3
+    assert proof.worst_case_full_coverage_cohorts == 3
+    assert proof.all_targets_reached is True
+    assert proof.deterministic_wraparound is True
+
+
+def test_observed_coverage_report_tracks_revisits_and_registry_scope(tmp_path):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry)
+    _plan, subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=0,
+        limits=limits,
+    )
+    repo = SQLiteRepository(tmp_path / "coverage.sqlite3")
+    store = InventoryRunStore(repo)
+    first_at = datetime(2026, 10, 3, 0, 0, tzinfo=UTC)
+
+    def persist(run_id: str, observed_at: datetime) -> None:
+        store.create(run_id=run_id, plan_id=subset.registry_id, started_at=observed_at)
+        store.persist_jobs_and_finish(
+            run_id=run_id,
+            jobs=[],
+            memberships=[],
+            target_observations=[
+                (
+                    target.target_identity,
+                    target.source,
+                    "success",
+                    observed_at,
+                    observed_at,
+                    100,
+                    3,
+                    2,
+                    1,
+                    1,
+                )
+                for target in subset.targets
+            ],
+            status="success",
+            completed_at=observed_at,
+        )
+
+    persist("run-1", first_at)
+    first = inventory_refresh.build_observed_coverage_report(
+        repository=repo,
+        run_id="run-1",
+        parent_registry=registry,
+        selected_registry=subset,
+        generated_at=first_at,
+    )
+
+    assert len(first.targets) == len(subset.targets)
+    assert all(target.revisit_hours is None for target in first.targets)
+    for provider in first.providers:
+        assert provider.current_targets_attempted == limits[provider.source]
+        assert provider.approved_targets_observed_ever == limits[provider.source]
+        assert provider.approved_targets_never_observed == (
+            registry.target_counts_by_source[provider.source] - limits[provider.source]
+        )
+        assert provider.revisit_samples == 0
+
+    second_at = first_at + timedelta(hours=2)
+    persist("run-2", second_at)
+    second = inventory_refresh.build_observed_coverage_report(
+        repository=repo,
+        run_id="run-2",
+        parent_registry=registry,
+        selected_registry=subset,
+        generated_at=second_at,
+    )
+
+    assert all(target.revisit_hours == 2.0 for target in second.targets)
+    for provider in second.providers:
+        assert provider.revisit_samples == limits[provider.source]
+        assert provider.max_observed_revisit_hours == 2.0
+        assert provider.p95_observed_revisit_hours == 2.0
+        assert provider.timestamp_known_rate == 0.5
 
 
 def test_refresh_includes_approved_smartrecruiters_targets():
@@ -186,6 +301,7 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
 
     assert "python -m job_scout.inventory_refresh collect" in workflow
     assert "--refresh-plan refresh-plan/plan.json" in workflow
+    assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
 
