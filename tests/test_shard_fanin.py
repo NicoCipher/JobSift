@@ -294,6 +294,47 @@ def test_fan_in_retention_routes_expired_payloads_directly_to_identity_ledger(
     assert len(memberships) == 1
 
 
+def test_stale_identity_path_never_downgrades_delivered_history(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    target = registry.targets[0].source_target()
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    stale = _job(target).model_copy(update={"posted_at": NOW - timedelta(hours=96)})
+
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO job_identity_ledger "
+            "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+            "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                stale.source,
+                stale.source_board_id,
+                stale.source_job_id,
+                str(stale.canonical_url),
+                stale.employer_id,
+                stale.company,
+                (NOW - timedelta(days=10)).isoformat(),
+                (NOW - timedelta(days=1)).isoformat(),
+                (NOW - timedelta(days=1)).isoformat(),
+                1,
+            ),
+        )
+
+    repository.record_pruned_identities([stale], pruned_at=PERSISTED)
+
+    with repository.connect() as connection:
+        row = connection.execute(
+            "SELECT was_delivered FROM job_identity_ledger "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (stale.source, stale.source_board_id, stale.source_job_id),
+        ).fetchone()
+
+    assert row is not None
+    assert row["was_delivered"] == 1
+
+
 def test_stale_identity_path_preserves_latest_reobservation_through_prune(
     tmp_path: Path,
 ) -> None:
