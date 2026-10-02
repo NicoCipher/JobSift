@@ -252,6 +252,33 @@ class DailyBatchStore:
             c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
             return result
 
+    def discard_stale_unpublished(self, batch_id: str) -> DailyBatchResult:
+        """Atomically delete only a final-freshness failure with no export state."""
+        with self.repository.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute(
+                "SELECT status,error,delivered_at,export_before_sha256,export_after_sha256 "
+                "FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+            if row is None:
+                raise BatchConflict("batch not found")
+            if (
+                row["status"] != "failed"
+                or not (row["error"] or "").startswith(
+                    "prepared posting is no longer fresh at delivery:"
+                )
+                or row["delivered_at"] is not None
+                or row["export_before_sha256"] is not None
+                or row["export_after_sha256"] is not None
+            ):
+                raise BatchConflict("batch is not a discardable stale unpublished failure")
+            result = self._load(c, batch_id)
+            c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
+            c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
+            c.execute("DELETE FROM daily_batches WHERE batch_id=?", (batch_id,))
+            return result
+
     def export_rows(self, batch_id: str) -> list[dict[str, str]]:
         """Return the frozen rows for operator review, never mutable current postings."""
         with self.repository.connect() as c:
