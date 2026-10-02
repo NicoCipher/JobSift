@@ -510,7 +510,7 @@ def evaluate_inventory_run(
     repository: SQLiteRepository,
     run_id: str,
     brief: SearchBrief,
-    retention_hours: int = 72,
+    retention_hours: int,
     evaluated_at: datetime | None = None,
     match_scope_id: str | None = None,
 ) -> InventoryEvaluationReport:
