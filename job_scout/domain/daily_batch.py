@@ -143,6 +143,7 @@ class DailyBatchItem(BatchModel):
 
 class DailyBatchResult(BatchModel):
     batch_id: str
+    generation_id: str | None = None
     request: DailyBatchRequest
     status: Literal["prepared", "failed", "delivered"]
     assembled_at: datetime
