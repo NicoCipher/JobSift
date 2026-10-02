@@ -447,7 +447,10 @@ def main() -> None:
                             "batch does not belong to the selected delivery profile"
                         )
                     reconciliation = None
-                    result = batch_store.discard_prepared(result.batch_id)
+                    result = batch_store.discard_prepared(
+                        result.batch_id,
+                        expected_generation_id=result.generation_id,
+                    )
                 payload = {
                     "profile_id": delivery_profile_control_id(
                         profile.client_id, profile.destination_id
