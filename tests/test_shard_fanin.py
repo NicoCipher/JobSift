@@ -294,6 +294,40 @@ def test_fan_in_retention_routes_expired_payloads_directly_to_identity_ledger(
     assert len(memberships) == 1
 
 
+def test_stale_identity_path_preserves_latest_reobservation_through_prune(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    target = registry.targets[0].source_target()
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    stale = _job(target).model_copy(
+        update={
+            "posted_at": NOW - timedelta(hours=96),
+            "last_seen_at": NOW,
+        }
+    )
+    repository.upsert_job(stale)
+
+    reobserved = stale.model_copy(update={"last_seen_at": PERSISTED})
+    repository.record_pruned_identities([reobserved], pruned_at=PERSISTED)
+    repository.prune_stale_inventory(retention_hours=72, now=PERSISTED)
+
+    with repository.connect() as connection:
+        row = connection.execute(
+            "SELECT first_seen_at,last_seen_at FROM job_identity_ledger "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (stale.source, stale.source_board_id, stale.source_job_id),
+        ).fetchone()
+        live = connection.execute(
+            "SELECT 1 FROM jobs WHERE source=? AND source_board_id=? AND source_job_id=?",
+            (stale.source, stale.source_board_id, stale.source_job_id),
+        ).fetchone()
+
+    assert row is not None
+    assert row["last_seen_at"] == PERSISTED.isoformat()
+    assert live is None
+
+
 def test_fan_in_rejects_invalid_payload_retention_before_mutating_inventory(
     tmp_path: Path,
 ) -> None:
