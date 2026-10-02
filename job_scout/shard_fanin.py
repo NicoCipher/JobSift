@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -197,6 +197,7 @@ def persist_shard_artifacts(
     registry: ProductionSourceRegistry,
     manifest: CollectionShardManifest,
     artifacts: list[ShardCollectionArtifact],
+    payload_retention_hours: int | None = None,
     now: Callable[[], datetime] = utc_now,
 ) -> FanInReport:
     """Validate the complete artifact set before making any inventory-run mutation."""
@@ -221,19 +222,49 @@ def persist_shard_artifacts(
         artifacts=ordered,
     )
     distinct_memberships = list(dict.fromkeys(membership_keys))
+    retained_identities = set(jobs_by_identity)
+    stale_jobs: list[Job] = []
+    retention_evaluated_at: datetime | None = None
+    if payload_retention_hours is not None:
+        if payload_retention_hours < 1:
+            raise ValueError("payload_retention_hours must be at least 1")
+        retention_evaluated_at = now()
+        retention_evaluated_at = retention_evaluated_at.replace(
+            tzinfo=retention_evaluated_at.tzinfo or UTC
+        ).astimezone(UTC)
+        cutoff = retention_evaluated_at - timedelta(hours=payload_retention_hours)
+        stale_identities = {
+            identity
+            for identity, job in jobs_by_identity.items()
+            if job.posted_at is not None
+            and job.posted_at.replace(tzinfo=job.posted_at.tzinfo or UTC).astimezone(UTC)
+            < cutoff
+        }
+        stale_jobs = [jobs_by_identity[identity] for identity in stale_identities]
+        retained_identities -= stale_identities
+
+    retained_memberships = [
+        membership
+        for membership in distinct_memberships
+        if membership[1] in retained_identities
+    ]
     metrics = _metrics(
         artifacts=ordered,
         normalized_job_records=normalized_records,
         unique_normalized_jobs=len(jobs_by_identity),
-        inventory_memberships=len(distinct_memberships),
+        inventory_memberships=len(retained_memberships),
     )
     status = _status(metrics)
     artifact_set_sha = _artifact_set_sha(ordered)
+    retention_identity = (
+        "none" if payload_retention_hours is None else str(payload_retention_hours)
+    )
     run_id = str(
         uuid5(
             NAMESPACE_URL,
             "inventory-fanin:"
-            f"{registry.registry_id}:{manifest.manifest_sha256}:{artifact_set_sha}",
+            f"{registry.registry_id}:{manifest.manifest_sha256}:{artifact_set_sha}:"
+            f"retention-hours={retention_identity}",
         )
     )
     registry_sha = sha256_json(registry.model_dump(mode="json"))
@@ -253,6 +284,9 @@ def persist_shard_artifacts(
     if not created and existing.status != "running":
         if existing.completed_at is None:
             raise ValueError("completed inventory run is missing completion time")
+        replay_metrics = metrics.model_copy(
+            update={"inventory_memberships": inventory.membership_count(run_id)}
+        )
         return FanInReport(
             run_id=run_id,
             inventory_plan_id=registry.registry_id,
@@ -265,14 +299,22 @@ def persist_shard_artifacts(
             persisted_at=existing.completed_at,
             status=existing.status,
             replayed=True,
-            metrics=metrics,
+            metrics=replay_metrics,
         )
 
-    jobs = list(jobs_by_identity.values())
+    if stale_jobs:
+        repository.record_pruned_identities(
+            stale_jobs,
+            pruned_at=retention_evaluated_at,
+        )
+    jobs = [
+        jobs_by_identity[identity]
+        for identity in sorted(retained_identities)
+    ]
     repository.upsert_jobs(jobs)
     memberships = [
         (target_identity, jobs_by_identity[identity].id)
-        for target_identity, identity in distinct_memberships
+        for target_identity, identity in retained_memberships
     ]
     inventory.add_memberships(run_id=run_id, memberships=memberships)
     persisted_at = now()

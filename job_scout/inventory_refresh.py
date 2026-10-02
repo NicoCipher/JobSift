@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -170,20 +171,72 @@ def main() -> None:
         artifact_paths = sorted(args.artifacts_dir.glob("*.json"))
         if not artifact_paths:
             raise ValueError("no shard artifact files found")
+        artifact_load_started = time.perf_counter()
         artifacts = [
             ShardCollectionArtifact.model_validate_json(path.read_text(encoding="utf-8"))
             for path in artifact_paths
         ]
+        print(
+            json.dumps(
+                {
+                    "event": "inventory_refresh_artifacts_loaded",
+                    "shards": len(artifacts),
+                    "elapsed_ms": round(
+                        (time.perf_counter() - artifact_load_started) * 1000
+                    ),
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
         args.database.parent.mkdir(parents=True, exist_ok=True)
+        repository_started = time.perf_counter()
         repository = SQLiteRepository(args.database)
+        print(
+            json.dumps(
+                {
+                    "event": "inventory_refresh_repository_ready",
+                    "elapsed_ms": round((time.perf_counter() - repository_started) * 1000),
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        fan_in_started = time.perf_counter()
         report = persist_shard_artifacts(
             repository=repository,
             registry=registry,
             manifest=manifest,
             artifacts=artifacts,
+            payload_retention_hours=args.retention_hours,
         )
+        print(
+            json.dumps(
+                {
+                    "event": "inventory_refresh_fan_in_complete",
+                    "elapsed_ms": round((time.perf_counter() - fan_in_started) * 1000),
+                    "normalized_jobs": report.metrics.unique_normalized_jobs,
+                    "inventory_memberships": report.metrics.inventory_memberships,
+                    "replayed": report.replayed,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        retention_started = time.perf_counter()
         retention = repository.prune_stale_inventory(
             retention_hours=args.retention_hours
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "inventory_refresh_prune_complete",
+                    "elapsed_ms": round((time.perf_counter() - retention_started) * 1000),
+                    **retention,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
         )
         payload = {
             "fan_in": report.model_dump(mode="json"),
