@@ -144,6 +144,15 @@ class InventoryRunStore:
             if updated != 1:
                 raise ValueError("inventory run not found")
 
+    def membership_count(self, run_id: str) -> int:
+        """Return the persisted target/job membership count for one run."""
+        with self.repository.connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM inventory_run_jobs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+        return int(row[0])
+
     def job_ids(self, run_id: str) -> tuple[str, ...]:
         with self.repository.connect() as connection:
             rows = connection.execute(
