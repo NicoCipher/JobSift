@@ -453,8 +453,17 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         "selected_count": stale_batch.selected_count,
                         "error": stale_batch.error,
                     }
-                # Continue this same release loop with the next actionable
-                # batch returned by the transactional recovery state machine.
+                if unresolved.batch_id == stale_batch.batch_id:
+                    # A journaled stale failure is intentionally retained:
+                    # external Sheet state may be uncertain, so never spin or
+                    # discard it. Surface it for reconciliation instead.
+                    return _batch_payload(
+                        store,
+                        unresolved,
+                        action="stale_release_requires_reconciliation",
+                    )
+                # Safe cleanup removed the stale batch. Continue this same
+                # release loop with the next actionable batch.
                 continue
             action = "resumed_release"
         else:
