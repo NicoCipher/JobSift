@@ -170,7 +170,13 @@ def test_fan_in_persists_once_and_replays_without_mutating_artifacts(tmp_path: P
     assert first.metrics.inventory_memberships == 2
 
     store = InventoryRunStore(repository)
-    assert len(store.active_job_ids(first.run_id)) == 2
+    assert len(
+        store.active_job_ids(
+            first.run_id,
+            retention_hours=72,
+            evaluated_at=first.collection_completed_at,
+        )
+    ) == 2
     assert store.get(first.run_id) is not None
     assert store.get(first.run_id).status == "success"
 
