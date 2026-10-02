@@ -394,7 +394,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 profile_auto_release = profile.delivery_mode == "auto"
 
         if config.discard_prepared:
-            discarded = store.discard_prepared(unresolved.batch_id)
+            discarded = store.discard_prepared(
+                unresolved.batch_id,
+                expected_generation_id=unresolved.generation_id,
+            )
             return {
                 "action": "discarded_prepared",
                 "batch_id": discarded.batch_id,
@@ -708,7 +711,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             evaluation=evaluation,
             retention=retention,
         )
-        store.discard_prepared(batch.batch_id)
+        store.discard_prepared(
+            batch.batch_id,
+            expected_generation_id=batch.generation_id,
+        )
         empty_payload["batch_status"] = "discarded"
         if profile_store is not None:
             delivered_after = profile_store.delivered_today(profile)
