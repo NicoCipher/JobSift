@@ -18,7 +18,7 @@ from job_scout.production_registry import (
     load_production_registry,
     sha256_json,
 )
-from job_scout.shard_benchmark import PROVIDERS, build_benchmark_plan
+from job_scout.shard_benchmark import PROVIDERS, build_shard_plan
 from job_scout.shard_collection import ShardCollectionArtifact
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
@@ -166,11 +166,12 @@ def build_refresh_plan(
     else:
         shards = dict(shards)
     rotating = rotating_registry(registry, cohort=cohort, limits=limits)
-    plan, subset, manifest = build_benchmark_plan(
+    plan, subset, manifest = build_shard_plan(
         rotating,
         target_limits_by_source=limits,
         shard_counts_by_source=shards,
         workday_detail_concurrency=workday_detail_concurrency,
+        max_total_targets=MAX_REFRESH_TARGETS,
     )
     return plan, subset, manifest
 
