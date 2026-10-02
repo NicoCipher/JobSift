@@ -9,6 +9,7 @@ from pathlib import Path
 from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.lever import LeverCollector
+from job_scout.collectors.smartrecruiters import SmartRecruitersCollector
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.delivery_destinations import (
     DELIVERY_FIELDS,
@@ -35,7 +36,7 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     collect = commands.add_parser("collect")
     collect.add_argument(
-        "--source", choices=("greenhouse", "ashby", "workday", "lever"), default="greenhouse"
+        "--source", choices=("greenhouse", "ashby", "workday", "lever", "smartrecruiters"), default="greenhouse"
     )
     collect.add_argument("--client", required=True, help="Path to client JSON config")
     collect.add_argument("--board")
@@ -591,7 +592,7 @@ def main() -> None:
         target = SourceTarget(board_id=lever.board_id, company=args.company, lever=lever)
     else:
         if not args.board:
-            parser.error("--board is required for Greenhouse and Ashby")
+            parser.error("--board is required for Greenhouse, Ashby, and SmartRecruiters")
         target = SourceTarget(board_id=args.board, company=args.company)
     profile = load_search_brief(Path(args.client))
     summary = run_pipeline(
@@ -600,6 +601,7 @@ def main() -> None:
             "ashby": AshbyCollector,
             "workday": WorkdayCollector,
             "lever": LeverCollector,
+            "smartrecruiters": SmartRecruitersCollector,
         }[args.source](),
         target=target,
         profile=profile,

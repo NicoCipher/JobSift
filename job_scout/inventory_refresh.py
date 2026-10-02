@@ -27,12 +27,14 @@ DEFAULT_LIMITS = {
     "ashby": 40,
     "workday": 1,
     "lever": 19,
+    "smartrecruiters": 1,
 }
 DEFAULT_SHARDS = {
     "greenhouse": 6,
     "ashby": 6,
     "workday": 1,
     "lever": 4,
+    "smartrecruiters": 1,
 }
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
 
@@ -47,6 +49,16 @@ def _stable(values):
     )
 
 
+def _refresh_limits(registry: ProductionSourceRegistry, limits: dict[str, int] | None) -> dict[str, int]:
+    if limits is not None:
+        return dict(limits)
+    defaults = {source: DEFAULT_LIMITS[source] for source in PROVIDERS if source in registry.target_counts_by_source}
+    # Keep the existing 100-target ceiling when the new provider is admitted.
+    if "smartrecruiters" in defaults and "greenhouse" in defaults:
+        defaults["greenhouse"] -= defaults["smartrecruiters"]
+    return defaults
+
+
 def rotating_registry(
     registry: ProductionSourceRegistry,
     *,
@@ -56,12 +68,13 @@ def rotating_registry(
     """Return one deterministic rotating cohort without weakening source approval."""
     if cohort < 0:
         raise ValueError("cohort must be non-negative")
-    limits = dict(limits or DEFAULT_LIMITS)
-    if set(limits) != set(PROVIDERS) or any(value < 1 for value in limits.values()):
+    providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
+    limits = _refresh_limits(registry, limits)
+    if set(limits) != set(providers) or any(value < 1 for value in limits.values()):
         raise ValueError("refresh limits must contain positive counts for every provider")
 
     selected = []
-    for source in PROVIDERS:
+    for source in providers:
         candidates = _stable(target for target in registry.targets if target.source == source)
         limit = limits[source]
         if limit > len(candidates):
@@ -107,8 +120,9 @@ def build_refresh_plan(
     shards: dict[str, int] | None = None,
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
 ):
-    limits = dict(limits or DEFAULT_LIMITS)
-    shards = dict(shards or DEFAULT_SHARDS)
+    providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
+    limits = _refresh_limits(registry, limits)
+    shards = dict(shards) if shards is not None else {source: DEFAULT_SHARDS[source] for source in providers}
     rotating = rotating_registry(registry, cohort=cohort, limits=limits)
     plan, subset, manifest = build_benchmark_plan(
         rotating,

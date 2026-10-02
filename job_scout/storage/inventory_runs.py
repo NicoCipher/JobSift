@@ -132,6 +132,8 @@ class InventoryRunStore:
         run_id: str,
         jobs: Iterable[Job],
         memberships: Iterable[tuple[str, Job]],
+        stale_jobs: Iterable[Job] = (),
+        pruned_at: datetime | None = None,
         status: str,
         completed_at: datetime,
     ) -> None:
@@ -140,9 +142,15 @@ class InventoryRunStore:
             raise ValueError("invalid inventory run status")
         job_values = list(jobs)
         membership_values = list(memberships)
+        stale_values = list(stale_jobs)
         now = datetime.now(UTC).isoformat()
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            self.repository._record_pruned_identities_in_connection(
+                connection,
+                stale_values,
+                pruned_at=pruned_at,
+            )
             for job in job_values:
                 self.repository._upsert_job_in_connection(connection, job, now)
             if membership_values:

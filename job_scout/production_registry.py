@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter
 from typing import Any, Literal
 
@@ -11,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from job_scout.domain.models import LeverTargetConfig, SourceTarget, WorkdayTargetConfig
 
-PROVIDERS = ("greenhouse", "ashby", "workday", "lever")
+PROVIDERS = ("greenhouse", "ashby", "workday", "lever", "smartrecruiters")
 
 
 def canonical_json(value: Any) -> str:
@@ -26,7 +27,7 @@ class ProductionTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target_identity: str
-    source: Literal["greenhouse", "ashby", "workday", "lever"]
+    source: Literal["greenhouse", "ashby", "workday", "lever", "smartrecruiters"]
     coordinates: dict[str, str]
     company_hint: str | None = None
     health_classification: Literal["active"] = "active"
@@ -35,10 +36,17 @@ class ProductionTarget(BaseModel):
 
     @model_validator(mode="after")
     def verify_identity(self) -> ProductionTarget:
-        if self.source in {"greenhouse", "ashby"}:
+        if self.source in {"greenhouse", "ashby", "smartrecruiters"}:
             if set(self.coordinates) != {"board"}:
                 raise ValueError(f"{self.source} target requires board coordinates")
-            expected = f"{self.source}:{self.coordinates['board']}"
+            if self.source == "smartrecruiters" and not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]*", self.coordinates["board"]
+            ):
+                raise ValueError("invalid SmartRecruiters company identifier")
+            board = self.coordinates["board"]
+            if self.source == "smartrecruiters":
+                board = board.casefold()
+            expected = f"{self.source}:{board}"
         elif self.source == "lever":
             if set(self.coordinates) != {"instance", "site"}:
                 raise ValueError("lever target requires instance/site coordinates")
@@ -58,8 +66,11 @@ class ProductionTarget(BaseModel):
     def source_target(self) -> SourceTarget:
         company = self.company_hint
         assert company is not None
-        if self.source in {"greenhouse", "ashby"}:
-            return SourceTarget(board_id=self.coordinates["board"], company=company)
+        if self.source in {"greenhouse", "ashby", "smartrecruiters"}:
+            board = self.coordinates["board"]
+            if self.source == "smartrecruiters":
+                board = board.casefold()
+            return SourceTarget(board_id=board, company=company)
         if self.source == "lever":
             config = LeverTargetConfig.model_validate(self.coordinates)
             return SourceTarget(board_id=config.board_id, company=company, lever=config)
@@ -95,7 +106,7 @@ class CollectionShard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     shard_id: str
-    source: Literal["greenhouse", "ashby", "workday", "lever"]
+    source: Literal["greenhouse", "ashby", "workday", "lever", "smartrecruiters"]
     target_identities: list[str]
 
 

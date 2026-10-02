@@ -35,7 +35,7 @@ from job_scout.sourcing_plan import evaluate_inventory_run
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
-PROVIDERS = ("greenhouse", "ashby", "workday", "lever")
+PROVIDERS = ("greenhouse", "ashby", "workday", "lever", "smartrecruiters")
 MAX_BOUNDED_TARGETS = 100
 
 
@@ -83,14 +83,14 @@ class BenchmarkReport(BaseModel):
     distinct_matched_delivery_groups: int = Field(ge=0)
 
 
-def _exact_provider_map(values: dict[str, int], *, label: str) -> dict[str, int]:
-    if set(values) != set(PROVIDERS):
-        missing = sorted(set(PROVIDERS) - set(values))
-        extra = sorted(set(values) - set(PROVIDERS))
+def _exact_provider_map(values: dict[str, int], *, label: str, providers: tuple[str, ...]) -> dict[str, int]:
+    if set(values) != set(providers):
+        missing = sorted(set(providers) - set(values))
+        extra = sorted(set(values) - set(providers))
         raise ValueError(f"{label} must specify every provider; missing={missing}, extra={extra}")
     if any(value < 1 for value in values.values()):
         raise ValueError(f"{label} values must be positive")
-    return {source: values[source] for source in PROVIDERS}
+    return {source: values[source] for source in providers}
 
 
 def _stable_target_order(registry: ProductionSourceRegistry, source: str):
@@ -109,9 +109,10 @@ def select_registry_subset(
     target_limits_by_source: dict[str, int],
 ) -> ProductionSourceRegistry:
     """Select a deterministic, production-approved subset for a bounded benchmark."""
-    limits = _exact_provider_map(target_limits_by_source, label="target limits")
+    providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
+    limits = _exact_provider_map(target_limits_by_source, label="target limits", providers=providers)
     selected = []
-    for source in PROVIDERS:
+    for source in providers:
         candidates = _stable_target_order(registry, source)
         limit = limits[source]
         if limit > len(candidates):
@@ -150,8 +151,9 @@ def build_benchmark_plan(
     shard_counts_by_source: dict[str, int],
     workday_detail_concurrency: int = 1,
 ) -> tuple[BenchmarkPlan, ProductionSourceRegistry, CollectionShardManifest]:
-    limits = _exact_provider_map(target_limits_by_source, label="target limits")
-    shards = _exact_provider_map(shard_counts_by_source, label="shard counts")
+    providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
+    limits = _exact_provider_map(target_limits_by_source, label="target limits", providers=providers)
+    shards = _exact_provider_map(shard_counts_by_source, label="shard counts", providers=providers)
     if (
         isinstance(workday_detail_concurrency, bool)
         or not isinstance(workday_detail_concurrency, int)
@@ -159,7 +161,7 @@ def build_benchmark_plan(
     ):
         raise ValueError("Workday detail concurrency must be an integer from 1 to 8")
     subset = select_registry_subset(registry, target_limits_by_source=limits)
-    for source in PROVIDERS:
+    for source in providers:
         if shards[source] > subset.target_counts_by_source[source]:
             raise ValueError(f"shard count exceeds selected {source} targets")
     manifest = build_shard_manifest(subset, shard_counts_by_source=shards)
@@ -307,7 +309,12 @@ def _assignments(values: list[str], *, label: str) -> dict[str, int]:
             parsed[source] = int(raw_count)
         except ValueError as exc:
             raise ValueError(f"{label} count must be an integer: {source}") from exc
-    return _exact_provider_map(parsed, label=label)
+    # Exact provider coverage is validated against the registry in build_benchmark_plan.
+    if any(source not in PROVIDERS for source in parsed):
+        raise ValueError(f"unknown {label} provider")
+    if any(count < 1 for count in parsed.values()):
+        raise ValueError(f"{label} values must be positive")
+    return parsed
 
 
 def require_local_benchmark_environment() -> None:

@@ -192,3 +192,188 @@ def test_target_record_rejects_source_coordinate_identity_mismatch() -> None:
 
     with pytest.raises(ValidationError, match="target identity does not match"):
         TargetRecord.model_validate(payload)
+
+
+def test_smartrecruiters_derivation_and_health_manifest(tmp_path):
+    import json
+
+    from validation.target_universe_health_v1 import run
+
+    result = universe(link("https://jobs.smartrecruiters.com/Acme/123-engineer/apply"))
+    assert result.target_records[0].target_identity == "smartrecruiters:acme"
+    payload = result.model_dump(mode="json")
+    path = tmp_path / "universe.json"
+    path.write_text(json.dumps(payload))
+    manifest = run.make_full_manifest(payload, generated_at="2026-10-02T00:00:00Z", universe_path=path)
+    assert manifest["source_counts"] == {"smartrecruiters": 1}
+    assert "target_universe_commit" not in manifest
+    assert run._verify_manifest(manifest, full=True, universe_path=path) == manifest
+
+
+def test_target_universe_report_includes_smartrecruiters():
+    from validation.target_universe_v1.build import render_report
+
+    result = universe(
+        link("https://jobs.smartrecruiters.com/Acme/123-engineer")
+    )
+    report = render_report(result.model_dump(mode="json"))
+
+    assert "supported-source rows" in report
+    assert "four-source" not in report
+    assert "| smartrecruiters | 1 | 1 |" in report
+
+
+def test_smartrecruiters_full_health_report_includes_metrics():
+    from validation.target_universe_health_v1 import run
+
+    value = {
+        "source": "smartrecruiters", "target_identity": "smartrecruiters:acme",
+        "classification": "active", "current_postings": 3,
+        "inventory_exact": True, "historical_occurrence_count": 1,
+    }
+    summary = run.summarize_full([value], {
+        "targets": [value], "source_counts": {"smartrecruiters": 1},
+        "manifest_sha256": "a" * 64,
+    })
+    assert summary["per_source"]["smartrecruiters"]["summed_current_posting_evidence"] == 3
+    assert "| smartrecruiters | 1 | 1 |" in run.full_report(summary)
+
+
+def test_custom_universe_health_cli_and_registry_builder(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+
+    from validation.production_registry_v1 import build
+    from validation.target_universe_health_v1 import run
+
+    payload = universe(link("https://jobs.smartrecruiters.com/Acme/123-engineer")).model_dump(mode="json")
+    path = tmp_path / "universe.json"
+    path.write_text(json.dumps(payload))
+    health_dir = tmp_path / "health"
+    monkeypatch.setattr(sys, "argv", ["health", "--scope", "full", "--universe", str(path), "--output-dir", str(health_dir), "--status"])
+    run.main()
+    assert json.loads(capsys.readouterr().out)["total"] == 1
+    manifest = json.loads((health_dir / "manifest.json").read_text())
+    assert "target_universe_commit" not in manifest
+    health = {
+        "manifest_sha256": manifest["manifest_sha256"], "updated_at": "2026-10-02T00:00:00Z",
+        "results": [{"target_identity": "smartrecruiters:acme", "source": "smartrecruiters", "classification": "active", "current_postings": 1, "inventory_exact": True, "manifest_sha256": manifest["manifest_sha256"]}],
+    }
+    health_path = tmp_path / "results.json"
+    health_path.write_text(json.dumps(health))
+    checkpoints = tmp_path / "checkpoints"
+    checkpoints.mkdir()
+    checkpoint_name = __import__("hashlib").sha256(b"smartrecruiters:acme").hexdigest()
+    (checkpoints / f"{checkpoint_name}.json").write_text(json.dumps(health["results"][0]))
+    output = tmp_path / "approved.json"
+    monkeypatch.setattr(sys, "argv", ["registry", "--universe", str(path), "--health", str(health_path), "--manifest", str(health_dir / "manifest.json"), "--output", str(output), "--registry-id", "smart-test"])
+    build.main()
+    approved = json.loads(output.read_text())
+    assert approved["target_counts_by_source"] == {"smartrecruiters": 1}
+    assert approved["registry_id"] == "smart-test"
+    health["manifest_sha256"] = "b" * 64
+    health_path.write_text(json.dumps(health))
+    with pytest.raises(ValueError, match="does not match universe manifest"):
+        build.main()
+
+
+def test_registry_rejects_forged_health_results_with_real_manifest_hash(tmp_path):
+    import hashlib
+    import json
+
+    from validation.production_registry_v1 import build
+    from validation.target_universe_health_v1 import run
+
+    payload = universe(
+        link("https://jobs.smartrecruiters.com/Acme/123-engineer")
+    ).model_dump(mode="json")
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(json.dumps(payload))
+    manifest = run.make_full_manifest(
+        payload,
+        generated_at="2026-10-02T00:00:00Z",
+        universe_path=universe_path,
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    trusted_result = {
+        "target_identity": "smartrecruiters:acme",
+        "source": "smartrecruiters",
+        "classification": "valid_empty",
+        "current_postings": 0,
+        "inventory_exact": True,
+        "manifest_sha256": manifest["manifest_sha256"],
+    }
+    checkpoints = tmp_path / "checkpoints"
+    checkpoints.mkdir()
+    checkpoint_name = hashlib.sha256(b"smartrecruiters:acme").hexdigest()
+    (checkpoints / f"{checkpoint_name}.json").write_text(json.dumps(trusted_result))
+
+    forged = {
+        "manifest_sha256": manifest["manifest_sha256"],
+        "updated_at": "2026-10-02T00:00:00Z",
+        "results": [
+            {
+                **trusted_result,
+                "classification": "active",
+                "current_postings": 999,
+            }
+        ],
+    }
+    health_path = tmp_path / "results.json"
+    health_path.write_text(json.dumps(forged))
+
+    with pytest.raises(ValueError, match="does not match checkpoint"):
+        build.build(
+            tmp_path / "approved.json",
+            universe_path=universe_path,
+            health_path=health_path,
+            manifest_path=manifest_path,
+            registry_id="forged-health-test",
+        )
+
+
+def test_health_manifest_rejects_coordinate_tampering(tmp_path):
+    import json
+
+    from validation.target_universe_health_v1 import run
+
+    payload = universe(link("https://jobs.smartrecruiters.com/Acme/123-engineer")).model_dump(mode="json")
+    path = tmp_path / "universe.json"
+    path.write_text(json.dumps(payload))
+    manifest = run.make_full_manifest(payload, generated_at="2026-10-02T00:00:00Z", universe_path=path)
+    manifest["targets"][0]["coordinates"]["board"] = "other"
+    manifest.pop("manifest_sha256")
+    manifest["manifest_sha256"] = run.sha(manifest)
+    with pytest.raises(ValueError, match="exact canonical target universe"):
+        run._verify_manifest(manifest, full=True, universe_path=path)
+
+
+def test_default_universe_forged_health_uses_canonical_checkpoints(tmp_path):
+    import json
+
+    from validation.production_registry_v1 import build
+
+    health = json.loads(build.HEALTH.read_text())
+    health["results"][0]["error"] = "forged result with real manifest hash"
+    path = tmp_path / "health.json"
+    path.write_text(json.dumps(health))
+
+    with pytest.raises(ValueError, match="does not match checkpoint"):
+        build.build(tmp_path / "approved.json", health_path=path)
+
+
+def test_default_universe_override_health_requires_manifest_binding(tmp_path):
+    import json
+
+    from validation.production_registry_v1 import build
+
+    health = json.loads(build.HEALTH.read_text())
+    health["manifest_sha256"] = "b" * 64
+    for result in health["results"]:
+        result["manifest_sha256"] = "b" * 64
+    path = tmp_path / "health.json"
+    path.write_text(json.dumps(health))
+    with pytest.raises(ValueError, match="does not match universe manifest"):
+        build.build(tmp_path / "approved.json", health_path=path)

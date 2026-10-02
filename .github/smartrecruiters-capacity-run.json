@@ -1,0 +1,27 @@
+{
+  "targets": [
+    {
+      "identifier": "ServiceNow",
+      "company": "ServiceNow",
+      "employer_id": "servicenow"
+    },
+    {
+      "identifier": "Visa",
+      "company": "Visa",
+      "employer_id": "visa"
+    },
+    {
+      "identifier": "PaloAltoNetworks2",
+      "company": "Palo Alto Networks",
+      "employer_id": "paloaltonetworks2"
+    },
+    {
+      "identifier": "WesternDigital",
+      "company": "Western Digital",
+      "employer_id": "westerndigital"
+    }
+  ],
+  "max_pages": 10,
+  "max_postings": 1000,
+  "prefilter_titles": true
+}

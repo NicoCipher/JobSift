@@ -59,7 +59,7 @@ class TargetRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target_identity: str
-    source: Literal["greenhouse", "ashby", "workday", "lever"]
+    source: Literal["greenhouse", "ashby", "workday", "lever", "smartrecruiters"]
     coordinates: dict[str, str]
     company_hint: str | None = None
     historical_occurrence_count: int = Field(ge=1)
@@ -70,12 +70,17 @@ class TargetRecord(BaseModel):
 
     @model_validator(mode="after")
     def coordinates_match_source_identity(self) -> TargetRecord:
-        if self.source in {"greenhouse", "ashby"}:
+        if self.source in {"greenhouse", "ashby", "smartrecruiters"}:
             if set(self.coordinates) != {"board"} or not _BOARD.fullmatch(
                 self.coordinates.get("board", "")
             ):
                 raise ValueError(f"{self.source} requires one valid board coordinate")
-            expected = f"{self.source}:{self.coordinates['board']}"
+            board = self.coordinates["board"]
+            if self.source == "smartrecruiters":
+                if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", board):
+                    raise ValueError("invalid SmartRecruiters company identifier")
+                board = board.casefold()
+            expected = f"{self.source}:{board}"
         elif self.source == "lever":
             if set(self.coordinates) != {"instance", "site"}:
                 raise ValueError("lever requires instance and site coordinates")
@@ -131,6 +136,12 @@ def derive_link(link: HistoricalLink) -> _Derivation:
     if parsed.scheme not in {"http", "https"} or not host:
         return _Derivation("malformed_url", reason="URL lacks an HTTP(S) host")
     parts = _segments(link.url)
+
+    if host == "jobs.smartrecruiters.com":
+        if len(parts) >= 2 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", parts[0]) and re.fullmatch(r"[0-9]+(?:-.*)?", parts[1]):
+            board = parts[0].casefold()
+            return _Derivation("supported_target", source="smartrecruiters", coordinates={"board": board}, identity=f"smartrecruiters:{board}")
+        return _Derivation("recognized_source_unresolved_target", source="smartrecruiters", reason="SmartRecruiters URL lacks company/posting coordinates")
 
     if host in _GREENHOUSE_HOSTS:
         if len(parts) >= 3 and parts[1] == "jobs" and _BOARD.fullmatch(parts[0]):

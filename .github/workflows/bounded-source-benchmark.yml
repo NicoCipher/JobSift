@@ -28,6 +28,11 @@ on:
         required: true
         default: 10
         type: number
+      smartrecruiters_targets:
+        description: Production-approved SmartRecruiters targets to sample
+        required: true
+        default: 1
+        type: number
       greenhouse_shards:
         description: Greenhouse worker shards
         required: true
@@ -47,6 +52,11 @@ on:
         description: Lever worker shards
         required: true
         default: 2
+        type: number
+      smartrecruiters_shards:
+        description: SmartRecruiters worker shards
+        required: true
+        default: 1
         type: number
       workday_detail_concurrency:
         description: Bounded concurrent Workday detail reads per target
@@ -84,10 +94,12 @@ jobs:
           ASHBY_TARGETS: ${{ github.event.inputs.ashby_targets }}
           WORKDAY_TARGETS: ${{ github.event.inputs.workday_targets }}
           LEVER_TARGETS: ${{ github.event.inputs.lever_targets }}
+          SMARTRECRUITERS_TARGETS: ${{ github.event.inputs.smartrecruiters_targets }}
           GREENHOUSE_SHARDS: ${{ github.event.inputs.greenhouse_shards }}
           ASHBY_SHARDS: ${{ github.event.inputs.ashby_shards }}
           WORKDAY_SHARDS: ${{ github.event.inputs.workday_shards }}
           LEVER_SHARDS: ${{ github.event.inputs.lever_shards }}
+          SMARTRECRUITERS_SHARDS: ${{ github.event.inputs.smartrecruiters_shards }}
           WORKDAY_DETAIL_CONCURRENCY: ${{ github.event.inputs.workday_detail_concurrency }}
         run: |
           if [ "$EVENT_NAME" = "push" ]; then
@@ -95,24 +107,34 @@ jobs:
             ASHBY_TARGETS=10
             WORKDAY_TARGETS=5
             LEVER_TARGETS=10
+            SMARTRECRUITERS_TARGETS=1
             GREENHOUSE_SHARDS=2
             ASHBY_SHARDS=2
             WORKDAY_SHARDS=2
             LEVER_SHARDS=2
+            SMARTRECRUITERS_SHARDS=1
             WORKDAY_DETAIL_CONCURRENCY=4
           fi
-          python -m job_scout.shard_benchmark plan \
-            --registry config/source_registries/production_active_v1.json \
-            --output-dir benchmark-plan \
-            --limit "greenhouse=$GREENHOUSE_TARGETS" \
-            --limit "ashby=$ASHBY_TARGETS" \
-            --limit "workday=$WORKDAY_TARGETS" \
-            --limit "lever=$LEVER_TARGETS" \
-            --shards "greenhouse=$GREENHOUSE_SHARDS" \
-            --shards "ashby=$ASHBY_SHARDS" \
-            --shards "workday=$WORKDAY_SHARDS" \
-            --shards "lever=$LEVER_SHARDS" \
+          PLAN_ARGS=(
+            --registry config/source_registries/production_active_v1.json
+            --output-dir benchmark-plan
+            --limit "greenhouse=$GREENHOUSE_TARGETS"
+            --limit "ashby=$ASHBY_TARGETS"
+            --limit "workday=$WORKDAY_TARGETS"
+            --limit "lever=$LEVER_TARGETS"
+            --shards "greenhouse=$GREENHOUSE_SHARDS"
+            --shards "ashby=$ASHBY_SHARDS"
+            --shards "workday=$WORKDAY_SHARDS"
+            --shards "lever=$LEVER_SHARDS"
             --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY"
+          )
+          if python -c 'import json,sys; d=json.load(open(sys.argv[1])); raise SystemExit(0 if d.get("target_counts_by_source", {}).get("smartrecruiters", 0) else 1)' config/source_registries/production_active_v1.json; then
+            PLAN_ARGS+=(
+              --limit "smartrecruiters=$SMARTRECRUITERS_TARGETS"
+              --shards "smartrecruiters=$SMARTRECRUITERS_SHARDS"
+            )
+          fi
+          python -m job_scout.shard_benchmark plan "${PLAN_ARGS[@]}"
 
       - name: Export worker matrix
         id: matrix

@@ -90,6 +90,15 @@ def source_identity(url: str) -> tuple[str | None, str | None, str | None]:
                 f"{'global' if host == 'jobs.lever.co' else 'eu'}:{parts[0]}",
                 parts[1],
             )
+    if (
+        host == "jobs.smartrecruiters.com"
+        and len(parts) in {2, 3}
+        and _BOARD.fullmatch(parts[0])
+        and (len(parts) == 2 or parts[2] == "apply")
+    ):
+        posting_id = parts[1].split("-", 1)[0]
+        if posting_id.isascii() and posting_id.isdigit():
+            return "smartrecruiters", parts[0].casefold(), posting_id
     workday = _WORKDAY_HOST.fullmatch(host)
     if workday:
         offset = 1 if parts and _LOCALE.fullmatch(parts[0].casefold()) else 0

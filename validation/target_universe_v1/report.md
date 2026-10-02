@@ -5,17 +5,17 @@ This is an offline historical-evidence artifact. A historical occurrence does no
 ## Corpus reconciliation
 
 - Historical link rows: 11107
-- Safely derivable four-source rows: 5237 (47.2%)
-- Outside current four-source contracts: 5870 (52.8%)
+- Safely derivable supported-source rows: 5237 (47.2%)
+- Outside current supported-source contracts: 5870 (52.8%)
 
 ## Source targets
 
 | Source | Recognized rows | Canonical targets | Occurrences per target (min / median / max) |
 | --- | ---: | ---: | ---: |
-| greenhouse | 2341 | 774 | 1 / 2.0 / 18 |
 | ashby | 1560 | 678 | 1 / 2.0 / 11 |
-| workday | 971 | 560 | 1 / 1.0 / 7 |
+| greenhouse | 2341 | 774 | 1 / 2.0 / 18 |
 | lever | 629 | 275 | 1 / 2 / 8 |
+| workday | 971 | 560 | 1 / 1.0 / 7 |
 
 ## Classification
 

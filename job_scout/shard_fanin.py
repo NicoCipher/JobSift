@@ -302,11 +302,6 @@ def persist_shard_artifacts(
             metrics=replay_metrics,
         )
 
-    if stale_jobs:
-        repository.record_pruned_identities(
-            stale_jobs,
-            pruned_at=retention_evaluated_at,
-        )
     jobs = [
         jobs_by_identity[identity]
         for identity in sorted(retained_identities)
@@ -320,6 +315,8 @@ def persist_shard_artifacts(
         run_id=run_id,
         jobs=jobs,
         memberships=membership_jobs,
+        stale_jobs=stale_jobs,
+        pruned_at=retention_evaluated_at,
         status=status,
         completed_at=persisted_at,
     )
