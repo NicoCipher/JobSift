@@ -74,7 +74,7 @@ def _target_observation_rows(
                     target.raw_postings_received,
                     len(target.jobs),
                     sum(job.posted_at is not None for job in target.jobs),
-                    sum(_fresh_24h(job, target.completed_at) for job in target.jobs),
+                    sum(_fresh_24h(job, artifact.completed_at) for job in target.jobs),
                 )
             )
     return rows
