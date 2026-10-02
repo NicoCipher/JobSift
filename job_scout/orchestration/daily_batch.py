@@ -240,7 +240,7 @@ def finalize_daily_batch(
         try:
             publisher = BatchSheetPublisher(result, sheets_gateway or GoogleSheetsGateway())
             return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
-        except OSError as error:
+        except (BatchConflict, OSError, ValueError) as error:
             return store.fail(batch_id, error)
     if result.request.destination.startswith("client-sheet:"):
         try:
