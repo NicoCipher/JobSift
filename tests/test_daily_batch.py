@@ -1,6 +1,7 @@
 import csv
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -829,6 +830,23 @@ def test_legacy_database_preserves_all_existing_tables(repo, tmp_path):
         assert c.execute("PRAGMA foreign_key_check").fetchall() == []
     assert before == after
     assert prepare(reopened, request(reopened, tmp_path / "out.csv", jobs)).selected_count == 0
+
+
+def test_generation_column_migration_is_safe_for_concurrent_initializers(repo):
+    DailyBatchStore(repo)
+    with repo.connect() as connection:
+        connection.execute("ALTER TABLE daily_batches DROP COLUMN generation_id")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stores = list(pool.map(lambda _: DailyBatchStore(repo), range(2)))
+
+    assert len(stores) == 2
+    with repo.connect() as connection:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(daily_batches)").fetchall()
+        }
+    assert "generation_id" in columns
 
 
 def test_recreated_batch_id_cannot_finalize_older_generation(repo, tmp_path):
