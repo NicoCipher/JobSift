@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from job_scout.dedupe.resolver import DEDUPE_VERSION
-from job_scout.domain.daily_batch import BatchConflict, DailyBatchItem, DailyBatchResult
+from job_scout.domain.daily_batch import (
+    BatchConflict,
+    DailyBatchItem,
+    DailyBatchResult,
+    RetryableDestinationConflict,
+)
 from job_scout.domain.models import Job, JobMatch, MatchDecision
 from job_scout.normalization.company import employer_key
 from job_scout.posting_freshness import posting_freshness_disposition
@@ -635,6 +640,8 @@ class DailyBatchStore:
                 )
                 return self._load(c, batch_id)
         except (OSError, sqlite3.Error, ValueError, csv.Error) as error:
+            if isinstance(error, RetryableDestinationConflict):
+                raise
             if isinstance(error, BatchConflict) and str(error) in {
                 "batch not found",
                 "batch revision changed",
