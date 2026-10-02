@@ -91,6 +91,7 @@ def _artifact(
     duplicate_jobs: bool = False,
     partial_board: str | None = None,
     stale_board: str | None = None,
+    aging_board: str | None = None,
     wrong_board: bool = False,
     provider_company: str | None = None,
 ) -> ShardCollectionArtifact:
@@ -108,6 +109,8 @@ def _artifact(
             )
             if target.board_id == stale_board:
                 job = job.model_copy(update={"posted_at": NOW - timedelta(hours=96)})
+            elif target.board_id == aging_board:
+                job = job.model_copy(update={"posted_at": NOW - timedelta(hours=71)})
             jobs = [job, job.model_copy(deep=True)] if duplicate_jobs else [job]
             partial = target.board_id == partial_board
             return CollectionResult(
@@ -369,7 +372,7 @@ def test_stale_identity_path_preserves_latest_reobservation_through_prune(
     assert live is None
 
 
-def test_incoming_stale_posted_at_prunes_existing_recent_payload(
+def test_incoming_stale_posted_at_prunes_existing_unknown_payload(
     tmp_path: Path,
 ) -> None:
     registry = _registry()
@@ -379,13 +382,20 @@ def test_incoming_stale_posted_at_prunes_existing_recent_payload(
     )
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
 
-    stored_recent = _job(target.source_target())
-    repository.upsert_job(stored_recent)
+    stored_unknown = _job(target.source_target()).model_copy(
+        update={
+            "posted_at": None,
+            "job_url": "https://example.test/a/old-job-a",
+            "canonical_url": "https://example.test/a/old-job-a",
+        }
+    )
+    repository.upsert_job(stored_unknown)
 
     artifacts = [
         _artifact(registry, manifest, "greenhouse-000", stale_board="a"),
         _artifact(registry, manifest, "greenhouse-001", stale_board="a"),
     ]
+    incoming_url = str(artifacts[0].targets[0].jobs[0].canonical_url)
     persist_shard_artifacts(
         repository=repository,
         registry=registry,
@@ -399,16 +409,25 @@ def test_incoming_stale_posted_at_prunes_existing_recent_payload(
     with repository.connect() as connection:
         live = connection.execute(
             "SELECT 1 FROM jobs WHERE source=? AND source_board_id=? AND source_job_id=?",
-            (stored_recent.source, stored_recent.source_board_id, stored_recent.source_job_id),
+            (
+                stored_unknown.source,
+                stored_unknown.source_board_id,
+                stored_unknown.source_job_id,
+            ),
         ).fetchone()
         ledger = connection.execute(
-            "SELECT last_seen_at FROM job_identity_ledger "
+            "SELECT canonical_url,last_seen_at FROM job_identity_ledger "
             "WHERE source=? AND source_board_id=? AND source_job_id=?",
-            (stored_recent.source, stored_recent.source_board_id, stored_recent.source_job_id),
+            (
+                stored_unknown.source,
+                stored_unknown.source_board_id,
+                stored_unknown.source_job_id,
+            ),
         ).fetchone()
 
     assert live is None
     assert ledger is not None
+    assert ledger["canonical_url"] == incoming_url
 
 
 def test_fresh_upsert_clears_prior_stale_retention_evidence(
@@ -483,6 +502,41 @@ def test_fan_in_replay_identity_includes_retention_policy(
     assert strict.metrics.inventory_memberships == 1
     assert wider.metrics.inventory_memberships == 2
     assert len(InventoryRunStore(repository).active_job_ids(wider.run_id)) == 2
+
+
+def test_completed_replay_reports_persisted_memberships_after_cutoff_moves(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000", aging_board="a"),
+        _artifact(registry, manifest, "greenhouse-001", aging_board="a"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    first = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        payload_retention_hours=72,
+        now=lambda: PERSISTED,
+    )
+    replay = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        payload_retention_hours=72,
+        now=lambda: PERSISTED + timedelta(hours=2),
+    )
+
+    assert first.metrics.inventory_memberships == 2
+    assert replay.run_id == first.run_id
+    assert replay.replayed is True
+    assert replay.metrics.inventory_memberships == 2
+    assert InventoryRunStore(repository).membership_count(first.run_id) == 2
 
 
 def test_fan_in_rejects_invalid_payload_retention_before_mutating_inventory(
