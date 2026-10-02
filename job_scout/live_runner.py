@@ -389,7 +389,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         gateway=GoogleSheetsGateway(),
                     )
                 )
-            except BatchConflict:
+            except BatchConflict as error:
+                if str(error) == "batch not found":
+                    unresolved = store.recover_unresolved(
+                        brief.client_id, destination
+                    )
+                    if unresolved is None:
+                        return {"action": "concurrent_recovery_complete"}
+                    continue
                 if profile.status == "paused":
                     return {
                         "action": "profile_paused",
@@ -407,9 +414,19 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                     "remaining_today": 0,
                     "delivery_mode": profile.delivery_mode,
                 }
-            unresolved = finalize_daily_batch(
-                repository=repository, batch_id=unresolved.batch_id
-            )
+            try:
+                unresolved = finalize_daily_batch(
+                    repository=repository, batch_id=unresolved.batch_id
+                )
+            except BatchConflict as error:
+                if str(error) != "batch not found":
+                    raise
+                unresolved = store.recover_unresolved(
+                    brief.client_id, destination
+                )
+                if unresolved is None:
+                    return {"action": "concurrent_recovery_complete"}
+                continue
             return _batch_payload(store, unresolved, action="recovered_release")
 
         if config.auto_release or profile_auto_release:
@@ -423,15 +440,32 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         )
                     )
                 except BatchConflict as error:
+                    if str(error) == "batch not found":
+                        unresolved = store.recover_unresolved(
+                            brief.client_id, destination
+                        )
+                        if unresolved is None:
+                            return {"action": "concurrent_recovery_complete"}
+                        continue
                     action = (
                         "release_blocked_quota"
                         if "remaining daily quota" in str(error)
                         else "release_blocked_profile"
                     )
                     return _batch_payload(store, unresolved, action=action)
-            unresolved = finalize_daily_batch(
-                repository=repository, batch_id=unresolved.batch_id
-            )
+            try:
+                unresolved = finalize_daily_batch(
+                    repository=repository, batch_id=unresolved.batch_id
+                )
+            except BatchConflict as error:
+                if str(error) != "batch not found":
+                    raise
+                unresolved = store.recover_unresolved(
+                    brief.client_id, destination
+                )
+                if unresolved is None:
+                    return {"action": "concurrent_recovery_complete"}
+                continue
             if (
                 unresolved.status == "failed"
                 and (unresolved.error or "").startswith(
