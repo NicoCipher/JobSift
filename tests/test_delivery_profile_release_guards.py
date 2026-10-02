@@ -339,3 +339,35 @@ def test_profile_cli_release_binds_guarded_generation(tmp_path, monkeypatch):
 
     assert called == [(batch.batch_id, batch.generation_id)]
 
+def test_profile_cli_discard_binds_loaded_generation(tmp_path, monkeypatch):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    _gateway, destination, _store, _profile = setup_profile(repo, quota=1)
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+    called = []
+
+    def fake_discard(self, batch_id, *, expected_generation_id):
+        called.append((batch_id, expected_generation_id))
+        return self.get(batch_id)
+
+    monkeypatch.setattr(DailyBatchStore, "discard_prepared", fake_discard)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "delivery-profile",
+            "discard-batch",
+            "--database",
+            str(database),
+            "--profile-id",
+            delivery_profile_control_id("client-a", "jobs"),
+            "--batch-id",
+            batch.batch_id,
+        ],
+    )
+
+    main()
+
+    assert called == [(batch.batch_id, batch.generation_id)]
+
