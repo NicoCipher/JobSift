@@ -510,3 +510,58 @@ def test_hydrated_canonical_url_must_match_posting_identity(url):
     collector, result = collect(handler)
     assert result.jobs == []
     assert collector.last_counts["quarantined"] == 1
+
+
+def test_single_board_cli_exposes_smartrecruiters(monkeypatch, tmp_path):
+    import json
+    import sys
+
+    import job_scout.cli as cli
+
+    client = tmp_path / "client.json"
+    client.write_text(
+        json.dumps(
+            {
+                "client_id": "cli-smartrecruiters",
+                "target_roles": ["Software Engineer"],
+            }
+        )
+    )
+    captured = {}
+
+    def fake_run_pipeline(**kwargs):
+        captured.update(kwargs)
+
+        class Summary:
+            collected = 0
+            matched = 0
+            delivered = 0
+
+        return Summary()
+
+    monkeypatch.setattr(cli, "run_pipeline", fake_run_pipeline)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "collect",
+            "--source",
+            "smartrecruiters",
+            "--client",
+            str(client),
+            "--board",
+            "Acme",
+            "--company",
+            "Acme",
+            "--database",
+            str(tmp_path / "jobs.sqlite3"),
+            "--csv",
+            str(tmp_path / "jobs.csv"),
+        ],
+    )
+
+    cli.main()
+
+    assert isinstance(captured["collector"], SmartRecruitersCollector)
+    assert captured["target"].board_id == "Acme"
