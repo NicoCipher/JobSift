@@ -210,11 +210,12 @@ def main() -> None:
             artifacts=artifacts,
             payload_retention_hours=args.retention_hours,
         )
+        fan_in_seconds = time.perf_counter() - fan_in_started
         print(
             json.dumps(
                 {
                     "event": "inventory_refresh_fan_in_complete",
-                    "elapsed_ms": round((time.perf_counter() - fan_in_started) * 1000),
+                    "elapsed_ms": round(fan_in_seconds * 1000),
                     "normalized_jobs": report.metrics.unique_normalized_jobs,
                     "inventory_memberships": report.metrics.inventory_memberships,
                     "replayed": report.replayed,
@@ -227,11 +228,12 @@ def main() -> None:
         retention = repository.prune_stale_inventory(
             retention_hours=args.retention_hours
         )
+        retention_seconds = time.perf_counter() - retention_started
         print(
             json.dumps(
                 {
                     "event": "inventory_refresh_prune_complete",
-                    "elapsed_ms": round((time.perf_counter() - retention_started) * 1000),
+                    "elapsed_ms": round(retention_seconds * 1000),
                     **retention,
                 },
                 sort_keys=True,
@@ -241,6 +243,10 @@ def main() -> None:
         payload = {
             "fan_in": report.model_dump(mode="json"),
             "retention": retention,
+            "timings": {
+                "fan_in_seconds": round(fan_in_seconds, 3),
+                "retention_seconds": round(retention_seconds, 3),
+            },
         }
         _write_json(args.output, payload)
         print(json.dumps(payload, sort_keys=True))

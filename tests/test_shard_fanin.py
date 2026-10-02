@@ -603,13 +603,13 @@ def test_fan_in_resumes_running_receipt_after_persistence_failure(
         _artifact(registry, manifest, "greenhouse-001"),
     ]
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
-    original_upsert = repository.upsert_jobs
+    original_upsert = repository._upsert_job_in_connection
 
-    def fail_once(jobs) -> dict[str, object]:
+    def fail_once(connection, job, now):
         raise RuntimeError("simulated persistence failure")
 
     with monkeypatch.context() as patch:
-        patch.setattr(repository, "upsert_jobs", fail_once)
+        patch.setattr(repository, "_upsert_job_in_connection", fail_once)
         with pytest.raises(RuntimeError, match="simulated persistence failure"):
             persist_shard_artifacts(
                 repository=repository,
@@ -623,10 +623,15 @@ def test_fan_in_resumes_running_receipt_after_persistence_failure(
         row = connection.execute(
             "SELECT run_id,status FROM inventory_runs ORDER BY run_id"
         ).fetchone()
+        assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT COUNT(*) FROM inventory_run_jobs").fetchone()[0]
+            == 0
+        )
     assert row is not None
     assert row["status"] == "running"
 
-    monkeypatch.setattr(repository, "upsert_jobs", original_upsert)
+    monkeypatch.setattr(repository, "_upsert_job_in_connection", original_upsert)
     resumed = persist_shard_artifacts(
         repository=repository,
         registry=registry,
