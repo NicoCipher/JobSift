@@ -263,10 +263,10 @@ def finalize_daily_batch(
             raise
         except (OSError, ValueError) as error:
             return store.fail(
-            batch_id,
-            error,
-            expected_generation_id=generation_id,
-        )
+                batch_id,
+                error,
+                expected_generation_id=generation_id,
+            )
     if result.request.destination.startswith("client-sheet:"):
         try:
             destination_id = parse_logical_destination(result.request.destination)
@@ -301,5 +301,7 @@ def finalize_daily_batch(
             )
     except OSError as error:
         return store.fail(
-                batch_id, error, expected_generation_id=generation_id
-            )
+            batch_id,
+            error,
+            expected_generation_id=generation_id,
+        )
