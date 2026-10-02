@@ -8,10 +8,12 @@ import json
 import math
 import time
 from collections import Counter
+from functools import partial
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from job_scout.collectors.workday import WorkdayCollector
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -20,7 +22,11 @@ from job_scout.production_registry import (
     sha256_json,
 )
 from job_scout.shard_benchmark import PROVIDERS
-from job_scout.shard_collection import ShardCollectionArtifact
+from job_scout.shard_collection import (
+    ShardCollectionArtifact,
+    collect_shard,
+    default_collector_factory,
+)
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -222,6 +228,38 @@ def build_refresh_plan(
     return plan, subset, manifest
 
 
+def _refresh_collector_factory(source: str, *, workday_detail_concurrency: int):
+    if source == "workday":
+        return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
+    return default_collector_factory(source)
+
+
+def collect_refresh_shard(
+    *,
+    registry: ProductionSourceRegistry,
+    manifest: CollectionShardManifest,
+    plan: RefreshPlan,
+    shard_id: str,
+) -> ShardCollectionArtifact:
+    """Collect one production refresh shard after validating refresh provenance."""
+    registry_sha = sha256_json(registry.model_dump(mode="json"))
+    if (
+        plan.refresh_registry_id != registry.registry_id
+        or plan.refresh_registry_sha256 != registry_sha
+        or plan.shard_manifest_sha256 != manifest.manifest_sha256
+    ):
+        raise ValueError("refresh plan does not match registry/manifest")
+    return collect_shard(
+        registry=registry,
+        manifest=manifest,
+        shard_id=shard_id,
+        collector_factory=partial(
+            _refresh_collector_factory,
+            workday_detail_concurrency=plan.workday_detail_concurrency,
+        ),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m job_scout.inventory_refresh")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -237,6 +275,13 @@ def main() -> None:
         default=DEFAULT_LIMITS["workday"],
         help="Explicit guarded Workday ramp level; never auto-escalates.",
     )
+
+    collect = commands.add_parser("collect")
+    collect.add_argument("--registry", type=Path, required=True)
+    collect.add_argument("--manifest", type=Path, required=True)
+    collect.add_argument("--refresh-plan", type=Path, required=True)
+    collect.add_argument("--shard-id", required=True)
+    collect.add_argument("--output", type=Path, required=True)
 
     fan_in = commands.add_parser("fan-in")
     fan_in.add_argument("--registry", type=Path, required=True)
@@ -283,6 +328,20 @@ def main() -> None:
         manifest = CollectionShardManifest.model_validate_json(
             args.manifest.read_text(encoding="utf-8")
         )
+        if args.command == "collect":
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+            artifact = collect_refresh_shard(
+                registry=registry,
+                manifest=manifest,
+                plan=refresh_plan,
+                shard_id=args.shard_id,
+            )
+            _write_json(args.output, artifact)
+            print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))
+            return
+
         artifact_paths = sorted(args.artifacts_dir.glob("*.json"))
         if not artifact_paths:
             raise ValueError("no shard artifact files found")
