@@ -230,22 +230,39 @@ def prepare_daily_batch(
 
 
 def finalize_daily_batch(
-    *, repository: SQLiteRepository, batch_id: str, sheets_gateway: SheetsGateway | None = None
+    *,
+    repository: SQLiteRepository,
+    batch_id: str,
+    sheets_gateway: SheetsGateway | None = None,
+    expected_generation_id: str | None = None,
 ) -> DailyBatchResult:
     store = DailyBatchStore(repository)
     result = store.get(batch_id)
+    generation_id = DailyBatchStore._require_generation(
+        result, expected_generation_id
+    )
     if result.status == "delivered":
         return result
     if result.request.destination.startswith("gsheet:"):
         try:
             publisher = BatchSheetPublisher(result, sheets_gateway or GoogleSheetsGateway())
-            return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
+            return store.finalize(
+                batch_id,
+                publisher.plan,
+                publisher.inspect,
+                publisher.publish,
+                expected_generation_id=generation_id,
+            )
         except BatchConflict as error:
             if str(error).startswith("prepared posting is no longer fresh at delivery:"):
-                return store.fail(batch_id, error)
+                return store.fail(
+                batch_id, error, expected_generation_id=generation_id
+            )
             raise
         except (OSError, ValueError) as error:
-            return store.fail(batch_id, error)
+            return store.fail(
+                batch_id, error, expected_generation_id=generation_id
+            )
     if result.request.destination.startswith("client-sheet:"):
         try:
             destination_id = parse_logical_destination(result.request.destination)
@@ -257,9 +274,17 @@ def finalize_daily_batch(
                 sheets_gateway or GoogleSheetsGateway(),
                 destination,
             )
-            return store.finalize(batch_id, publisher.plan, publisher.inspect, publisher.publish)
+            return store.finalize(
+                batch_id,
+                publisher.plan,
+                publisher.inspect,
+                publisher.publish,
+                expected_generation_id=generation_id,
+            )
         except (BatchConflict, OSError, ValueError) as error:
-            return store.fail(batch_id, error)
+            return store.fail(
+                batch_id, error, expected_generation_id=generation_id
+            )
     path = Path(result.request.destination)
     try:
         with destination_lock(path):
@@ -268,6 +293,9 @@ def finalize_daily_batch(
                 lambda rows: plan_csv(path, rows),
                 lambda: file_digest(path),
                 lambda rows, before, after: publish_csv(path, rows, before, after),
+                expected_generation_id=generation_id,
             )
     except OSError as error:
-        return store.fail(batch_id, error)
+        return store.fail(
+                batch_id, error, expected_generation_id=generation_id
+            )
