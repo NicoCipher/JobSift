@@ -5,20 +5,28 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import time
 from collections import Counter
+from functools import partial
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from job_scout.collectors.workday import WorkdayCollector
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
+    build_shard_manifest,
     load_production_registry,
     sha256_json,
 )
-from job_scout.shard_benchmark import PROVIDERS, build_benchmark_plan
-from job_scout.shard_collection import ShardCollectionArtifact
+from job_scout.shard_benchmark import PROVIDERS
+from job_scout.shard_collection import (
+    ShardCollectionArtifact,
+    collect_shard,
+    default_collector_factory,
+)
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -37,6 +45,54 @@ DEFAULT_SHARDS = {
     "smartrecruiters": 1,
 }
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
+MAX_REFRESH_TARGETS = 125
+WORKDAY_RAMP_LEVELS = (1, 5, 10, 20, 25)
+
+
+class RefreshPlan(BaseModel):
+    """Production refresh plan with a ceiling independent of benchmark limits."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    parent_registry_id: str
+    parent_registry_sha256: str
+    refresh_registry_id: str
+    refresh_registry_sha256: str
+    shard_manifest_sha256: str
+    target_limits_by_source: dict[str, int]
+    shard_counts_by_source: dict[str, int]
+    target_counts_by_source: dict[str, int]
+    total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
+    total_shards: int = Field(ge=1)
+    workday_detail_concurrency: int = Field(ge=1, le=8)
+    matrix: dict[str, list[dict[str, str]]]
+
+
+def default_refresh_limits(
+    registry: ProductionSourceRegistry,
+    *,
+    workday_limit: int | None = None,
+) -> dict[str, int]:
+    limits = {
+        source: DEFAULT_LIMITS[source]
+        for source in PROVIDERS
+        if source in registry.target_counts_by_source
+    }
+    if "workday" in limits and workday_limit is not None:
+        if workday_limit not in WORKDAY_RAMP_LEVELS:
+            raise ValueError(
+                f"Workday refresh limit must be one of {WORKDAY_RAMP_LEVELS}"
+            )
+        limits["workday"] = min(
+            workday_limit,
+            registry.target_counts_by_source["workday"],
+        )
+    # SmartRecruiters is additive only after explicit registry admission.
+    if "smartrecruiters" in limits and "greenhouse" in limits:
+        limits["greenhouse"] -= limits["smartrecruiters"]
+    if sum(limits.values()) > MAX_REFRESH_TARGETS:
+        raise ValueError("default refresh cohort exceeds safety ceiling")
+    return limits
 
 
 def _stable(values):
@@ -49,14 +105,19 @@ def _stable(values):
     )
 
 
-def _refresh_limits(registry: ProductionSourceRegistry, limits: dict[str, int] | None) -> dict[str, int]:
+def _refresh_limits(
+    registry: ProductionSourceRegistry,
+    limits: dict[str, int] | None,
+    *,
+    cohort: int,
+) -> dict[str, int]:
     if limits is not None:
-        return dict(limits)
-    defaults = {source: DEFAULT_LIMITS[source] for source in PROVIDERS if source in registry.target_counts_by_source}
-    # Keep the existing 100-target ceiling when the new provider is admitted.
-    if "smartrecruiters" in defaults and "greenhouse" in defaults:
-        defaults["greenhouse"] -= defaults["smartrecruiters"]
-    return defaults
+        values = dict(limits)
+    else:
+        values = default_refresh_limits(registry)
+    if sum(values.values()) > MAX_REFRESH_TARGETS:
+        raise ValueError(f"refresh cohort exceeds {MAX_REFRESH_TARGETS}-target safety ceiling")
+    return values
 
 
 def rotating_registry(
@@ -69,7 +130,7 @@ def rotating_registry(
     if cohort < 0:
         raise ValueError("cohort must be non-negative")
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
-    limits = _refresh_limits(registry, limits)
+    limits = _refresh_limits(registry, limits, cohort=cohort)
     if set(limits) != set(providers) or any(value < 1 for value in limits.values()):
         raise ValueError("refresh limits must contain positive counts for every provider")
 
@@ -121,16 +182,82 @@ def build_refresh_plan(
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
-    limits = _refresh_limits(registry, limits)
-    shards = dict(shards) if shards is not None else {source: DEFAULT_SHARDS[source] for source in providers}
-    rotating = rotating_registry(registry, cohort=cohort, limits=limits)
-    plan, subset, manifest = build_benchmark_plan(
-        rotating,
+    limits = _refresh_limits(registry, limits, cohort=cohort)
+    if shards is None:
+        shards = {source: DEFAULT_SHARDS[source] for source in providers}
+        if "workday" in shards:
+            # Keep Workday shards small enough to isolate provider failures while
+            # bounding matrix growth. Detail concurrency remains independently capped.
+            shards["workday"] = min(limits["workday"], max(1, math.ceil(limits["workday"] / 5)))
+    else:
+        shards = dict(shards)
+    if (
+        isinstance(workday_detail_concurrency, bool)
+        or not isinstance(workday_detail_concurrency, int)
+        or not 1 <= workday_detail_concurrency <= 8
+    ):
+        raise ValueError("Workday detail concurrency must be an integer from 1 to 8")
+    if set(shards) != set(providers) or any(value < 1 for value in shards.values()):
+        raise ValueError("refresh shards must contain positive counts for every provider")
+
+    subset = rotating_registry(registry, cohort=cohort, limits=limits)
+    for source in providers:
+        if shards[source] > subset.target_counts_by_source[source]:
+            raise ValueError(f"shard count exceeds selected {source} targets")
+    manifest = build_shard_manifest(subset, shard_counts_by_source=shards)
+    matrix = {
+        "include": [
+            {"shard_id": shard.shard_id, "source": shard.source}
+            for shard in manifest.shards
+        ]
+    }
+    plan = RefreshPlan(
+        parent_registry_id=registry.registry_id,
+        parent_registry_sha256=sha256_json(registry.model_dump(mode="json")),
+        refresh_registry_id=subset.registry_id,
+        refresh_registry_sha256=sha256_json(subset.model_dump(mode="json")),
+        shard_manifest_sha256=manifest.manifest_sha256,
         target_limits_by_source=limits,
         shard_counts_by_source=shards,
+        target_counts_by_source=subset.target_counts_by_source,
+        total_targets=len(subset.targets),
+        total_shards=len(manifest.shards),
         workday_detail_concurrency=workday_detail_concurrency,
+        matrix=matrix,
     )
     return plan, subset, manifest
+
+
+def _refresh_collector_factory(source: str, *, workday_detail_concurrency: int):
+    if source == "workday":
+        return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
+    return default_collector_factory(source)
+
+
+def collect_refresh_shard(
+    *,
+    registry: ProductionSourceRegistry,
+    manifest: CollectionShardManifest,
+    plan: RefreshPlan,
+    shard_id: str,
+) -> ShardCollectionArtifact:
+    """Collect one production refresh shard after validating refresh provenance."""
+    registry_sha = sha256_json(registry.model_dump(mode="json"))
+    if (
+        plan.refresh_registry_id != registry.registry_id
+        or plan.refresh_registry_sha256 != registry_sha
+        or plan.shard_manifest_sha256 != manifest.manifest_sha256
+    ):
+        raise ValueError("refresh plan does not match registry/manifest")
+    return collect_shard(
+        registry=registry,
+        manifest=manifest,
+        shard_id=shard_id,
+        collector_factory=partial(
+            _refresh_collector_factory,
+            workday_detail_concurrency=plan.workday_detail_concurrency,
+        ),
+    )
 
 
 def main() -> None:
@@ -141,6 +268,20 @@ def main() -> None:
     plan.add_argument("--registry", type=Path, required=True)
     plan.add_argument("--cohort", type=int, required=True)
     plan.add_argument("--output-dir", type=Path, required=True)
+    plan.add_argument(
+        "--workday-limit",
+        type=int,
+        choices=WORKDAY_RAMP_LEVELS,
+        default=DEFAULT_LIMITS["workday"],
+        help="Explicit guarded Workday ramp level; never auto-escalates.",
+    )
+
+    collect = commands.add_parser("collect")
+    collect.add_argument("--registry", type=Path, required=True)
+    collect.add_argument("--manifest", type=Path, required=True)
+    collect.add_argument("--refresh-plan", type=Path, required=True)
+    collect.add_argument("--shard-id", required=True)
+    collect.add_argument("--output", type=Path, required=True)
 
     fan_in = commands.add_parser("fan-in")
     fan_in.add_argument("--registry", type=Path, required=True)
@@ -154,9 +295,14 @@ def main() -> None:
     try:
         if args.command == "plan":
             registry = load_production_registry(args.registry)
+            limits = default_refresh_limits(
+                registry,
+                workday_limit=args.workday_limit,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
+                limits=limits,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
@@ -182,6 +328,20 @@ def main() -> None:
         manifest = CollectionShardManifest.model_validate_json(
             args.manifest.read_text(encoding="utf-8")
         )
+        if args.command == "collect":
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+            artifact = collect_refresh_shard(
+                registry=registry,
+                manifest=manifest,
+                plan=refresh_plan,
+                shard_id=args.shard_id,
+            )
+            _write_json(args.output, artifact)
+            print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))
+            return
+
         artifact_paths = sorted(args.artifacts_dir.glob("*.json"))
         if not artifact_paths:
             raise ValueError("no shard artifact files found")
