@@ -186,7 +186,11 @@ def _discard_stale_unpublished_release(
         return False
     try:
         store.discard_stale_unpublished(batch.batch_id)
-    except BatchConflict:
+    except BatchConflict as error:
+        # Another runner may already have completed the same safe cleanup.
+        # Treat only disappearance as cleanup; every other conflict remains unsafe.
+        if str(error) == "batch not found":
+            return True
         return False
     return True
 
