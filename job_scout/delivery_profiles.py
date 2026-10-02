@@ -427,7 +427,9 @@ class ClientDeliveryProfileStore:
         # reduced the remaining quota to zero. This path performs no new append:
         # finalize will observe the recorded after-digest and only complete the
         # delivery ledger.
-        _before, after = batch_store.export_journal(batch_id)
+        _before, after = batch_store.export_journal(
+            batch_id, expected_generation_id=batch.generation_id
+        )
         if after is not None:
             publisher = ClientSheetPublisher(batch, gateway, destination)
             if publisher.inspect() == after:

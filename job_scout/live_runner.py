@@ -159,18 +159,40 @@ def _batch_by_idempotency(
     return DailyBatchStore(repository).get(row[0]) if row else None
 
 
+def _is_concurrent_batch_recovery(error: BatchConflict) -> bool:
+    return str(error) in {"batch not found", "batch revision changed"}
+
+
+def _is_stale_release_failure(batch: DailyBatchResult) -> bool:
+    return batch.status == "failed" and (batch.error or "").startswith(
+        "prepared posting is no longer fresh at delivery:"
+    )
+
+
+def _recover_after_stale_release(
+    store: DailyBatchStore,
+    *,
+    client_id: str,
+    destination: str,
+) -> tuple[str, DailyBatchResult | None]:
+    """Classify stale-release recovery from the store state machine.
+
+    recover_unresolved deletes every safe stale/no-journal failure before
+    returning. A stale failure returned here therefore requires reconciliation.
+    """
+    recovered = store.recover_unresolved(client_id, destination)
+    if recovered is None:
+        return "discarded", None
+    if _is_stale_release_failure(recovered):
+        return "reconcile", recovered
+    return "continue", recovered
+
+
 def _unresolved_batch(
     repository: SQLiteRepository, *, client_id: str, destination: str
 ) -> DailyBatchResult | None:
-    with repository.connect() as connection:
-        row = connection.execute(
-            "SELECT batch_id FROM daily_batches "
-            "WHERE client_id=? AND destination=? AND status!='delivered' "
-            "AND (status='prepared' OR export_after_sha256 IS NOT NULL) "
-            "ORDER BY assembled_at, batch_id LIMIT 1",
-            (client_id, destination),
-        ).fetchone()
-    return DailyBatchStore(repository).get(row[0]) if row else None
+    """Delegate unresolved delivery recovery to the transactional state machine."""
+    return DailyBatchStore(repository).recover_unresolved(client_id, destination)
 
 
 def _candidate_job_ids(
@@ -344,7 +366,8 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
     )
-    if unresolved is not None:
+
+    while unresolved is not None:
         # The legacy Live JobSift release workflow predates delivery profiles.
         # If it is releasing a batch for a destination that now has a profile,
         # adopt that profile for this release so pause/quota/reconciliation
@@ -371,7 +394,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                 profile_auto_release = profile.delivery_mode == "auto"
 
         if config.discard_prepared:
-            discarded = store.discard_prepared(unresolved.batch_id)
+            discarded = store.discard_prepared(
+                unresolved.batch_id,
+                expected_generation_id=unresolved.generation_id,
+            )
             return {
                 "action": "discarded_prepared",
                 "batch_id": discarded.batch_id,
@@ -396,7 +422,14 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         gateway=GoogleSheetsGateway(),
                     )
                 )
-            except BatchConflict:
+            except BatchConflict as error:
+                if _is_concurrent_batch_recovery(error):
+                    unresolved = store.recover_unresolved(
+                        brief.client_id, destination
+                    )
+                    if unresolved is None:
+                        return {"action": "concurrent_recovery_complete"}
+                    continue
                 if profile.status == "paused":
                     return {
                         "action": "profile_paused",
@@ -414,9 +447,21 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                     "remaining_today": 0,
                     "delivery_mode": profile.delivery_mode,
                 }
-            unresolved = finalize_daily_batch(
-                repository=repository, batch_id=unresolved.batch_id
-            )
+            try:
+                unresolved = finalize_daily_batch(
+                    repository=repository,
+                    batch_id=unresolved.batch_id,
+                    expected_generation_id=unresolved.generation_id,
+                )
+            except BatchConflict as error:
+                if not _is_concurrent_batch_recovery(error):
+                    raise
+                unresolved = store.recover_unresolved(
+                    brief.client_id, destination
+                )
+                if unresolved is None:
+                    return {"action": "concurrent_recovery_complete"}
+                continue
             return _batch_payload(store, unresolved, action="recovered_release")
 
         if config.auto_release or profile_auto_release:
@@ -430,15 +475,60 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         )
                     )
                 except BatchConflict as error:
+                    if _is_concurrent_batch_recovery(error):
+                        unresolved = store.recover_unresolved(
+                            brief.client_id, destination
+                        )
+                        if unresolved is None:
+                            return {"action": "concurrent_recovery_complete"}
+                        continue
                     action = (
                         "release_blocked_quota"
                         if "remaining daily quota" in str(error)
                         else "release_blocked_profile"
                     )
                     return _batch_payload(store, unresolved, action=action)
-            unresolved = finalize_daily_batch(
-                repository=repository, batch_id=unresolved.batch_id
-            )
+            try:
+                unresolved = finalize_daily_batch(
+                    repository=repository,
+                    batch_id=unresolved.batch_id,
+                    expected_generation_id=unresolved.generation_id,
+                )
+            except BatchConflict as error:
+                if not _is_concurrent_batch_recovery(error):
+                    raise
+                unresolved = store.recover_unresolved(
+                    brief.client_id, destination
+                )
+                if unresolved is None:
+                    return {"action": "concurrent_recovery_complete"}
+                continue
+            if _is_stale_release_failure(unresolved):
+                stale_batch = unresolved
+                disposition, recovered = _recover_after_stale_release(
+                    store,
+                    client_id=brief.client_id,
+                    destination=destination,
+                )
+                if disposition == "discarded":
+                    return {
+                        "action": "stale_unpublished_discarded",
+                        "batch_id": stale_batch.batch_id,
+                        "batch_status": stale_batch.status,
+                        "destination_id": getattr(
+                            stale_batch.request, "destination_id", None
+                        ),
+                        "selected_count": stale_batch.selected_count,
+                        "error": stale_batch.error,
+                    }
+                if disposition == "reconcile":
+                    return _batch_payload(
+                        store,
+                        recovered,
+                        action="stale_release_requires_reconciliation",
+                    )
+                unresolved = recovered
+                continue
             action = "resumed_release"
         else:
             action = "awaiting_release"
@@ -621,7 +711,10 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             evaluation=evaluation,
             retention=retention,
         )
-        store.discard_prepared(batch.batch_id)
+        store.discard_prepared(
+            batch.batch_id,
+            expected_generation_id=batch.generation_id,
+        )
         empty_payload["batch_status"] = "discarded"
         if profile_store is not None:
             delivered_after = profile_store.delivered_today(profile)
@@ -645,23 +738,91 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
         elif current_profile.delivery_mode != "auto":
             action = "prepared"
         else:
-            try:
-                batch, _reconciliation, _remaining = profile_store.guard_batch_release(
-                    current_profile,
-                    batch.batch_id,
-                    gateway=GoogleSheetsGateway(),
-                )
-            except BatchConflict as error:
-                action = (
-                    "release_blocked_quota"
-                    if "remaining daily quota" in str(error)
-                    else "release_blocked_profile"
-                )
-            else:
-                batch = finalize_daily_batch(
-                    repository=repository, batch_id=batch.batch_id
-                )
+            while True:
+                try:
+                    batch, _reconciliation, _remaining = profile_store.guard_batch_release(
+                        current_profile,
+                        batch.batch_id,
+                        gateway=GoogleSheetsGateway(),
+                    )
+                except BatchConflict as error:
+                    if _is_concurrent_batch_recovery(error):
+                        recovered = store.recover_unresolved(
+                            brief.client_id, destination
+                        )
+                        if recovered is None:
+                            return {
+                                "action": "concurrent_recovery_complete",
+                                "batch_id": batch.batch_id,
+                                "batch_status": batch.status,
+                                "destination_id": getattr(
+                                    batch.request, "destination_id", None
+                                ),
+                                "selected_count": batch.selected_count,
+                            }
+                        batch = recovered
+                        continue
+                    action = (
+                        "release_blocked_quota"
+                        if "remaining daily quota" in str(error)
+                        else "release_blocked_profile"
+                    )
+                    break
+                try:
+                    batch = finalize_daily_batch(
+                        repository=repository,
+                        batch_id=batch.batch_id,
+                        expected_generation_id=batch.generation_id,
+                    )
+                except BatchConflict as error:
+                    if not _is_concurrent_batch_recovery(error):
+                        raise
+                    recovered = store.recover_unresolved(
+                        brief.client_id, destination
+                    )
+                    if recovered is None:
+                        return {
+                            "action": "concurrent_recovery_complete",
+                            "batch_id": batch.batch_id,
+                            "batch_status": batch.status,
+                            "destination_id": getattr(
+                                batch.request, "destination_id", None
+                            ),
+                            "selected_count": batch.selected_count,
+                        }
+                    batch = recovered
+                    continue
+                if _is_stale_release_failure(batch):
+                    stale_batch = batch
+                    disposition, recovered = _recover_after_stale_release(
+                        store,
+                        client_id=brief.client_id,
+                        destination=destination,
+                    )
+                    if disposition == "discarded":
+                        return {
+                            "action": "stale_unpublished_discarded",
+                            "batch_id": stale_batch.batch_id,
+                            "batch_status": stale_batch.status,
+                            "destination_id": getattr(
+                                stale_batch.request, "destination_id", None
+                            ),
+                            "selected_count": stale_batch.selected_count,
+                            "error": stale_batch.error,
+                        }
+                    if disposition == "reconcile":
+                        return _batch_payload(
+                            store,
+                            recovered,
+                            action="stale_release_requires_reconciliation",
+                            sourcing=report,
+                            evaluation=evaluation,
+                            retention=retention,
+                        )
+                    batch = recovered
+                    continue
                 action = "released" if batch.status == "delivered" else "release_failed"
+                break
     payload = _batch_payload(
         store,
         batch,

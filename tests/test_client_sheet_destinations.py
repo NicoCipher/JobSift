@@ -226,6 +226,35 @@ def test_client_owned_sheet_recovers_uncertain_append_while_client_edits_unowned
     assert gateway.values[1][5] == batch.batch_id
 
 
+
+def test_client_sheet_prejournal_batch_marker_is_retryable(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway = FakeClientSheet()
+    destination = register(repo, gateway)
+    batch = prepared(repo, destination)
+
+    gateway.values.append(
+        ["existing", "company", "https://example.com/existing", "", "", batch.batch_id, ""]
+    )
+
+    with pytest.raises(BatchConflict, match="batch marker"):
+        finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
+
+    current = DailyBatchStore(repo).get(batch.batch_id)
+    assert current.status == "prepared"
+    assert current.error is None
+    assert DailyBatchStore(repo).export_journal(batch.batch_id) == (None, None)
+    assert gateway.append_calls == 0
+
+    gateway.values.pop()
+    delivered = finalize_daily_batch(
+        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+    )
+    assert delivered.status == "delivered"
+    assert gateway.append_calls == 1
+
 def test_header_or_tab_identity_drift_fails_closed(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     gateway = FakeClientSheet()
@@ -233,22 +262,32 @@ def test_header_or_tab_identity_drift_fails_closed(tmp_path):
     batch = prepared(repo, destination)
 
     gateway.values[0][0] = "Position"
-    failed = finalize_daily_batch(
-        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
-    )
-    assert failed.status == "failed"
+    with pytest.raises(BatchConflict, match="header"):
+        finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
+    assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
     assert gateway.append_calls == 0
 
-    # A fresh batch proves the stable Google sheetId catches tab renames too.
+    gateway.values[0][0] = "Role"
+    assert (
+        finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        ).status
+        == "delivered"
+    )
+
+    # The stable Google sheetId catches tab renames without stranding the batch.
     repo2 = SQLiteRepository(tmp_path / "jobs2.db")
     gateway2 = FakeClientSheet()
     destination2 = register(repo2, gateway2)
     batch2 = prepared(repo2, destination2)
     gateway2.title = "Renamed Jobs"
-    failed2 = finalize_daily_batch(
-        repository=repo2, batch_id=batch2.batch_id, sheets_gateway=gateway2
-    )
-    assert failed2.status == "failed"
+    with pytest.raises(BatchConflict, match="renamed"):
+        finalize_daily_batch(
+            repository=repo2, batch_id=batch2.batch_id, sheets_gateway=gateway2
+        )
+    assert DailyBatchStore(repo2).get(batch2.batch_id).status == "prepared"
     assert gateway2.append_calls == 0
 
 

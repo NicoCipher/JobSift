@@ -1,6 +1,7 @@
 import csv
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -190,7 +191,9 @@ def test_failed_unpublished_batch_is_discardable(repo, tmp_path):
     failed = DailyBatchStore(repo).fail(prepared.batch_id, "posting expired before release")
 
     assert failed.status == "failed"
-    discarded = DailyBatchStore(repo).discard_prepared(failed.batch_id)
+    discarded = DailyBatchStore(repo).discard_prepared(
+        failed.batch_id, expected_generation_id=failed.generation_id
+    )
     assert discarded.status == "failed"
     with pytest.raises(BatchConflict, match="batch not found"):
         DailyBatchStore(repo).get(failed.batch_id)
@@ -202,7 +205,9 @@ def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
     req = request(repo, tmp_path / "out.csv", [job])
     prepared = prepare(repo, req)
 
-    discarded = DailyBatchStore(repo).discard_prepared(prepared.batch_id)
+    discarded = DailyBatchStore(repo).discard_prepared(
+        prepared.batch_id, expected_generation_id=prepared.generation_id
+    )
     assert discarded.batch_id == prepared.batch_id
     assert discarded.status == "prepared"
     with pytest.raises(BatchConflict, match="batch not found"):
@@ -215,7 +220,9 @@ def test_discard_prepared_batch_allows_safe_replacement(repo, tmp_path):
     delivered = finalize(repo, replacement)
     assert delivered.status == "delivered"
     with pytest.raises(BatchConflict, match="only an unpublished batch"):
-        DailyBatchStore(repo).discard_prepared(delivered.batch_id)
+        DailyBatchStore(repo).discard_prepared(
+            delivered.batch_id, expected_generation_id=delivered.generation_id
+        )
 
 
 def test_company_cap_returns_distinct_employers_and_honest_shortfall(repo, tmp_path):
@@ -499,6 +506,47 @@ def test_sheet_release_recovers_uncertain_append_and_preserves_status(repo):
     )
 
 
+def test_legacy_sheet_freshness_conflict_is_persisted_as_failed(repo):
+    job = posting(1, posted_at=NOW - timedelta(hours=23))
+    seed(repo, [job])
+    destination = sheet_destination("example123", "Sheet1")
+    batch = prepare(
+        repo,
+        request(
+            repo,
+            destination,
+            [job],
+            max_posting_age_hours=24,
+            freshness_evaluated_at=NOW,
+        ),
+    )
+    assert batch.status == "prepared"
+
+    with repo.connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
+            ).fetchone()[0]
+        )
+        payload["posted_at"] = (NOW - timedelta(hours=25)).isoformat()
+        connection.execute(
+            "UPDATE jobs SET payload_json=? WHERE id=?",
+            (json.dumps(payload), job.id),
+        )
+
+    failed = batches.finalize_daily_batch(
+        repository=repo,
+        batch_id=batch.batch_id,
+        sheets_gateway=FakeSheets(),
+    )
+
+    assert failed.status == "failed"
+    assert failed.error == (
+        "prepared posting is no longer fresh at delivery: stale_posting"
+    )
+    assert DailyBatchStore(repo).export_journal(batch.batch_id) == (None, None)
+
+
 def test_sheet_header_and_drift_fail_closed(repo):
     job = posting(1)
     seed(repo, [job])
@@ -506,11 +554,13 @@ def test_sheet_header_and_drift_fail_closed(repo):
     batch = prepare(repo, request(repo, destination, [job]))
     gateway = FakeSheets()
     gateway.values[0][2] = "Wrong"
-    failed = batches.finalize_daily_batch(
-        repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
-    )
-    assert failed.status == "failed"
+    with pytest.raises(BatchConflict, match="header"):
+        batches.finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
+    assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
     assert gateway.append_calls == 0
+
     gateway.values[0][2] = "Job Link"
     gateway.fail_before = True
     assert (
@@ -519,12 +569,14 @@ def test_sheet_header_and_drift_fail_closed(repo):
         ).status
         == "failed"
     )
+
     # An external edit after journaling cannot be silently overwritten.
     gateway.values.append(["manual", "", "https://example.com/manual"])
     retry = batches.finalize_daily_batch(
         repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
     )
     assert retry.status == "failed"
+    assert "reconcile" in (retry.error or "")
     assert gateway.append_calls == 1
 
 
@@ -535,12 +587,19 @@ def test_sheet_internal_blank_row_rejected_before_append(repo):
     batch = prepare(repo, request(repo, destination, [job]))
     gateway = FakeSheets()
     gateway.values.extend([[], ["existing", "company", "https://example.com/existing"]])
-    failed = batches.finalize_daily_batch(
+    with pytest.raises(BatchConflict, match="blank row"):
+        batches.finalize_daily_batch(
+            repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
+        )
+    assert DailyBatchStore(repo).get(batch.batch_id).status == "prepared"
+    assert gateway.append_calls == 0
+
+    gateway.values.pop(1)
+    delivered = batches.finalize_daily_batch(
         repository=repo, batch_id=batch.batch_id, sheets_gateway=gateway
     )
-    assert failed.status == "failed"
-    assert gateway.append_calls == 0
-    assert len(gateway.values) == 3
+    assert delivered.status == "delivered"
+    assert gateway.append_calls == 1
 
 
 @pytest.mark.parametrize("quota", [0, -1, True, 1.5, "3"])
@@ -789,6 +848,68 @@ def test_legacy_database_preserves_all_existing_tables(repo, tmp_path):
     assert before == after
     assert prepare(reopened, request(reopened, tmp_path / "out.csv", jobs)).selected_count == 0
 
+
+def test_generation_column_migration_is_safe_for_concurrent_initializers(repo):
+    DailyBatchStore(repo)
+    with repo.connect() as connection:
+        connection.execute("ALTER TABLE daily_batches DROP COLUMN generation_id")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stores = list(pool.map(lambda _: DailyBatchStore(repo), range(2)))
+
+    assert len(stores) == 2
+    with repo.connect() as connection:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(daily_batches)").fetchall()
+        }
+    assert "generation_id" in columns
+
+
+def test_recreated_batch_id_cannot_finalize_older_generation(repo, tmp_path):
+    jobs = [posting(1)]
+    seed(repo, jobs)
+    req = request(repo, tmp_path / "out.csv", jobs)
+    first = prepare(repo, req)
+    store = DailyBatchStore(repo)
+    store.discard_prepared(
+        first.batch_id, expected_generation_id=first.generation_id
+    )
+    replacement = prepare(repo, req)
+
+    assert replacement.batch_id == first.batch_id
+    assert replacement.generation_id != first.generation_id
+    with pytest.raises(BatchConflict, match="batch revision changed"):
+        batches.finalize_daily_batch(
+            repository=repo,
+            batch_id=first.batch_id,
+            expected_generation_id=first.generation_id,
+        )
+    assert DailyBatchStore(repo).get(replacement.batch_id).status == "prepared"
+
+
+
+def test_recreated_batch_id_cannot_be_discarded_by_older_generation(repo, tmp_path):
+    jobs = [posting(1)]
+    seed(repo, jobs)
+    req = request(repo, tmp_path / "out.csv", jobs)
+    first = prepare(repo, req)
+    store = DailyBatchStore(repo)
+    store.discard_prepared(
+        first.batch_id, expected_generation_id=first.generation_id
+    )
+    replacement = prepare(repo, req)
+
+    assert replacement.batch_id == first.batch_id
+    assert replacement.generation_id != first.generation_id
+    with pytest.raises(BatchConflict, match="batch revision changed"):
+        store.discard_prepared(
+            first.batch_id, expected_generation_id=first.generation_id
+        )
+
+    current = store.get(replacement.batch_id)
+    assert current.generation_id == replacement.generation_id
+    assert current.status == "prepared"
 
 def test_process_interruption_after_replace_recovers_on_reopen(repo, tmp_path, monkeypatch):
     class Interrupted(BaseException):

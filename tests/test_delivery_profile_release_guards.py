@@ -7,7 +7,10 @@ import pytest
 
 from job_scout.cli import main
 from job_scout.delivery_destinations import ClientSheetDestinationStore
-from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.delivery_profiles import (
+    ClientDeliveryProfileStore,
+    delivery_profile_control_id,
+)
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
@@ -274,8 +277,8 @@ def test_generic_batch_release_allows_registered_destination_without_profile(
     batch = prepare(repo, destination, [make_job("job-1", "Acme")])
     called = []
 
-    def fake_finalize(*, repository, batch_id):
-        called.append(batch_id)
+    def fake_finalize(*, repository, batch_id, expected_generation_id):
+        called.append((batch_id, expected_generation_id))
         current = DailyBatchStore(repository).get(batch_id)
         return current.model_copy(update={"status": "delivered"})
 
@@ -298,5 +301,73 @@ def test_generic_batch_release_allows_registered_destination_without_profile(
 
     main()
 
-    assert called == [batch.batch_id]
+    assert called == [(batch.batch_id, batch.generation_id)]
+
+def test_profile_cli_release_binds_guarded_generation(tmp_path, monkeypatch):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    gateway, destination, _store, _profile = setup_profile(repo, quota=1)
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+    called = []
+
+    def fake_finalize(*, repository, batch_id, expected_generation_id):
+        called.append((batch_id, expected_generation_id))
+        current = DailyBatchStore(repository).get(batch_id)
+        return current.model_copy(update={"status": "delivered"})
+
+    monkeypatch.setattr("job_scout.cli.GoogleSheetsGateway", lambda: gateway)
+    monkeypatch.setattr("job_scout.cli.finalize_daily_batch", fake_finalize)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "delivery-profile",
+            "release-batch",
+            "--database",
+            str(database),
+            "--profile-id",
+            delivery_profile_control_id("client-a", "jobs"),
+            "--batch-id",
+            batch.batch_id,
+            "--confirm-batch-id",
+            batch.batch_id,
+        ],
+    )
+
+    main()
+
+    assert called == [(batch.batch_id, batch.generation_id)]
+
+def test_profile_cli_discard_binds_loaded_generation(tmp_path, monkeypatch):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    _gateway, destination, _store, _profile = setup_profile(repo, quota=1)
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+    called = []
+
+    def fake_discard(self, batch_id, *, expected_generation_id):
+        called.append((batch_id, expected_generation_id))
+        return self.get(batch_id)
+
+    monkeypatch.setattr(DailyBatchStore, "discard_prepared", fake_discard)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "delivery-profile",
+            "discard-batch",
+            "--database",
+            str(database),
+            "--profile-id",
+            delivery_profile_control_id("client-a", "jobs"),
+            "--batch-id",
+            batch.batch_id,
+        ],
+    )
+
+    main()
+
+    assert called == [(batch.batch_id, batch.generation_id)]
 

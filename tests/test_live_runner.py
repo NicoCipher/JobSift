@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 from job_scout import live_runner
-from job_scout.live_runner import LiveRunnerConfig, _candidate_job_ids
+from job_scout.live_runner import (
+    LiveRunnerConfig,
+    _candidate_job_ids,
+)
 from job_scout.sourcing_plan import SourcingPlan
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
@@ -46,6 +49,97 @@ def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
         )
         is None
     )
+
+
+def test_recovery_state_machine_discards_stale_then_returns_newer_prepared(tmp_path, monkeypatch):
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    store = DailyBatchStore(repository)
+    with repository.connect() as connection:
+        for batch_id, key, status, error, assembled_at in (
+            (
+                "stale-profile-scope",
+                "2026-10-02:scope-old",
+                "failed",
+                "prepared posting is no longer fresh at delivery: stale_posting",
+                "2026-10-02T12:00:00+00:00",
+            ),
+            (
+                "newer-prepared",
+                "2026-10-02:scope-new",
+                "prepared",
+                None,
+                "2026-10-02T12:01:00+00:00",
+            ),
+        ):
+            connection.execute(
+                "INSERT INTO daily_batches "
+                "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+                "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
+                "dedupe_version,error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    batch_id, "client-a", "client-sheet://jobs", key, 1, 0, 1,
+                    status, assembled_at, "{}", "{}", "test", error,
+                ),
+            )
+
+    monkeypatch.setattr(
+        DailyBatchStore,
+        "_load",
+        staticmethod(lambda _c, batch_id: SimpleNamespace(batch_id=batch_id)),
+    )
+    result = store.recover_unresolved("client-a", "client-sheet://jobs")
+    assert result.batch_id == "newer-prepared"
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM daily_batches WHERE batch_id='stale-profile-scope'"
+        ).fetchone() is None
+
+
+def test_recovery_state_machine_retains_journaled_stale_failure(tmp_path, monkeypatch):
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    store = DailyBatchStore(repository)
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,client_id,destination,idempotency_key,requested_quota,"
+            "selected_count,shortfall,status,assembled_at,request_json,counts_json,"
+            "dedupe_version,error,export_before_sha256) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "journaled-stale",
+                "client-a",
+                "client-sheet://jobs",
+                "scope-journaled",
+                1,
+                0,
+                1,
+                "failed",
+                "2026-10-02T12:00:00+00:00",
+                "{}",
+                "{}",
+                "test",
+                "prepared posting is no longer fresh at delivery: stale_posting",
+                "a" * 64,
+            ),
+        )
+
+    monkeypatch.setattr(
+        DailyBatchStore,
+        "_load",
+        staticmethod(
+            lambda _c, batch_id: SimpleNamespace(
+                batch_id=batch_id,
+                status="failed",
+                error="prepared posting is no longer fresh at delivery: stale_posting",
+            )
+        ),
+    )
+    result = store.recover_unresolved("client-a", "client-sheet://jobs")
+    assert result.batch_id == "journaled-stale"
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM daily_batches WHERE batch_id='journaled-stale'"
+        ).fetchone() is not None
 
 
 def test_unresolved_batch_ignores_delivered_export_journal(tmp_path):
@@ -432,8 +526,16 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
         run_once=True,
         discard_prepared=True,
     )
-    batch = SimpleNamespace(batch_id="batch-1", selected_count=5)
-    store = SimpleNamespace(discard_prepared=lambda batch_id: batch)
+    batch = SimpleNamespace(
+        batch_id="batch-1", generation_id="generation-1", selected_count=5
+    )
+    discarded = []
+
+    def discard_prepared(batch_id, *, expected_generation_id):
+        discarded.append((batch_id, expected_generation_id))
+        return batch
+
+    store = SimpleNamespace(discard_prepared=discard_prepared)
     monkeypatch.setattr(
         live_runner,
         "_runtime_plan",
@@ -462,6 +564,7 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     assert result["action"] == "discarded_prepared"
     assert result["batch_id"] == "batch-1"
     assert result["selected_count"] == 5
+    assert discarded == [("batch-1", "generation-1")]
 
 def test_validation_mode_refuses_cloud_repository(tmp_path, monkeypatch):
     config = LiveRunnerConfig(
