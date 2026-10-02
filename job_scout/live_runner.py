@@ -527,10 +527,15 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
             repository=repository,
             run_id=report.run_id,
             brief=brief,
+            retention_hours=config.inventory_retention_hours,
             evaluated_at=report.completed_at,
             match_scope_id=match_scope_id,
         )
-        candidate_ids = InventoryRunStore(repository).active_job_ids(report.run_id)
+        candidate_ids = InventoryRunStore(repository).active_job_ids(
+            report.run_id,
+            retention_hours=config.inventory_retention_hours,
+            evaluated_at=report.completed_at,
+        )
         scope = f"{plan.plan_id}:{report.run_id}"
         failures = _source_failures(report)
         completeness = "complete" if report.status == "success" else "partial"
