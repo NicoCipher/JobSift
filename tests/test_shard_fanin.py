@@ -345,15 +345,19 @@ def test_stale_identity_path_preserves_latest_reobservation_through_prune(
     registry = _registry()
     target = registry.targets[0].source_target()
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    original_first_seen = NOW - timedelta(days=10)
     stale = _job(target).model_copy(
         update={
             "posted_at": NOW - timedelta(hours=96),
+            "discovered_at": original_first_seen,
             "last_seen_at": NOW,
         }
     )
     repository.upsert_job(stale)
 
-    reobserved = stale.model_copy(update={"last_seen_at": PERSISTED})
+    reobserved = stale.model_copy(
+        update={"discovered_at": PERSISTED, "last_seen_at": PERSISTED}
+    )
     repository.record_pruned_identities([reobserved], pruned_at=PERSISTED)
     repository.prune_stale_inventory(retention_hours=72, now=PERSISTED)
 
@@ -369,6 +373,7 @@ def test_stale_identity_path_preserves_latest_reobservation_through_prune(
         ).fetchone()
 
     assert row is not None
+    assert row["first_seen_at"] == original_first_seen.isoformat()
     assert row["last_seen_at"] == PERSISTED.isoformat()
     assert live is None
 
