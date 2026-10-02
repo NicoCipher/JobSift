@@ -453,17 +453,27 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
                         "selected_count": stale_batch.selected_count,
                         "error": stale_batch.error,
                     }
-                if unresolved.batch_id == stale_batch.batch_id:
-                    # A journaled stale failure is intentionally retained:
-                    # external Sheet state may be uncertain, so never spin or
-                    # discard it. Surface it for reconciliation instead.
-                    return _batch_payload(
-                        store,
-                        unresolved,
-                        action="stale_release_requires_reconciliation",
+                if (
+                    unresolved.status == "failed"
+                    and (unresolved.error or "").startswith(
+                        "prepared posting is no longer fresh at delivery:"
                     )
-                # Safe cleanup removed the stale batch. Continue this same
-                # release loop with the next actionable batch.
+                ):
+                    before_sha, after_sha = store.export_journal(
+                        unresolved.batch_id
+                    )
+                    if before_sha is not None or after_sha is not None:
+                        # This is the retained journaled failure itself.
+                        # External Sheet state may be uncertain, so never spin
+                        # or discard it; surface it for reconciliation.
+                        return _batch_payload(
+                            store,
+                            unresolved,
+                            action="stale_release_requires_reconciliation",
+                        )
+                # Safe cleanup removed the stale batch. A replacement may
+                # legitimately reuse the deterministic batch ID, so classify
+                # the returned state rather than comparing identities.
                 continue
             action = "resumed_release"
         else:
