@@ -311,14 +311,18 @@ def persist_shard_artifacts(
         jobs_by_identity[identity]
         for identity in sorted(retained_identities)
     ]
-    repository.upsert_jobs(jobs)
-    memberships = [
-        (target_identity, jobs_by_identity[identity].id)
+    membership_jobs = [
+        (target_identity, jobs_by_identity[identity])
         for target_identity, identity in retained_memberships
     ]
-    inventory.add_memberships(run_id=run_id, memberships=memberships)
     persisted_at = now()
-    inventory.finish(run_id=run_id, status=status, completed_at=persisted_at)
+    inventory.persist_jobs_and_finish(
+        run_id=run_id,
+        jobs=jobs,
+        memberships=membership_jobs,
+        status=status,
+        completed_at=persisted_at,
+    )
 
     return FanInReport(
         run_id=run_id,
