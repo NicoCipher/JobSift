@@ -6,7 +6,10 @@ from pathlib import Path
 
 import httpx
 
-from job_scout.production_registry import ProductionSourceRegistry, ProductionTarget
+from job_scout.production_registry import (
+    ProductionSourceRegistry,
+    ProductionTarget,
+)
 from job_scout.source_discovery import (
     CommonCrawlDiscovery,
     DiscoveryQuery,
