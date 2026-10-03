@@ -31,7 +31,6 @@ from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
-
 SERIALIZED_PROFILE_MUTATION_WORKFLOWS = frozenset(
     {
         "Client Delivery Control",
