@@ -189,6 +189,19 @@ def test_fan_in_persists_once_and_replays_without_mutating_artifacts(tmp_path: P
             ).fetchone()[0]
             == 2
         )
+        observations = connection.execute(
+            "SELECT target_identity,status,raw_postings_received,normalized_jobs,"
+            "postings_with_trustworthy_timestamps,postings_at_most_24h_old "
+            "FROM inventory_target_observations WHERE run_id=? "
+            "ORDER BY target_identity",
+            (first.run_id,),
+        ).fetchall()
+        assert len(observations) == 2
+        assert [row["status"] for row in observations] == ["success", "success"]
+        assert sum(row["raw_postings_received"] for row in observations) == 3
+        assert sum(row["normalized_jobs"] for row in observations) == 3
+        assert sum(row["postings_with_trustworthy_timestamps"] for row in observations) == 3
+        assert sum(row["postings_at_most_24h_old"] for row in observations) == 3
 
     second = persist_shard_artifacts(
         repository=repository,
@@ -212,6 +225,10 @@ def test_fan_in_persists_once_and_replays_without_mutating_artifacts(tmp_path: P
             ).fetchone()[0]
             == 2
         )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM inventory_target_observations WHERE run_id=?",
+            (first.run_id,),
+        ).fetchone()[0] == 2
 
 
 def test_fan_in_fails_closed_before_inventory_mutation_for_missing_shard(
