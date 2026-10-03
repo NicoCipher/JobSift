@@ -289,6 +289,22 @@ def test_refresh_plan_records_guarded_workday_detail_concurrency():
     assert plan.workday_detail_concurrency == 6
 
 
+def test_refresh_plan_freezes_workday_brief_bindings():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    binding = inventory_refresh.WorkdayBriefBinding(
+        path="config/search_briefs/example.json",
+        sha256="a" * 64,
+    )
+
+    plan, _subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        workday_briefs=[binding],
+    )
+
+    assert plan.workday_briefs == [binding]
+
+
 def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
     from job_scout.shard_benchmark import MAX_BOUNDED_TARGETS, select_registry_subset
 
@@ -377,6 +393,9 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "--refresh-plan refresh-plan/plan.json" in workflow
     assert "--workday-detail-concurrency" in workflow
     assert "inputs.workday_detail_concurrency" in workflow
+    assert '--database "$JOBSIFT_DATABASE"' in workflow
+    assert "--plan-dir config/sourcing_plans" in workflow
+    assert "TURSO_DATABASE_URL" in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
