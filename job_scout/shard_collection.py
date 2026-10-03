@@ -105,6 +105,10 @@ class ShardTargetResult(BaseModel):
 def _target_json(target: ShardTargetResult) -> dict[str, object]:
     payload = target.model_dump(mode="json")
     payload["jobs"] = [_job_json(job) for job in target.jobs]
+    # Preserve validation of pre-telemetry v1 artifacts. New non-empty telemetry
+    # remains part of the authenticated artifact payload.
+    if not target.telemetry:
+        payload.pop("telemetry", None)
     return payload
 
 
