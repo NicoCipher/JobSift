@@ -474,7 +474,7 @@ def test_legacy_refresh_plan_without_workday_snapshot_uses_full_collector(monkey
     assert result is sentinel
     collector = captured["collector_factory"]("workday")
     assert collector.__class__.__name__ == "WorkdayCollector"
-    collector.close()
+    collector.client.close()
 
 
 def test_explicit_empty_workday_snapshot_remains_distinct_from_legacy():
