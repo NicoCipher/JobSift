@@ -907,14 +907,10 @@ def test_fan_in_refuses_invalidation_when_target_collection_is_partial(
             "WHERE source=? AND source_board_id=? AND source_job_id=?",
             ("greenhouse", target_a.board_id, retained.source_job_id),
         ).fetchone()
-        run_count = connection.execute(
-            "SELECT COUNT(*) FROM inventory_runs"
-        ).fetchone()[0]
-
     assert row is not None
     assert row["lifecycle"] != "closed"
     assert Job.model_validate_json(row["payload_json"]).description_text is not None
-    assert run_count == 0
+    assert _inventory_table_exists(repository) is False
 
 
 def test_fan_in_compacts_invalidated_payload_and_preserves_identity_ledger(
