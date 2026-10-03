@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from job_scout import workday_production
 from job_scout.domain.models import CollectionResult, CollectionStatus, SearchBrief
 from job_scout.production_registry import load_production_registry
 from job_scout.workday_index import WorkdayIndexPosting, WorkdayIndexTargetResult
-from job_scout import workday_production
 
 REGISTRY = Path("config/source_registries/production_active_v1.json")
 NOW = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
