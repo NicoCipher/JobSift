@@ -3,7 +3,7 @@ name: Discover and Admit Live Sources
 on:
   workflow_dispatch:
   schedule:
-    - cron: "43 */6 * * *"
+    - cron: "43 */3 * * *"
 
 permissions:
   contents: read
@@ -43,7 +43,7 @@ jobs:
           python -m job_scout.source_discovery run \
             --database "$JOBSIFT_DATABASE" \
             --base-registry config/source_registries/production_active_v1.json \
-            --max-health-checks 200 \
+            --max-health-checks 300 \
             --admission-max-age-hours 48 \
             --output source-discovery-result/report.json
 
