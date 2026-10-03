@@ -29,16 +29,16 @@ on:
 permissions:
   contents: read
 
+# Hold the same mutation lock used by client profile controls for the entire
+# snapshot -> collection -> persistence -> delivery lifecycle. This guarantees
+# Workday candidate filtering and delivery observe the same active-profile set.
 concurrency:
-  group: jobsift-live-inventory-refresh
+  group: jobsift-client-delivery-mutation
   cancel-in-progress: false
 
 jobs:
   plan:
     runs-on: ubuntu-latest
-    concurrency:
-      group: jobsift-client-delivery-mutation
-      cancel-in-progress: false
     env:
       JOBSIFT_DATABASE: /tmp/jobsift-plan.sqlite3
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
@@ -132,9 +132,6 @@ jobs:
 
   persist-and-deliver:
     if: ${{ always() && needs.plan.result == 'success' }}
-    concurrency:
-      group: jobsift-client-delivery-mutation
-      cancel-in-progress: false
     needs:
       - plan
       - collect
