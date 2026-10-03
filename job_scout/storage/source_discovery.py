@@ -304,7 +304,11 @@ class SourceDiscoveryStore:
                 "latest_health_classification,latest_health_checked_at "
                 "FROM source_discovery_targets "
                 "WHERE next_health_check_at IS NULL OR next_health_check_at<=? "
-                "ORDER BY CASE WHEN latest_health_checked_at IS NULL THEN 0 ELSE 1 END,"
+                "ORDER BY "
+                "CASE "
+                "WHEN admitted=1 THEN 0 "
+                "WHEN latest_health_checked_at IS NULL THEN 1 "
+                "ELSE 2 END,"
                 "COALESCE(next_health_check_at,''),target_identity LIMIT ?",
                 (current, limit),
             ).fetchall()
