@@ -37,8 +37,10 @@ remain unchanged.
 
 The Common Crawl client discovers the latest crawl dynamically from
 `collinfo.json`, stores one page cursor per query, and advances by one compressed
-index page each run. Queries are sequential and delayed to avoid hammering the
-public CDX service.
+index page each run using a deterministic co-prime stride. This spreads discovery
+across very large provider indexes instead of repeatedly starting at the lexical
+front of every new crawl. Requests are serialized and delayed to avoid hammering
+the public CDX service.
 
 ## Admission state
 
