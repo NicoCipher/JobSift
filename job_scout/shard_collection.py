@@ -89,6 +89,7 @@ class ShardTargetResult(BaseModel):
     raw_postings_received: int = Field(ge=0)
     jobs: list[Job] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    telemetry: dict[str, int | float | str | bool | None] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_result(self) -> ShardTargetResult:
@@ -104,6 +105,10 @@ class ShardTargetResult(BaseModel):
 def _target_json(target: ShardTargetResult) -> dict[str, object]:
     payload = target.model_dump(mode="json")
     payload["jobs"] = [_job_json(job) for job in target.jobs]
+    # Preserve validation of pre-telemetry v1 artifacts. New non-empty telemetry
+    # remains part of the authenticated artifact payload.
+    if not target.telemetry:
+        payload.pop("telemetry", None)
     return payload
 
 
@@ -255,6 +260,9 @@ def collect_shard(
                 if result.status in {CollectionStatus.SUCCESS, CollectionStatus.PARTIAL}:
                     raise ValueError("collector did not report raw provider posting count")
                 raw_postings_received = 0
+            telemetry = getattr(collector, "last_counts", {})
+            if not isinstance(telemetry, dict):
+                raise TypeError("collector telemetry must be a dictionary")
             results.append(
                 ShardTargetResult(
                     target_identity=identity,
@@ -266,6 +274,7 @@ def collect_shard(
                     raw_postings_received=raw_postings_received,
                     jobs=result.jobs,
                     errors=result.errors,
+                    telemetry=dict(telemetry),
                 )
             )
         finally:

@@ -223,6 +223,45 @@ def _status(metrics: FanInMetrics) -> Literal["success", "partial", "failure"]:
     return "failure"
 
 
+
+def _validate_invalidation_coverage(
+    *,
+    registry: ProductionSourceRegistry,
+    artifacts: list[ShardCollectionArtifact],
+    invalidated_identities: list[StorageIdentity],
+) -> None:
+    if not invalidated_identities:
+        return
+
+    targets = {target.target_identity: target for target in registry.targets}
+    statuses_by_board: dict[tuple[str, str], list[CollectionStatus]] = {}
+    for artifact in artifacts:
+        for target_result in artifact.targets:
+            production_target = targets[target_result.target_identity]
+            board_id = production_target.source_target().board_id
+            statuses_by_board.setdefault(
+                (target_result.source, board_id), []
+            ).append(target_result.status)
+
+    unsafe_boards = sorted(
+        {
+            (source, board_id)
+            for source, board_id, _source_job_id in invalidated_identities
+            if not statuses_by_board.get((source, board_id))
+            or any(
+                status is not CollectionStatus.SUCCESS
+                for status in statuses_by_board[(source, board_id)]
+            )
+        }
+    )
+    if unsafe_boards:
+        labels = ", ".join(f"{source}:{board_id}" for source, board_id in unsafe_boards)
+        raise ValueError(
+            "fan-in invalidation requires successful authoritative target collection: "
+            f"{labels}"
+        )
+
+
 def persist_shard_artifacts(
     *,
     repository: SQLiteRepository,
@@ -230,6 +269,7 @@ def persist_shard_artifacts(
     manifest: CollectionShardManifest,
     artifacts: list[ShardCollectionArtifact],
     payload_retention_hours: int | None = None,
+    invalidated_identities: list[StorageIdentity] | None = None,
     now: Callable[[], datetime] = utc_now,
 ) -> FanInReport:
     """Validate the complete artifact set before making any inventory-run mutation."""
@@ -249,6 +289,15 @@ def persist_shard_artifacts(
     )
 
     ordered = _ordered_artifacts(manifest, verified_artifacts)
+    invalidation_values = sorted(set(invalidated_identities or []))
+    for source, board_id, source_job_id in invalidation_values:
+        if not source or not board_id or not source_job_id:
+            raise ValueError("fan-in invalidation identity contains a blank value")
+    _validate_invalidation_coverage(
+        registry=registry,
+        artifacts=ordered,
+        invalidated_identities=invalidation_values,
+    )
     jobs_by_identity, membership_keys, normalized_records = _prepare_jobs(
         registry=registry,
         artifacts=ordered,
@@ -291,12 +340,17 @@ def persist_shard_artifacts(
     retention_identity = (
         "none" if payload_retention_hours is None else str(payload_retention_hours)
     )
+    invalidation_identity = (
+        "none"
+        if not invalidation_values
+        else sha256_json([list(identity) for identity in invalidation_values])
+    )
     run_id = str(
         uuid5(
             NAMESPACE_URL,
             "inventory-fanin:"
             f"{registry.registry_id}:{manifest.manifest_sha256}:{artifact_set_sha}:"
-            f"retention-hours={retention_identity}",
+            f"retention-hours={retention_identity}:invalidations={invalidation_identity}",
         )
     )
     registry_sha = sha256_json(registry.model_dump(mode="json"))
@@ -348,6 +402,7 @@ def persist_shard_artifacts(
         jobs=jobs,
         memberships=membership_jobs,
         stale_jobs=stale_jobs,
+        invalidated_identities=invalidation_values,
         target_observations=_target_observation_rows(ordered),
         pruned_at=retention_evaluated_at,
         status=status,

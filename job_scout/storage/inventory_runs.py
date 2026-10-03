@@ -165,6 +165,7 @@ class InventoryRunStore:
         jobs: Iterable[Job],
         memberships: Iterable[tuple[str, Job]],
         stale_jobs: Iterable[Job] = (),
+        invalidated_identities: Iterable[tuple[str, str, str]] = (),
         target_observations: Iterable[
             tuple[str, str, str, datetime, datetime, int, int, int, int, int]
         ] = (),
@@ -178,6 +179,7 @@ class InventoryRunStore:
         job_values = list(jobs)
         membership_values = list(memberships)
         stale_values = list(stale_jobs)
+        invalidation_values = list(dict.fromkeys(invalidated_identities))
         observation_values = list(target_observations)
         now = datetime.now(UTC).isoformat()
         with self.repository.connect() as connection:
@@ -187,6 +189,12 @@ class InventoryRunStore:
                 stale_values,
                 pruned_at=pruned_at,
             )
+            if invalidation_values:
+                self.repository._compact_invalidated_identities_in_connection(
+                    connection,
+                    invalidation_values,
+                    invalidated_at=completed_at,
+                )
             for job in job_values:
                 self.repository._upsert_job_in_connection(connection, job, now)
             if membership_values:

@@ -32,6 +32,15 @@ from job_scout.shard_collection import (
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
+from job_scout.workday_production import (
+    IndexFirstWorkdayCollector,
+    WorkdayBriefBinding,
+    WorkdayRetainedCandidateBinding,
+    load_bound_workday_briefs,
+    resolve_active_workday_brief_bindings,
+    resolve_retained_workday_candidate_bindings,
+    verify_active_workday_brief_bindings,
+)
 
 DEFAULT_LIMITS = {
     "greenhouse": 40,
@@ -152,6 +161,12 @@ class RefreshPlan(BaseModel):
     total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
     total_shards: int = Field(ge=1)
     workday_detail_concurrency: int = Field(ge=1, le=8)
+    # None is reserved for pre-index-first/legacy plans that did not freeze a brief snapshot.
+    # New production plans always store a list, including [] when no profiles are active.
+    workday_briefs: list[WorkdayBriefBinding] | None = None
+    # None means the plan predates retained-candidate protection and must use
+    # legacy full Workday collection rather than unsafe negative title pruning.
+    workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None
     matrix: dict[str, list[dict[str, str]]]
 
 
@@ -598,6 +613,8 @@ def build_refresh_plan(
     limits: dict[str, int] | None = None,
     shards: dict[str, int] | None = None,
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
+    workday_briefs: list[WorkdayBriefBinding] | None = None,
+    workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
@@ -624,6 +641,30 @@ def build_refresh_plan(
         if shards[source] > subset.target_counts_by_source[source]:
             raise ValueError(f"shard count exceeds selected {source} targets")
     manifest = build_shard_manifest(subset, shard_counts_by_source=shards)
+
+    planned_retained_candidates = None
+    if workday_retained_candidates is not None:
+        all_workday_boards = {
+            target.source_target().board_id
+            for target in registry.targets
+            if target.source == "workday"
+        }
+        selected_workday_boards = {
+            target.source_target().board_id
+            for target in subset.targets
+            if target.source == "workday"
+        }
+        seen_boards: set[str] = set()
+        planned_retained_candidates = []
+        for binding in workday_retained_candidates:
+            if binding.board_id not in all_workday_boards:
+                raise ValueError("retained Workday candidate board is outside production registry")
+            if binding.board_id in seen_boards:
+                raise ValueError("duplicate retained Workday candidate board")
+            seen_boards.add(binding.board_id)
+            if binding.board_id in selected_workday_boards:
+                planned_retained_candidates.append(binding)
+
     matrix = {
         "include": [
             {"shard_id": shard.shard_id, "source": shard.source}
@@ -642,14 +683,29 @@ def build_refresh_plan(
         total_targets=len(subset.targets),
         total_shards=len(manifest.shards),
         workday_detail_concurrency=workday_detail_concurrency,
+        workday_briefs=(None if workday_briefs is None else list(workday_briefs)),
+        workday_retained_candidates=planned_retained_candidates,
         matrix=matrix,
     )
     return plan, subset, manifest
 
 
-def _refresh_collector_factory(source: str, *, workday_detail_concurrency: int):
+def _refresh_collector_factory(
+    source: str,
+    *,
+    workday_detail_concurrency: int,
+    registry: ProductionSourceRegistry,
+    workday_briefs,
+    workday_retained_candidates,
+):
     if source == "workday":
-        return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
+        if workday_briefs is None or workday_retained_candidates is None:
+            return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
+        return IndexFirstWorkdayCollector(
+            registry=registry,
+            briefs=workday_briefs,
+            detail_concurrency=workday_detail_concurrency,
+        )
     return default_collector_factory(source)
 
 
@@ -659,6 +715,7 @@ def collect_refresh_shard(
     manifest: CollectionShardManifest,
     plan: RefreshPlan,
     shard_id: str,
+    repo_root: Path = Path("."),
 ) -> ShardCollectionArtifact:
     """Collect one production refresh shard after validating refresh provenance."""
     registry_sha = sha256_json(registry.model_dump(mode="json"))
@@ -668,6 +725,14 @@ def collect_refresh_shard(
         or plan.shard_manifest_sha256 != manifest.manifest_sha256
     ):
         raise ValueError("refresh plan does not match registry/manifest")
+    workday_briefs = (
+        None
+        if plan.workday_briefs is None
+        else load_bound_workday_briefs(
+            plan.workday_briefs,
+            repo_root=repo_root,
+        )
+    )
     return collect_shard(
         registry=registry,
         manifest=manifest,
@@ -675,7 +740,24 @@ def collect_refresh_shard(
         collector_factory=partial(
             _refresh_collector_factory,
             workday_detail_concurrency=plan.workday_detail_concurrency,
+            registry=registry,
+            workday_briefs=workday_briefs,
+            workday_retained_candidates=plan.workday_retained_candidates,
         ),
+    )
+
+
+def _retained_workday_invalidation_identities(
+    plan: RefreshPlan,
+) -> list[tuple[str, str, str]]:
+    if plan.workday_retained_candidates is None:
+        return []
+    return sorted(
+        {
+            ("workday", binding.board_id, source_job_id)
+            for binding in plan.workday_retained_candidates
+            for source_job_id in binding.source_job_ids
+        }
     )
 
 
@@ -687,6 +769,9 @@ def main() -> None:
     plan.add_argument("--registry", type=Path, required=True)
     plan.add_argument("--cohort", type=int, required=True)
     plan.add_argument("--output-dir", type=Path, required=True)
+    plan.add_argument("--database", type=Path, required=True)
+    plan.add_argument("--plan-dir", type=Path, default=Path("config/sourcing_plans"))
+    plan.add_argument("--repo-root", type=Path, default=Path("."))
     plan.add_argument(
         "--workday-limit",
         type=int,
@@ -708,16 +793,26 @@ def main() -> None:
     collect.add_argument("--refresh-plan", type=Path, required=True)
     collect.add_argument("--shard-id", required=True)
     collect.add_argument("--output", type=Path, required=True)
+    collect.add_argument("--repo-root", type=Path, default=Path("."))
 
     fan_in = commands.add_parser("fan-in")
     fan_in.add_argument("--registry", type=Path, required=True)
     fan_in.add_argument("--parent-registry", type=Path, required=True)
     fan_in.add_argument("--manifest", type=Path, required=True)
+    fan_in.add_argument("--refresh-plan", type=Path)
     fan_in.add_argument("--artifacts-dir", type=Path, required=True)
     fan_in.add_argument("--database", type=Path, required=True)
     fan_in.add_argument("--output", type=Path, required=True)
     fan_in.add_argument("--retention-hours", type=int, default=72)
     fan_in.add_argument("--skip-retention", action="store_true")
+
+    verify_profiles = commands.add_parser("verify-profile-snapshot")
+    verify_profiles.add_argument("--refresh-plan", type=Path, required=True)
+    verify_profiles.add_argument("--database", type=Path, required=True)
+    verify_profiles.add_argument(
+        "--plan-dir", type=Path, default=Path("config/sourcing_plans")
+    )
+    verify_profiles.add_argument("--repo-root", type=Path, default=Path("."))
 
     prune = commands.add_parser("prune")
     prune.add_argument("--database", type=Path, required=True)
@@ -732,11 +827,28 @@ def main() -> None:
                 registry,
                 workday_limit=args.workday_limit,
             )
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            planning_repository = SQLiteRepository(args.database)
+            workday_briefs = resolve_active_workday_brief_bindings(
+                repository=planning_repository,
+                plan_dir=args.plan_dir,
+                repo_root=args.repo_root,
+            )
+            loaded_workday_briefs = load_bound_workday_briefs(
+                workday_briefs,
+                repo_root=args.repo_root,
+            )
+            workday_retained_candidates = resolve_retained_workday_candidate_bindings(
+                repository=planning_repository,
+                briefs=loaded_workday_briefs,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
                 limits=limits,
                 workday_detail_concurrency=args.workday_detail_concurrency,
+                workday_briefs=workday_briefs,
+                workday_retained_candidates=workday_retained_candidates,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
@@ -757,9 +869,37 @@ def main() -> None:
                     "selected_registry_id": subset.registry_id,
                     "selected_targets": len(subset.targets),
                     "target_counts_by_source": subset.target_counts_by_source,
+                    "active_workday_briefs": len(refresh.workday_briefs),
+                    "retained_workday_candidate_ids": sum(
+                        len(binding.source_job_ids)
+                        for binding in (refresh.workday_retained_candidates or [])
+                    ),
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
+            return
+
+        if args.command == "verify-profile-snapshot":
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+            if refresh_plan.workday_briefs is None:
+                raise ValueError(
+                    "refresh plan predates active Workday SearchBrief snapshot binding"
+                )
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            verify_active_workday_brief_bindings(
+                repository=repository,
+                plan_dir=args.plan_dir,
+                repo_root=args.repo_root,
+                expected=refresh_plan.workday_briefs,
+            )
+            payload = {
+                "active_workday_briefs": len(refresh_plan.workday_briefs),
+                "snapshot_unchanged": True,
+            }
+            print(json.dumps(payload, sort_keys=True))
             return
 
         if args.command == "prune":
@@ -792,6 +932,7 @@ def main() -> None:
                 manifest=manifest,
                 plan=refresh_plan,
                 shard_id=args.shard_id,
+                repo_root=args.repo_root,
             )
             _write_json(args.output, artifact)
             print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))
@@ -805,6 +946,33 @@ def main() -> None:
             ShardCollectionArtifact.model_validate_json(path.read_text(encoding="utf-8"))
             for path in artifact_paths
         ]
+        index_first_used = any(
+            target.telemetry.get("collection_mode") == "index_first"
+            for artifact in artifacts
+            for target in artifact.targets
+        )
+        invalidated_identities: list[tuple[str, str, str]] = []
+        if args.refresh_plan is not None:
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+            registry_sha = sha256_json(registry.model_dump(mode="json"))
+            if (
+                refresh_plan.refresh_registry_id != registry.registry_id
+                or refresh_plan.refresh_registry_sha256 != registry_sha
+                or refresh_plan.shard_manifest_sha256 != manifest.manifest_sha256
+            ):
+                raise ValueError("fan-in refresh plan does not match registry/manifest")
+            if index_first_used and refresh_plan.workday_retained_candidates is None:
+                raise ValueError(
+                    "index-first fan-in requires retained Workday candidate snapshot"
+                )
+            invalidated_identities = _retained_workday_invalidation_identities(
+                refresh_plan
+            )
+        elif index_first_used:
+            raise ValueError("index-first fan-in requires --refresh-plan")
+
         print(
             json.dumps(
                 {
@@ -838,6 +1006,7 @@ def main() -> None:
             manifest=manifest,
             artifacts=artifacts,
             payload_retention_hours=args.retention_hours,
+            invalidated_identities=invalidated_identities,
         )
         fan_in_seconds = time.perf_counter() - fan_in_started
         print(
@@ -847,6 +1016,7 @@ def main() -> None:
                     "elapsed_ms": round(fan_in_seconds * 1000),
                     "normalized_jobs": report.metrics.unique_normalized_jobs,
                     "inventory_memberships": report.metrics.inventory_memberships,
+                    "invalidated_retained_jobs": len(invalidated_identities),
                     "replayed": report.replayed,
                 },
                 sort_keys=True,

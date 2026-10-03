@@ -123,6 +123,7 @@ def test_collect_shard_emits_normalized_metrics_without_persistence() -> None:
         def __init__(self, source: str) -> None:
             assert source == "greenhouse"
             self.client = None
+            self.last_counts = {"collection_mode": "fake"}
 
         def collect(self, target: SourceTarget) -> CollectionResult:
             return by_board[target.board_id]
@@ -147,6 +148,10 @@ def test_collect_shard_emits_normalized_metrics_without_persistence() -> None:
     assert artifact.metrics.postings_at_most_24h_old_at_collection == 1
     assert artifact.metrics.target_runtime_p50_ms == 175
     assert artifact.metrics.target_runtime_p95_ms == 242
+    assert all(
+        target.telemetry == {"collection_mode": "fake"}
+        for target in artifact.targets
+    )
     assert artifact.artifact_sha256
 
 
@@ -181,6 +186,41 @@ def test_artifact_hash_rejects_tampering() -> None:
     payload["metrics"]["raw_postings_received"] = 99
     with pytest.raises(ValueError):
         ShardCollectionArtifact.model_validate(payload)
+
+
+def test_pre_telemetry_v1_artifact_hash_still_validates() -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 1})
+
+    class Collector:
+        client = None
+
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def collect(self, target: SourceTarget) -> CollectionResult:
+            return CollectionResult(
+                source=self.source,
+                target=target,
+                status=CollectionStatus.SUCCESS,
+                jobs=[],
+                raw_postings_received=0,
+            )
+
+    artifact = collect_shard(
+        registry=registry,
+        manifest=manifest,
+        shard_id="greenhouse-000",
+        collector_factory=Collector,
+        now=_clock([NOW, NOW, NOW, NOW, NOW, NOW]),
+        monotonic=_clock([0.0, 0.01, 0.01, 0.02]),
+    )
+    payload = artifact.model_dump(mode="json")
+    for target in payload["targets"]:
+        target.pop("telemetry", None)
+
+    reloaded = ShardCollectionArtifact.model_validate(payload)
+    assert reloaded.artifact_sha256 == artifact.artifact_sha256
 
 
 def test_artifact_hash_ignores_set_serialization_order() -> None:

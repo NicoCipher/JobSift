@@ -778,7 +778,8 @@ def validate_complete_index_set(
             raise ValueError(f"Workday index provenance mismatch: {shard.shard_id}")
 
 
-def _role_title_candidate(title: str | None, brief: SearchBrief) -> bool:
+def role_title_candidate(title: str | None, brief: SearchBrief) -> bool:
+    """Return whether list-title evidence can still satisfy the matcher role gate."""
     if not title:
         return False
     normalized = normalize_title(title)
@@ -820,7 +821,7 @@ def analyze_index(
         hinted += age is not None
         is_stale = definitely_older_than_72h(posting.posted_on)
         stale += is_stale
-        if _role_title_candidate(posting.title, brief):
+        if role_title_candidate(posting.title, brief):
             role_candidates += 1
             if not is_stale:
                 recent_role_candidates += 1

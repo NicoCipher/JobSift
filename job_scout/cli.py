@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from collections import Counter
 from pathlib import Path
@@ -29,6 +30,27 @@ from job_scout.search_brief import create_search_brief_interactively, load_searc
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
+
+SERIALIZED_PROFILE_MUTATION_WORKFLOWS = frozenset(
+    {
+        "Client Delivery Control",
+        "Configure Client Delivery Profile",
+    }
+)
+
+
+def _require_serialized_profile_mutation(repository, command: str) -> None:
+    """Reject Turso-backed profile mutations outside the queued production workflows."""
+    if not repository.remote_url:
+        return
+    if (
+        os.getenv("GITHUB_ACTIONS", "").casefold() != "true"
+        or os.getenv("GITHUB_WORKFLOW", "") not in SERIALIZED_PROFILE_MUTATION_WORKFLOWS
+    ):
+        raise RuntimeError(
+            "Turso-backed delivery-profile mutations must run through "
+            "Client Delivery Control or Configure Client Delivery Profile"
+        )
 
 
 def main() -> None:
@@ -374,6 +396,12 @@ def main() -> None:
             repository = SQLiteRepository(args.database)
             store = ClientDeliveryProfileStore(repository)
             command = args.delivery_profile_command
+            mutating_profile_command = (
+                command not in {"list", "status"}
+                or (command == "status" and args.reconcile)
+            )
+            if mutating_profile_command:
+                _require_serialized_profile_mutation(repository, command)
             if command == "set":
                 value = _set_profile(args.client, args.destination_id, args.plan)
                 print(json.dumps(_public(value), sort_keys=True))
@@ -469,7 +497,13 @@ def main() -> None:
                     and result.status != "delivered"
                 ):
                     parser.exit(1)
-        except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
+        except (
+            BatchConflict,
+            OSError,
+            RuntimeError,
+            ValueError,
+            sqlite3.Error,
+        ) as exc:
             parser.error(f"unable to manage delivery profile: {exc}")
         return
 
