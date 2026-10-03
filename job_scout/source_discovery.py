@@ -178,7 +178,7 @@ class CommonCrawlDiscovery:
         crawl_id = record.get("id") if isinstance(record, dict) else None
         endpoint = record.get("cdx-api") if isinstance(record, dict) else None
         if not isinstance(crawl_id, str) or not isinstance(endpoint, str):
-            raise ValueError("Common Crawl latest collection lacks CDX metadata")
+            raise TypeError("Common Crawl latest collection lacks CDX metadata")
         endpoint = endpoint.replace(
             "http://index.commoncrawl.org/",
             "https://index.commoncrawl.org/",
@@ -246,7 +246,7 @@ class CommonCrawlDiscovery:
                     f"Common Crawl returned malformed JSON for {query.query_id}"
                 ) from exc
             if not isinstance(value, dict) or not isinstance(value.get("url"), str):
-                raise ValueError(
+                raise TypeError(
                     f"Common Crawl returned malformed record for {query.query_id}"
                 )
             values.append(value)
