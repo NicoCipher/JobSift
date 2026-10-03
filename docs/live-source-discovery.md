@@ -58,7 +58,7 @@ Turso stores:
 New targets are checked before previously checked targets. Recheck cadence is
 classification-aware:
 
-- active / valid empty: 24 hours
+- active / valid empty: 24 hours (due admitted targets are checked before new candidates)
 - transient / rate limited / malformed: 6 hours
 - restricted: 3 days
 - invalid / unprocessable: 7 days
@@ -67,8 +67,8 @@ Only `active` targets are runtime-admitted.
 
 ## Scheduling
 
-`.github/workflows/live-source-discovery.yml` runs every six hours and can also be
-manually dispatched. It performs bounded discovery and at most 200 provider health
+`.github/workflows/live-source-discovery.yml` runs every three hours and can also be
+manually dispatched. It performs bounded discovery and at most 300 provider health
 checks per run.
 
 The hourly inventory refresh reads current admissions from the same Turso
