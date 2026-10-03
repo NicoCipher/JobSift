@@ -31,18 +31,6 @@ DISCOVERY_SOURCE = "commoncrawl-cdx"
 DISCOVERY_USER_AGENT = "JobSift-SourceDiscovery/1.0 (+https://github.com/NicoCipher/JobSift)"
 HEALTH_USER_AGENT = "JobSift-SourceAdmission/1.0 (+https://github.com/NicoCipher/JobSift)"
 
-HEALTH_CLASSIFICATIONS = {
-    "active",
-    "valid_empty",
-    "invalid",
-    "restricted",
-    "rate_limited",
-    "transient_failure",
-    "malformed_response",
-    "unprocessable",
-}
-
-
 @dataclass(frozen=True)
 class DiscoveryQuery:
     query_id: str
@@ -152,7 +140,7 @@ def overlay_admitted_targets(
 
 
 class CommonCrawlDiscovery:
-    """Read bounded pages from the latest Common Crawl CDX index, sequentially."""
+    """Read bounded, distributed pages from the latest Common Crawl CDX index."""
 
     def __init__(
         self,
@@ -277,29 +265,26 @@ class CommonCrawlDiscovery:
         unique_run_targets: set[str] = set()
 
         for query in self.queries:
-            cursor = self.store.get_cursor(
-                discovery_source=DISCOVERY_SOURCE,
-                query_id=query.query_id,
-            )
-            if cursor is None or cursor["crawl_id"] != crawl_id:
-                pages = self._page_count(endpoint, query)
-                page = self._initial_page(
-                    crawl_id=crawl_id,
-                    query_id=query.query_id,
-                    pages=pages,
-                )
-            else:
-                pages = int(cursor["pages"])
-                page = int(cursor["page"])
-
             try:
+                cursor = self.store.get_cursor(
+                    discovery_source=DISCOVERY_SOURCE,
+                    query_id=query.query_id,
+                )
+                if cursor is None or cursor["crawl_id"] != crawl_id:
+                    pages = self._page_count(endpoint, query)
+                    page = self._initial_page(
+                        crawl_id=crawl_id,
+                        query_id=query.query_id,
+                        pages=pages,
+                    )
+                else:
+                    pages = int(cursor["pages"])
+                    page = int(cursor["page"])
                 records = self._page(endpoint, query, page)
             except (httpx.HTTPError, RuntimeError, ValueError) as exc:
                 query_reports.append(
                     {
                         "query_id": query.query_id,
-                        "page": page,
-                        "pages": pages,
                         "status": "failed",
                         "error": str(exc),
                     }
@@ -378,7 +363,7 @@ class CommonCrawlDiscovery:
             "crawl_id": crawl_id,
             **dict(totals),
             "unique_supported_targets_seen": len(unique_run_targets),
-            "supported_targets_by_source": dict(sorted(source_counts.items())),
+            "supported_urls_by_source": dict(sorted(source_counts.items())),
             "queries": query_reports,
         }
 
