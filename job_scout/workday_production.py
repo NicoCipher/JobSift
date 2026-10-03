@@ -9,8 +9,11 @@ coverage. Incomplete index evidence falls back to the legacy full collector.
 from __future__ import annotations
 
 import hashlib
+import re
+from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict
 
@@ -19,6 +22,7 @@ from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.models import (
     CollectionResult,
     CollectionStatus,
+    Job,
     SearchBrief,
     SourceTarget,
 )
@@ -39,6 +43,65 @@ class WorkdayBriefBinding(BaseModel):
 
     path: str
     sha256: str
+
+
+
+class WorkdayRetainedCandidateBinding(BaseModel):
+    """Retained Workday provider identities that could still match an active brief."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    board_id: str
+    source_job_ids: list[str]
+
+
+_WORKDAY_SOURCE_JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,99}$")
+
+
+def workday_source_job_id_from_external_path(external_path: str) -> str | None:
+    """Extract only the provider-id suffix shape already proven by Workday URLs."""
+    segment = unquote(external_path.rsplit("/", 1)[-1])
+    _slug, separator, provider_id = segment.rpartition("_")
+    if not separator or not _WORKDAY_SOURCE_JOB_ID.fullmatch(provider_id):
+        return None
+    return provider_id
+
+
+def resolve_retained_workday_candidate_bindings(
+    *,
+    repository,
+    briefs: list[SearchBrief],
+) -> list[WorkdayRetainedCandidateBinding]:
+    """Freeze only retained Workday identities whose stored title can still match."""
+    if not briefs:
+        return []
+
+    grouped: dict[str, set[str]] = defaultdict(set)
+    with repository.connect() as connection:
+        rows = connection.execute(
+            "SELECT source_board_id,source_job_id,payload_json FROM jobs "
+            "WHERE source='workday' AND lifecycle!='closed' "
+            "ORDER BY source_board_id,source_job_id"
+        ).fetchall()
+
+    for row in rows:
+        job = Job.model_validate_json(row["payload_json"])
+        if (
+            job.source != "workday"
+            or job.source_board_id != row["source_board_id"]
+            or job.source_job_id != row["source_job_id"]
+        ):
+            raise ValueError("retained Workday job provenance is inconsistent")
+        if any(role_title_candidate(job.title, brief) for brief in briefs):
+            grouped[job.source_board_id].add(job.source_job_id)
+
+    return [
+        WorkdayRetainedCandidateBinding(
+            board_id=board_id,
+            source_job_ids=sorted(source_job_ids),
+        )
+        for board_id, source_job_ids in sorted(grouped.items())
+    ]
 
 
 def _repo_relative(path: Path, repo_root: Path) -> str:
@@ -146,6 +209,7 @@ class IndexFirstWorkdayCollector:
         registry: ProductionSourceRegistry,
         briefs: list[SearchBrief],
         detail_concurrency: int,
+        retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None,
         scanner_factory: Callable[[], WorkdayIndexScanner] = WorkdayIndexScanner,
         hydration_factory: Callable[[int], WorkdayCollector] | None = None,
     ) -> None:
@@ -163,6 +227,15 @@ class IndexFirstWorkdayCollector:
             if board_id in self.targets_by_board:
                 raise ValueError("duplicate Workday board in refresh registry")
             self.targets_by_board[board_id] = production_target
+        self.retained_source_job_ids_by_board: dict[str, frozenset[str]] = {}
+        for binding in retained_candidates or []:
+            if binding.board_id not in self.targets_by_board:
+                raise ValueError("retained Workday candidate board is outside refresh registry")
+            if binding.board_id in self.retained_source_job_ids_by_board:
+                raise ValueError("duplicate retained Workday candidate board")
+            self.retained_source_job_ids_by_board[binding.board_id] = frozenset(
+                binding.source_job_ids
+            )
         self.last_counts: dict[str, int | float | str | bool | None] = {}
 
     @staticmethod
@@ -189,8 +262,12 @@ class IndexFirstWorkdayCollector:
         finally:
             self._close(scanner)
 
+        retained_source_job_ids = self.retained_source_job_ids_by_board.get(
+            target.board_id, frozenset()
+        )
         index_counts = {
             "collection_mode": "index_first",
+            "retained_candidate_ids": len(retained_source_job_ids),
             "active_briefs": len(self.briefs),
             "index_status": index.status.value,
             "index_broad_total": index.broad_total,
@@ -220,10 +297,28 @@ class IndexFirstWorkdayCollector:
         stale_skipped = 0
         title_skipped = 0
         uncertain_title_hydrated = 0
+        uncertain_identity_hydrated = 0
+        retained_candidate_hydrated = 0
 
         for posting in index.postings:
             if definitely_older_than_72h(posting.posted_on):
                 stale_skipped += 1
+                continue
+
+            provider_id = workday_source_job_id_from_external_path(
+                posting.external_path
+            )
+            if provider_id is None:
+                # Without a provider identity we cannot prove that a previously
+                # retained candidate is unrelated. Preserve recall by hydrating.
+                uncertain_identity_hydrated += 1
+                candidate_paths.append(posting.external_path)
+                continue
+            if provider_id in retained_source_job_ids:
+                # A retained candidate can have a renamed title/slug. Hydrate the
+                # current path so the authoritative payload replaces the old title.
+                retained_candidate_hydrated += 1
+                candidate_paths.append(posting.external_path)
                 continue
             if not self.briefs:
                 title_skipped += 1
@@ -244,6 +339,8 @@ class IndexFirstWorkdayCollector:
                 "index_stale_skipped": stale_skipped,
                 "index_title_skipped": title_skipped,
                 "uncertain_title_hydrated": uncertain_title_hydrated,
+                "uncertain_identity_hydrated": uncertain_identity_hydrated,
+                "retained_candidate_hydrated": retained_candidate_hydrated,
                 "candidate_paths": 0,
                 "detail_attempts": 0,
                 "normalized": 0,
@@ -268,6 +365,8 @@ class IndexFirstWorkdayCollector:
             "index_stale_skipped": stale_skipped,
             "index_title_skipped": title_skipped,
             "uncertain_title_hydrated": uncertain_title_hydrated,
+            "uncertain_identity_hydrated": uncertain_identity_hydrated,
+            "retained_candidate_hydrated": retained_candidate_hydrated,
             "candidate_paths": len(candidate_paths),
             **(details if isinstance(details, dict) else {}),
         }

@@ -490,3 +490,60 @@ def test_explicit_empty_workday_snapshot_remains_distinct_from_legacy():
     payload.pop("workday_briefs")
     legacy = inventory_refresh.RefreshPlan.model_validate(payload)
     assert legacy.workday_briefs is None
+
+
+def test_refresh_plan_carries_retained_workday_candidate_snapshot():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    _legacy, subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+    )
+    board_id = next(
+        target.source_target().board_id
+        for target in subset.targets
+        if target.source == "workday"
+    )
+    retained = inventory_refresh.WorkdayRetainedCandidateBinding(
+        board_id=board_id,
+        source_job_ids=["R123"],
+    )
+
+    plan, _subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        workday_briefs=[],
+        workday_retained_candidates=[retained],
+    )
+
+    assert plan.workday_retained_candidates == [retained]
+
+
+def test_index_first_plan_without_retained_snapshot_falls_back_to_full_workday(monkeypatch):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    plan, subset, manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        workday_briefs=[],
+        workday_retained_candidates=None,
+    )
+    captured = {}
+    sentinel = object()
+
+    def fake_collect_shard(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(inventory_refresh, "collect_shard", fake_collect_shard)
+    result = inventory_refresh.collect_refresh_shard(
+        registry=subset,
+        manifest=manifest,
+        plan=plan,
+        shard_id=next(
+            shard.shard_id for shard in manifest.shards if shard.source == "workday"
+        ),
+    )
+
+    assert result is sentinel
+    collector = captured["collector_factory"]("workday")
+    assert collector.__class__.__name__ == "WorkdayCollector"
+    collector.client.close()

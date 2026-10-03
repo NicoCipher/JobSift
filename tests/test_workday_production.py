@@ -89,7 +89,7 @@ def test_monster_board_hydrates_only_bounded_candidate_union():
     registry, production_target = _target()
     postings = [
         WorkdayIndexPosting(
-            external_path=f"/job/example/R{i}",
+            external_path=f"/job/example/Sales-Associate_R{i}",
             title="Sales Associate",
             posted_on="Posted Today",
         )
@@ -118,7 +118,7 @@ def test_monster_board_hydrates_only_bounded_candidate_union():
     assert result.status is CollectionStatus.SUCCESS
     assert result.raw_postings_received == 12_524
     assert hydrator.paths == [
-        f"/job/example/R{index}" for index in candidate_indexes
+        f"/job/example/Sales-Associate_R{index}" for index in candidate_indexes
     ]
     assert collector.last_counts["candidate_paths"] == 3
     assert collector.last_counts["index_title_skipped"] == 12_521
@@ -130,22 +130,22 @@ def test_unknown_index_evidence_is_hydrated_not_silently_rejected():
     registry, production_target = _target()
     postings = [
         WorkdayIndexPosting(
-            external_path="/job/example/matching",
+            external_path="/job/example/Software-Engineer_M1",
             title="Software Engineer",
             posted_on=None,
         ),
         WorkdayIndexPosting(
-            external_path="/job/example/missing-title",
+            external_path="/job/example/Unknown_M2",
             title=None,
             posted_on="Posted Today",
         ),
         WorkdayIndexPosting(
-            external_path="/job/example/stale",
+            external_path="/job/example/Software-Engineer_M3",
             title="Software Engineer",
             posted_on="Posted 4 Days Ago",
         ),
         WorkdayIndexPosting(
-            external_path="/job/example/unrelated",
+            external_path="/job/example/Sales-Associate_M4",
             title="Sales Associate",
             posted_on="Posted Today",
         ),
@@ -164,8 +164,8 @@ def test_unknown_index_evidence_is_hydrated_not_silently_rejected():
     collector.collect(production_target.source_target())
 
     assert hydrator.paths == [
-        "/job/example/matching",
-        "/job/example/missing-title",
+        "/job/example/Software-Engineer_M1",
+        "/job/example/Unknown_M2",
     ]
     assert collector.last_counts["uncertain_title_hydrated"] == 1
     assert collector.last_counts["index_stale_skipped"] == 1
@@ -178,7 +178,7 @@ def test_incomplete_index_falls_back_to_legacy_full_collection():
         production_target.target_identity,
         [
             WorkdayIndexPosting(
-                external_path="/job/example/visible",
+                external_path="/job/example/Software-Engineer_V1",
                 title="Software Engineer",
                 posted_on="Posted Today",
             )
@@ -304,3 +304,110 @@ def test_active_profile_bindings_ignore_unbound_example_plans(tmp_path, monkeypa
     )
     with pytest.raises(ValueError, match="changed after planning"):
         workday_production.load_bound_workday_briefs(bindings, repo_root=tmp_path)
+
+
+def test_retained_candidate_is_hydrated_after_title_and_slug_change():
+    registry, production_target = _target()
+    board_id = production_target.source_target().board_id
+    postings = [
+        WorkdayIndexPosting(
+            external_path="/job/example/Sales-Associate_R123",
+            title="Sales Associate",
+            posted_on="Posted Today",
+        ),
+        WorkdayIndexPosting(
+            external_path="/job/example/Sales-Associate_R124",
+            title="Sales Associate",
+            posted_on="Posted Today",
+        ),
+    ]
+    hydrator = FakeHydrator()
+    collector = workday_production.IndexFirstWorkdayCollector(
+        registry=registry,
+        briefs=[SearchBrief(client_id="client-a", target_roles=["Software Engineer"])],
+        retained_candidates=[
+            workday_production.WorkdayRetainedCandidateBinding(
+                board_id=board_id,
+                source_job_ids=["R123"],
+            )
+        ],
+        detail_concurrency=4,
+        scanner_factory=lambda: FakeScanner(
+            _index_result(production_target.target_identity, postings)
+        ),
+        hydration_factory=lambda _concurrency: hydrator,
+    )
+
+    collector.collect(production_target.source_target())
+
+    assert hydrator.paths == ["/job/example/Sales-Associate_R123"]
+    assert collector.last_counts["retained_candidate_hydrated"] == 1
+    assert collector.last_counts["index_title_skipped"] == 1
+
+
+def test_unparseable_workday_identity_fails_open_to_hydration():
+    registry, production_target = _target()
+    postings = [
+        WorkdayIndexPosting(
+            external_path="/job/example/no-provider-id-suffix",
+            title="Sales Associate",
+            posted_on="Posted Today",
+        )
+    ]
+    hydrator = FakeHydrator()
+    collector = workday_production.IndexFirstWorkdayCollector(
+        registry=registry,
+        briefs=[SearchBrief(client_id="client-a", target_roles=["Software Engineer"])],
+        retained_candidates=[],
+        detail_concurrency=4,
+        scanner_factory=lambda: FakeScanner(
+            _index_result(production_target.target_identity, postings)
+        ),
+        hydration_factory=lambda _concurrency: hydrator,
+    )
+
+    collector.collect(production_target.source_target())
+
+    assert hydrator.paths == ["/job/example/no-provider-id-suffix"]
+    assert collector.last_counts["uncertain_identity_hydrated"] == 1
+    assert collector.last_counts["index_title_skipped"] == 0
+
+
+def test_retained_candidate_snapshot_keeps_only_titles_matching_active_briefs(tmp_path):
+    from job_scout.domain.models import Job
+    from job_scout.storage.sqlite import SQLiteRepository
+
+    registry, production_target = _target()
+    board_id = production_target.source_target().board_id
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    for source_job_id, title in (
+        ("R-match", "Software Engineer"),
+        ("R-skip", "Sales Associate"),
+    ):
+        repository.upsert_job(
+            Job(
+                id=f"job-{source_job_id}",
+                source="workday",
+                source_job_id=source_job_id,
+                source_board_id=board_id,
+                title=title,
+                company="Example",
+                job_url=f"https://example.test/jobs/{source_job_id}",
+                canonical_url=f"https://example.test/jobs/{source_job_id}",
+                posted_at=NOW,
+                content_fingerprint=f"fingerprint-{source_job_id}",
+            )
+        )
+
+    bindings = workday_production.resolve_retained_workday_candidate_bindings(
+        repository=repository,
+        briefs=[SearchBrief(client_id="client-a", target_roles=["Software Engineer"])],
+    )
+
+    assert bindings == [
+        workday_production.WorkdayRetainedCandidateBinding(
+            board_id=board_id,
+            source_job_ids=["R-match"],
+        )
+    ]

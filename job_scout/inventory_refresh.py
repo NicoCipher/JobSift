@@ -35,8 +35,10 @@ from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
     WorkdayBriefBinding,
+    WorkdayRetainedCandidateBinding,
     load_bound_workday_briefs,
     resolve_active_workday_brief_bindings,
+    resolve_retained_workday_candidate_bindings,
     verify_active_workday_brief_bindings,
 )
 
@@ -162,6 +164,9 @@ class RefreshPlan(BaseModel):
     # None is reserved for pre-index-first/legacy plans that did not freeze a brief snapshot.
     # New production plans always store a list, including [] when no profiles are active.
     workday_briefs: list[WorkdayBriefBinding] | None = None
+    # None means the plan predates retained-candidate protection and must use
+    # legacy full Workday collection rather than unsafe negative title pruning.
+    workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None
     matrix: dict[str, list[dict[str, str]]]
 
 
@@ -609,6 +614,7 @@ def build_refresh_plan(
     shards: dict[str, int] | None = None,
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
     workday_briefs: list[WorkdayBriefBinding] | None = None,
+    workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
@@ -635,6 +641,30 @@ def build_refresh_plan(
         if shards[source] > subset.target_counts_by_source[source]:
             raise ValueError(f"shard count exceeds selected {source} targets")
     manifest = build_shard_manifest(subset, shard_counts_by_source=shards)
+
+    planned_retained_candidates = None
+    if workday_retained_candidates is not None:
+        all_workday_boards = {
+            target.source_target().board_id
+            for target in registry.targets
+            if target.source == "workday"
+        }
+        selected_workday_boards = {
+            target.source_target().board_id
+            for target in subset.targets
+            if target.source == "workday"
+        }
+        seen_boards: set[str] = set()
+        planned_retained_candidates = []
+        for binding in workday_retained_candidates:
+            if binding.board_id not in all_workday_boards:
+                raise ValueError("retained Workday candidate board is outside production registry")
+            if binding.board_id in seen_boards:
+                raise ValueError("duplicate retained Workday candidate board")
+            seen_boards.add(binding.board_id)
+            if binding.board_id in selected_workday_boards:
+                planned_retained_candidates.append(binding)
+
     matrix = {
         "include": [
             {"shard_id": shard.shard_id, "source": shard.source}
@@ -654,6 +684,7 @@ def build_refresh_plan(
         total_shards=len(manifest.shards),
         workday_detail_concurrency=workday_detail_concurrency,
         workday_briefs=(None if workday_briefs is None else list(workday_briefs)),
+        workday_retained_candidates=planned_retained_candidates,
         matrix=matrix,
     )
     return plan, subset, manifest
@@ -665,13 +696,15 @@ def _refresh_collector_factory(
     workday_detail_concurrency: int,
     registry: ProductionSourceRegistry,
     workday_briefs,
+    workday_retained_candidates,
 ):
     if source == "workday":
-        if workday_briefs is None:
+        if workday_briefs is None or workday_retained_candidates is None:
             return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
         return IndexFirstWorkdayCollector(
             registry=registry,
             briefs=workday_briefs,
+            retained_candidates=workday_retained_candidates,
             detail_concurrency=workday_detail_concurrency,
         )
     return default_collector_factory(source)
@@ -710,6 +743,7 @@ def collect_refresh_shard(
             workday_detail_concurrency=plan.workday_detail_concurrency,
             registry=registry,
             workday_briefs=workday_briefs,
+            workday_retained_candidates=plan.workday_retained_candidates,
         ),
     )
 
@@ -786,12 +820,21 @@ def main() -> None:
                 plan_dir=args.plan_dir,
                 repo_root=args.repo_root,
             )
+            loaded_workday_briefs = load_bound_workday_briefs(
+                workday_briefs,
+                repo_root=args.repo_root,
+            )
+            workday_retained_candidates = resolve_retained_workday_candidate_bindings(
+                repository=planning_repository,
+                briefs=loaded_workday_briefs,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
                 limits=limits,
                 workday_detail_concurrency=args.workday_detail_concurrency,
                 workday_briefs=workday_briefs,
+                workday_retained_candidates=workday_retained_candidates,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
@@ -813,6 +856,10 @@ def main() -> None:
                     "selected_targets": len(subset.targets),
                     "target_counts_by_source": subset.target_counts_by_source,
                     "active_workday_briefs": len(refresh.workday_briefs),
+                    "retained_workday_candidate_ids": sum(
+                        len(binding.source_job_ids)
+                        for binding in (refresh.workday_retained_candidates or [])
+                    ),
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
