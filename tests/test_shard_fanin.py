@@ -760,8 +760,6 @@ def test_fan_in_atomically_closes_skipped_identity_and_reopens_rehydrated_identi
         update={
             "id": "retained-skipped",
             "source_job_id": "retained-skipped",
-            "job_url": "https://example.test/a/retained-skipped",
-            "canonical_url": "https://example.test/a/retained-skipped",
             "content_fingerprint": "retained-skipped-fp",
         }
     )
@@ -810,8 +808,6 @@ def test_fan_in_invalidation_rolls_back_if_atomic_persistence_fails(
         update={
             "id": "retained-before-failure",
             "source_job_id": "retained-before-failure",
-            "job_url": "https://example.test/a/retained-before-failure",
-            "canonical_url": "https://example.test/a/retained-before-failure",
             "content_fingerprint": "retained-before-failure-fp",
         }
     )
