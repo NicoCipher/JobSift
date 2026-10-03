@@ -828,13 +828,19 @@ def main() -> None:
             args.database.parent.mkdir(parents=True, exist_ok=True)
             planning_repository = SQLiteRepository(args.database)
             discovery_store = SourceDiscoveryStore(planning_repository)
-            admitted_targets = discovery_store.admitted_targets(
-                now=datetime.now(UTC),
-                max_health_age_hours=48,
+            admitted_targets, admission_health_evidence = (
+                discovery_store.admitted_snapshot(
+                    now=datetime.now(UTC),
+                    max_health_age_hours=48,
+                )
             )
             registry, admission_overlay = overlay_admitted_targets(
                 base_registry,
                 admitted_targets,
+            )
+            admission_overlay["health_evidence"] = admission_health_evidence
+            admission_overlay["health_evidence_sha256"] = sha256_json(
+                admission_health_evidence
             )
             limits = default_refresh_limits(
                 registry,
@@ -1043,6 +1049,15 @@ def main() -> None:
             flush=True,
         )
         parent_registry = load_production_registry(args.parent_registry)
+        if args.refresh_plan is not None:
+            parent_registry_sha = sha256_json(parent_registry.model_dump(mode="json"))
+            if (
+                refresh_plan.parent_registry_id != parent_registry.registry_id
+                or refresh_plan.parent_registry_sha256 != parent_registry_sha
+            ):
+                raise ValueError(
+                    "fan-in parent registry does not match refresh-plan snapshot"
+                )
         coverage_proof = build_coverage_proof(
             parent_registry,
             limits=registry.target_counts_by_source,
