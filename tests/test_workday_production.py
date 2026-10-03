@@ -306,31 +306,24 @@ def test_active_profile_bindings_ignore_unbound_example_plans(tmp_path, monkeypa
         workday_production.load_bound_workday_briefs(bindings, repo_root=tmp_path)
 
 
-def test_retained_candidate_is_hydrated_after_title_and_slug_change():
+def test_nonmatching_and_stale_rows_remain_pruned_without_list_identity_guessing():
     registry, production_target = _target()
-    board_id = production_target.source_target().board_id
     postings = [
         WorkdayIndexPosting(
-            external_path="/job/example/Sales-Associate_R123",
+            external_path="/job/example/Sales-Associate_LIST-ALIAS",
             title="Sales Associate",
             posted_on="Posted Today",
         ),
         WorkdayIndexPosting(
-            external_path="/job/example/Sales-Associate_R124",
-            title="Sales Associate",
-            posted_on="Posted Today",
+            external_path="/job/example/Software-Engineer_OTHER-ALIAS",
+            title="Software Engineer",
+            posted_on="Posted 4 Days Ago",
         ),
     ]
     hydrator = FakeHydrator()
     collector = workday_production.IndexFirstWorkdayCollector(
         registry=registry,
         briefs=[SearchBrief(client_id="client-a", target_roles=["Software Engineer"])],
-        retained_candidates=[
-            workday_production.WorkdayRetainedCandidateBinding(
-                board_id=board_id,
-                source_job_ids=["R123"],
-            )
-        ],
         detail_concurrency=4,
         scanner_factory=lambda: FakeScanner(
             _index_result(production_target.target_identity, postings)
@@ -338,39 +331,12 @@ def test_retained_candidate_is_hydrated_after_title_and_slug_change():
         hydration_factory=lambda _concurrency: hydrator,
     )
 
-    collector.collect(production_target.source_target())
+    result = collector.collect(production_target.source_target())
 
-    assert hydrator.paths == ["/job/example/Sales-Associate_R123"]
-    assert collector.last_counts["retained_candidate_hydrated"] == 1
+    assert result.status is CollectionStatus.SUCCESS
+    assert hydrator.paths is None
     assert collector.last_counts["index_title_skipped"] == 1
-
-
-def test_unparseable_workday_identity_fails_open_to_hydration():
-    registry, production_target = _target()
-    postings = [
-        WorkdayIndexPosting(
-            external_path="/job/example/no-provider-id-suffix",
-            title="Sales Associate",
-            posted_on="Posted Today",
-        )
-    ]
-    hydrator = FakeHydrator()
-    collector = workday_production.IndexFirstWorkdayCollector(
-        registry=registry,
-        briefs=[SearchBrief(client_id="client-a", target_roles=["Software Engineer"])],
-        retained_candidates=[],
-        detail_concurrency=4,
-        scanner_factory=lambda: FakeScanner(
-            _index_result(production_target.target_identity, postings)
-        ),
-        hydration_factory=lambda _concurrency: hydrator,
-    )
-
-    collector.collect(production_target.source_target())
-
-    assert hydrator.paths == ["/job/example/no-provider-id-suffix"]
-    assert collector.last_counts["uncertain_identity_hydrated"] == 1
-    assert collector.last_counts["index_title_skipped"] == 0
+    assert collector.last_counts["index_stale_skipped"] == 1
 
 
 def test_retained_candidate_snapshot_keeps_only_titles_matching_active_briefs(tmp_path):

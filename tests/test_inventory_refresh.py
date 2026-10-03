@@ -409,6 +409,7 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert persist_job < mutation_lock < verify_snapshot < fan_in < deliver
     assert "verify-profile-snapshot" in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
+    assert "--refresh-plan refresh-plan/plan.json" in workflow[fan_in:deliver]
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
 
@@ -547,3 +548,32 @@ def test_index_first_plan_without_retained_snapshot_falls_back_to_full_workday(m
     collector = captured["collector_factory"]("workday")
     assert collector.__class__.__name__ == "WorkdayCollector"
     collector.client.close()
+
+
+def test_retained_workday_invalidation_identities_are_authoritative_db_keys():
+    plan = inventory_refresh.RefreshPlan(
+        parent_registry_id="parent",
+        parent_registry_sha256="a" * 64,
+        refresh_registry_id="refresh",
+        refresh_registry_sha256="b" * 64,
+        shard_manifest_sha256="c" * 64,
+        target_limits_by_source={"workday": 1},
+        shard_counts_by_source={"workday": 1},
+        target_counts_by_source={"workday": 1},
+        total_targets=1,
+        total_shards=1,
+        workday_detail_concurrency=4,
+        workday_briefs=[],
+        workday_retained_candidates=[
+            inventory_refresh.WorkdayRetainedCandidateBinding(
+                board_id="host:tenant:site",
+                source_job_ids=["REQ-2", "REQ-1", "REQ-1"],
+            )
+        ],
+        matrix={"include": [{"shard_id": "workday-000", "source": "workday"}]},
+    )
+
+    assert inventory_refresh._retained_workday_invalidation_identities(plan) == [
+        ("workday", "host:tenant:site", "REQ-1"),
+        ("workday", "host:tenant:site", "REQ-2"),
+    ]

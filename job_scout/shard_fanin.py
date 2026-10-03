@@ -230,6 +230,7 @@ def persist_shard_artifacts(
     manifest: CollectionShardManifest,
     artifacts: list[ShardCollectionArtifact],
     payload_retention_hours: int | None = None,
+    invalidated_identities: list[StorageIdentity] | None = None,
     now: Callable[[], datetime] = utc_now,
 ) -> FanInReport:
     """Validate the complete artifact set before making any inventory-run mutation."""
@@ -249,6 +250,10 @@ def persist_shard_artifacts(
     )
 
     ordered = _ordered_artifacts(manifest, verified_artifacts)
+    invalidation_values = sorted(set(invalidated_identities or []))
+    for source, board_id, source_job_id in invalidation_values:
+        if not source or not board_id or not source_job_id:
+            raise ValueError("fan-in invalidation identity contains a blank value")
     jobs_by_identity, membership_keys, normalized_records = _prepare_jobs(
         registry=registry,
         artifacts=ordered,
@@ -291,12 +296,17 @@ def persist_shard_artifacts(
     retention_identity = (
         "none" if payload_retention_hours is None else str(payload_retention_hours)
     )
+    invalidation_identity = (
+        "none"
+        if not invalidation_values
+        else sha256_json([list(identity) for identity in invalidation_values])
+    )
     run_id = str(
         uuid5(
             NAMESPACE_URL,
             "inventory-fanin:"
             f"{registry.registry_id}:{manifest.manifest_sha256}:{artifact_set_sha}:"
-            f"retention-hours={retention_identity}",
+            f"retention-hours={retention_identity}:invalidations={invalidation_identity}",
         )
     )
     registry_sha = sha256_json(registry.model_dump(mode="json"))
@@ -348,6 +358,7 @@ def persist_shard_artifacts(
         jobs=jobs,
         memberships=membership_jobs,
         stale_jobs=stale_jobs,
+        invalidated_identities=invalidation_values,
         target_observations=_target_observation_rows(ordered),
         pruned_at=retention_evaluated_at,
         status=status,

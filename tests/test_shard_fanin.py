@@ -735,3 +735,136 @@ def test_fan_in_accepts_provider_company_name_different_from_registry_hint(
             for row in connection.execute("SELECT payload_json FROM jobs")
         }
     assert "Alpha Holdings, Inc." in companies
+
+
+def test_fan_in_atomically_closes_skipped_identity_and_reopens_rehydrated_identity(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+
+    target_a = registry.targets[0].source_target()
+    rehydrated = _job(target_a)
+    previous = rehydrated.model_copy(
+        update={
+            "title": "Old Matching Title",
+            "content_fingerprint": "old-fingerprint",
+        }
+    )
+    skipped = rehydrated.model_copy(
+        update={
+            "id": "retained-skipped",
+            "source_job_id": "retained-skipped",
+            "job_url": "https://example.test/a/retained-skipped",
+            "canonical_url": "https://example.test/a/retained-skipped",
+            "content_fingerprint": "retained-skipped-fp",
+        }
+    )
+    repository.upsert_job(previous)
+    repository.upsert_job(skipped)
+
+    report = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        invalidated_identities=[
+            ("greenhouse", target_a.board_id, previous.source_job_id),
+            ("greenhouse", target_a.board_id, skipped.source_job_id),
+        ],
+        now=lambda: PERSISTED,
+    )
+
+    assert report.replayed is False
+    with repository.connect() as connection:
+        rows = {
+            row["source_job_id"]: row["lifecycle"]
+            for row in connection.execute(
+                "SELECT source_job_id,lifecycle FROM jobs "
+                "WHERE source=? AND source_board_id=?",
+                ("greenhouse", target_a.board_id),
+            ).fetchall()
+        }
+    assert rows[previous.source_job_id] != "closed"
+    assert rows[skipped.source_job_id] == "closed"
+
+
+def test_fan_in_invalidation_rolls_back_if_atomic_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    target_a = registry.targets[0].source_target()
+    retained = _job(target_a).model_copy(
+        update={
+            "id": "retained-before-failure",
+            "source_job_id": "retained-before-failure",
+            "job_url": "https://example.test/a/retained-before-failure",
+            "canonical_url": "https://example.test/a/retained-before-failure",
+            "content_fingerprint": "retained-before-failure-fp",
+        }
+    )
+    repository.upsert_job(retained)
+
+    def fail_upsert(*_args, **_kwargs):
+        raise RuntimeError("simulated persistence failure")
+
+    monkeypatch.setattr(repository, "_upsert_job_in_connection", fail_upsert)
+
+    with pytest.raises(RuntimeError, match="simulated persistence failure"):
+        persist_shard_artifacts(
+            repository=repository,
+            registry=registry,
+            manifest=manifest,
+            artifacts=artifacts,
+            invalidated_identities=[
+                ("greenhouse", target_a.board_id, retained.source_job_id)
+            ],
+            now=lambda: PERSISTED,
+        )
+
+    with repository.connect() as connection:
+        lifecycle = connection.execute(
+            "SELECT lifecycle FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            ("greenhouse", target_a.board_id, retained.source_job_id),
+        ).fetchone()["lifecycle"]
+    assert lifecycle != "closed"
+
+
+def test_fan_in_run_identity_includes_invalidation_snapshot(tmp_path: Path) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+
+    first = persist_shard_artifacts(
+        repository=SQLiteRepository(tmp_path / "first.sqlite3"),
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        now=lambda: PERSISTED,
+    )
+    second = persist_shard_artifacts(
+        repository=SQLiteRepository(tmp_path / "second.sqlite3"),
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        invalidated_identities=[("greenhouse", "a", "retained")],
+        now=lambda: PERSISTED,
+    )
+
+    assert first.run_id != second.run_id
