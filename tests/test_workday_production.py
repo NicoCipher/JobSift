@@ -260,6 +260,38 @@ def test_active_profile_bindings_ignore_unbound_example_plans(tmp_path, monkeypa
 
     assert len(bindings) == 1
     assert bindings[0].path == "config/search_briefs/active.json"
+    workday_production.verify_active_workday_brief_bindings(
+        repository=object(),
+        plan_dir=plan_dir,
+        repo_root=tmp_path,
+        expected=bindings,
+    )
+
+    class ChangedProfileStore:
+        def __init__(self, _repository) -> None:
+            pass
+
+        def active(self):
+            return (
+                SimpleNamespace(
+                    client_id="example",
+                    sourcing_plan_id="example-plan",
+                ),
+            )
+
+    monkeypatch.setattr(
+        workday_production,
+        "ClientDeliveryProfileStore",
+        ChangedProfileStore,
+    )
+    with pytest.raises(ValueError, match="snapshot changed"):
+        workday_production.verify_active_workday_brief_bindings(
+            repository=object(),
+            plan_dir=plan_dir,
+            repo_root=tmp_path,
+            expected=bindings,
+        )
+
     loaded = workday_production.load_bound_workday_briefs(
         bindings,
         repo_root=tmp_path,
