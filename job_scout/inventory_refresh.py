@@ -15,7 +15,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from job_scout.collectors.workday import WorkdayCollector
+from job_scout.workday_production import (
+    IndexFirstWorkdayCollector,
+    WorkdayBriefBinding,
+    load_bound_workday_briefs,
+    resolve_active_workday_brief_bindings,
+)
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -152,6 +157,7 @@ class RefreshPlan(BaseModel):
     total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
     total_shards: int = Field(ge=1)
     workday_detail_concurrency: int = Field(ge=1, le=8)
+    workday_briefs: list[WorkdayBriefBinding] = Field(default_factory=list)
     matrix: dict[str, list[dict[str, str]]]
 
 
@@ -598,6 +604,7 @@ def build_refresh_plan(
     limits: dict[str, int] | None = None,
     shards: dict[str, int] | None = None,
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
+    workday_briefs: list[WorkdayBriefBinding] | None = None,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
@@ -642,14 +649,25 @@ def build_refresh_plan(
         total_targets=len(subset.targets),
         total_shards=len(manifest.shards),
         workday_detail_concurrency=workday_detail_concurrency,
+        workday_briefs=list(workday_briefs or []),
         matrix=matrix,
     )
     return plan, subset, manifest
 
 
-def _refresh_collector_factory(source: str, *, workday_detail_concurrency: int):
+def _refresh_collector_factory(
+    source: str,
+    *,
+    workday_detail_concurrency: int,
+    registry: ProductionSourceRegistry,
+    workday_briefs,
+):
     if source == "workday":
-        return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
+        return IndexFirstWorkdayCollector(
+            registry=registry,
+            briefs=workday_briefs,
+            detail_concurrency=workday_detail_concurrency,
+        )
     return default_collector_factory(source)
 
 
@@ -659,6 +677,7 @@ def collect_refresh_shard(
     manifest: CollectionShardManifest,
     plan: RefreshPlan,
     shard_id: str,
+    repo_root: Path = Path("."),
 ) -> ShardCollectionArtifact:
     """Collect one production refresh shard after validating refresh provenance."""
     registry_sha = sha256_json(registry.model_dump(mode="json"))
@@ -668,6 +687,10 @@ def collect_refresh_shard(
         or plan.shard_manifest_sha256 != manifest.manifest_sha256
     ):
         raise ValueError("refresh plan does not match registry/manifest")
+    workday_briefs = load_bound_workday_briefs(
+        plan.workday_briefs,
+        repo_root=repo_root,
+    )
     return collect_shard(
         registry=registry,
         manifest=manifest,
@@ -675,6 +698,8 @@ def collect_refresh_shard(
         collector_factory=partial(
             _refresh_collector_factory,
             workday_detail_concurrency=plan.workday_detail_concurrency,
+            registry=registry,
+            workday_briefs=workday_briefs,
         ),
     )
 
@@ -687,6 +712,9 @@ def main() -> None:
     plan.add_argument("--registry", type=Path, required=True)
     plan.add_argument("--cohort", type=int, required=True)
     plan.add_argument("--output-dir", type=Path, required=True)
+    plan.add_argument("--database", type=Path, required=True)
+    plan.add_argument("--plan-dir", type=Path, default=Path("config/sourcing_plans"))
+    plan.add_argument("--repo-root", type=Path, default=Path("."))
     plan.add_argument(
         "--workday-limit",
         type=int,
@@ -732,11 +760,19 @@ def main() -> None:
                 registry,
                 workday_limit=args.workday_limit,
             )
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            planning_repository = SQLiteRepository(args.database)
+            workday_briefs = resolve_active_workday_brief_bindings(
+                repository=planning_repository,
+                plan_dir=args.plan_dir,
+                repo_root=args.repo_root,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
                 limits=limits,
                 workday_detail_concurrency=args.workday_detail_concurrency,
+                workday_briefs=workday_briefs,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
@@ -757,6 +793,7 @@ def main() -> None:
                     "selected_registry_id": subset.registry_id,
                     "selected_targets": len(subset.targets),
                     "target_counts_by_source": subset.target_counts_by_source,
+                    "active_workday_briefs": len(refresh.workday_briefs),
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
