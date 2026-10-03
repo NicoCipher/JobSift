@@ -37,7 +37,12 @@ class ProfileMutationLock:
     def __init__(self, repository) -> None:
         self.repository = repository
         with repository.connect() as connection:
+            self._pull_remote(connection)
             connection.executescript(LOCK_SCHEMA)
+
+    def _pull_remote(self, connection) -> None:
+        if getattr(self.repository, "remote_url", ""):
+            connection.pull()
 
     @staticmethod
     def _aware(value: datetime) -> datetime:
@@ -66,6 +71,7 @@ class ProfileMutationLock:
             expires_at = now + timedelta(seconds=ttl_seconds)
             try:
                 with self.repository.connect() as connection:
+                    self._pull_remote(connection)
                     connection.execute("BEGIN IMMEDIATE")
                     connection.execute(
                         "INSERT INTO profile_mutation_locks "
@@ -115,6 +121,7 @@ class ProfileMutationLock:
             raise ProfileMutationLockError("profile mutation lock token is missing")
         now = datetime.now(UTC)
         with self.repository.connect() as connection:
+            self._pull_remote(connection)
             row = connection.execute(
                 "SELECT owner_token,expires_at FROM profile_mutation_locks WHERE lock_name=?",
                 (LOCK_NAME,),
@@ -129,6 +136,7 @@ class ProfileMutationLock:
         if not token:
             return False
         with self.repository.connect() as connection:
+            self._pull_remote(connection)
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 "DELETE FROM profile_mutation_locks WHERE lock_name=? AND owner_token=?",
