@@ -93,6 +93,26 @@ def resolve_active_workday_brief_bindings(
     return [bindings[path] for path in sorted(bindings)]
 
 
+def verify_active_workday_brief_bindings(
+    *,
+    repository,
+    plan_dir: Path,
+    repo_root: Path,
+    expected: list[WorkdayBriefBinding],
+) -> None:
+    """Fail closed when active client coverage changed after refresh planning."""
+
+    current = resolve_active_workday_brief_bindings(
+        repository=repository,
+        plan_dir=plan_dir,
+        repo_root=repo_root,
+    )
+    if current != expected:
+        raise ValueError(
+            "active Workday SearchBrief snapshot changed after refresh planning"
+        )
+
+
 def load_bound_workday_briefs(
     bindings: list[WorkdayBriefBinding],
     *,
