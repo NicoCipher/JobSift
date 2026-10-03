@@ -29,11 +29,8 @@ on:
 permissions:
   contents: read
 
-# Hold the same mutation lock used by client profile controls for the entire
-# snapshot -> collection -> persistence -> delivery lifecycle. This guarantees
-# Workday candidate filtering and delivery observe the same active-profile set.
 concurrency:
-  group: jobsift-client-delivery-mutation
+  group: jobsift-live-inventory-refresh
   cancel-in-progress: false
 
 jobs:
@@ -132,6 +129,9 @@ jobs:
 
   persist-and-deliver:
     if: ${{ always() && needs.plan.result == 'success' }}
+    concurrency:
+      group: jobsift-client-delivery-mutation
+      cancel-in-progress: false
     needs:
       - plan
       - collect
@@ -173,6 +173,14 @@ jobs:
           test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
           test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+
+      - name: Verify active profile snapshot
+        run: |
+          python -m job_scout.inventory_refresh verify-profile-snapshot \
+            --refresh-plan refresh-plan/plan.json \
+            --database "$JOBSIFT_DATABASE" \
+            --plan-dir "$JOBSIFT_PLAN_DIR" \
+            --repo-root .
 
       - name: Persist shared inventory
         run: |
