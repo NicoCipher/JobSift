@@ -56,9 +56,9 @@ jobs:
 
       - name: Build rotating refresh cohort
         env:
-          # Scheduled production is promoted to 5 after the successful guarded
-          # post-#51 run at 5. Manual dispatch remains available for staged tests.
-          WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '5' }}
+          # Scheduled production is promoted to 25 after the successful guarded
+          # index-first Workday run at 25. Manual dispatch remains available for staged tests.
+          WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '25' }}
           WORKDAY_DETAIL_CONCURRENCY: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_detail_concurrency || '4' }}
         run: |
           test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
