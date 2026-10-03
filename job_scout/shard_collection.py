@@ -258,7 +258,7 @@ def collect_shard(
                 raw_postings_received = 0
             telemetry = getattr(collector, "last_counts", {})
             if not isinstance(telemetry, dict):
-                raise ValueError("collector telemetry must be a dictionary")
+                raise TypeError("collector telemetry must be a dictionary")
             results.append(
                 ShardTargetResult(
                     target_identity=identity,
