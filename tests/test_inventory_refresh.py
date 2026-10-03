@@ -241,13 +241,11 @@ def test_workday_ramp_is_explicit_and_bounded():
         assert subset.target_counts_by_source["workday"] == workday_limit
         assert plan.target_limits_by_source["workday"] == workday_limit
         assert plan.total_targets <= inventory_refresh.MAX_REFRESH_TARGETS
-        expected_workday_shards = min(
-            workday_limit,
-            max(1, (workday_limit + 4) // 5),
-        )
-        assert len(
-            [shard for shard in manifest.shards if shard.source == "workday"]
-        ) == expected_workday_shards
+        workday_shards = [
+            shard for shard in manifest.shards if shard.source == "workday"
+        ]
+        assert len(workday_shards) == workday_limit
+        assert all(len(shard.target_identities) == 1 for shard in workday_shards)
 
 
 def test_workday_ramp_does_not_auto_escalate_with_cohort():
