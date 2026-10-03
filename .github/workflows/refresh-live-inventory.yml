@@ -42,9 +42,9 @@ jobs:
 
       - name: Build rotating refresh cohort
         env:
-          # Scheduled production stays at the proven level until an operator
-          # explicitly promotes the next ramp after reviewing evidence.
-          WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '1' }}
+          # Scheduled production is promoted to 5 after the successful guarded
+          # post-#51 run at 5. Manual dispatch remains available for staged tests.
+          WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '5' }}
         run: |
           cohort=$(( $(date -u +%s) / 3600 ))
           python -m job_scout.inventory_refresh plan \
