@@ -190,7 +190,7 @@ jobs:
           mkdir -p refresh-result
           python -m job_scout.inventory_refresh fan-in \
             --registry refresh-plan/registry.json \
-            --parent-registry config/source_registries/production_active_v1.json \
+            --parent-registry refresh-plan/parent-registry.json \
             --manifest refresh-plan/manifest.json \
             --refresh-plan refresh-plan/plan.json \
             --artifacts-dir shard-artifacts \
