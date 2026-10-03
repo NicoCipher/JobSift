@@ -29,6 +29,4 @@ jobs:
           --deselect=tests/test_taiwo_capacity_v2.py::test_full_reproduction_does_not_require_stage_b_summary
           --deselect=tests/test_taiwo_capacity_v2.py::test_frozen_manifest_and_production_matcher_integrity
       - name: Lint
-        run: |
-          ruff check --fix .
-          git diff --exit-code
+        run: ruff check .
