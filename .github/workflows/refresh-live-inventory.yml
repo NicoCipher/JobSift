@@ -36,6 +36,9 @@ concurrency:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    concurrency:
+      group: jobsift-client-delivery-mutation
+      cancel-in-progress: false
     env:
       JOBSIFT_DATABASE: /tmp/jobsift-plan.sqlite3
       TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
