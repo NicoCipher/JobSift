@@ -188,6 +188,41 @@ def test_artifact_hash_rejects_tampering() -> None:
         ShardCollectionArtifact.model_validate(payload)
 
 
+def test_pre_telemetry_v1_artifact_hash_still_validates() -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 1})
+
+    class Collector:
+        client = None
+
+        def __init__(self, source: str) -> None:
+            self.source = source
+
+        def collect(self, target: SourceTarget) -> CollectionResult:
+            return CollectionResult(
+                source=self.source,
+                target=target,
+                status=CollectionStatus.SUCCESS,
+                jobs=[],
+                raw_postings_received=0,
+            )
+
+    artifact = collect_shard(
+        registry=registry,
+        manifest=manifest,
+        shard_id="greenhouse-000",
+        collector_factory=Collector,
+        now=_clock([NOW, NOW, NOW, NOW, NOW, NOW]),
+        monotonic=_clock([0.0, 0.01, 0.01, 0.02]),
+    )
+    payload = artifact.model_dump(mode="json")
+    for target in payload["targets"]:
+        target.pop("telemetry", None)
+
+    reloaded = ShardCollectionArtifact.model_validate(payload)
+    assert reloaded.artifact_sha256 == artifact.artifact_sha256
+
+
 def test_artifact_hash_ignores_set_serialization_order() -> None:
     registry = _registry()
     manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 1})
