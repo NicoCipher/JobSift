@@ -633,11 +633,15 @@ def run_once(
                 newly_admitted += 1
     store.record_health_batch(health_results)
 
-    admitted = store.admitted_targets(
+    admitted, admission_health_evidence = store.admitted_snapshot(
         now=current,
         max_health_age_hours=admission_max_age_hours,
     )
     runtime, overlay = overlay_admitted_targets(base, admitted)
+    overlay["health_evidence"] = admission_health_evidence
+    overlay["health_evidence_sha256"] = sha256_json(
+        admission_health_evidence
+    )
     payload = {
         "discovery_version": "live-source-discovery-v1",
         "generated_at": current.isoformat(),
@@ -702,11 +706,15 @@ def main() -> None:
     store = SourceDiscoveryStore(repository)
     base = load_production_registry(args.base_registry)
     current = utc_now()
-    admitted = store.admitted_targets(
+    admitted, admission_health_evidence = store.admitted_snapshot(
         now=current,
         max_health_age_hours=args.admission_max_age_hours,
     )
     runtime, overlay = overlay_admitted_targets(base, admitted)
+    overlay["health_evidence"] = admission_health_evidence
+    overlay["health_evidence_sha256"] = sha256_json(
+        admission_health_evidence
+    )
     payload = {
         "store": store.summary(
             now=current,
