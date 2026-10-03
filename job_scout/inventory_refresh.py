@@ -15,12 +15,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from job_scout.workday_production import (
-    IndexFirstWorkdayCollector,
-    WorkdayBriefBinding,
-    load_bound_workday_briefs,
-    resolve_active_workday_brief_bindings,
-)
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -37,6 +31,12 @@ from job_scout.shard_collection import (
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
+from job_scout.workday_production import (
+    IndexFirstWorkdayCollector,
+    WorkdayBriefBinding,
+    load_bound_workday_briefs,
+    resolve_active_workday_brief_bindings,
+)
 
 DEFAULT_LIMITS = {
     "greenhouse": 40,
