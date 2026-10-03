@@ -20,7 +20,6 @@ from job_scout.source_discovery import (
 from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.sqlite import SQLiteRepository
 
-
 NOW = datetime(2026, 10, 4, 0, 0, tzinfo=UTC)
 
 
@@ -302,3 +301,65 @@ def test_provider_health_probe_never_treats_404_as_empty_success() -> None:
 
     assert result["classification"] == "invalid"
     assert result["current_postings"] is None
+
+
+def test_due_admitted_health_recheck_precedes_unchecked_candidate(
+    tmp_path: Path,
+) -> None:
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    active = candidate_from_url(
+        "https://jobs.smartrecruiters.com/ServiceNow/"
+        "744000148862459-software-engineer"
+    )
+    unchecked = candidate_from_url(
+        "https://jobs.smartrecruiters.com/Visa/"
+        "744000112644773-senior-software-engineer"
+    )
+    assert active is not None
+    assert unchecked is not None
+
+    store.observe_candidate(
+        **active,
+        discovery_source="commoncrawl-cdx",
+        crawl_id="CC-MAIN-2026-39",
+        query_id="smartrecruiters",
+        captured_at="20261003120000",
+        discovered_url=(
+            "https://jobs.smartrecruiters.com/ServiceNow/"
+            "744000148862459-software-engineer"
+        ),
+        observed_at=NOW,
+    )
+    store.observe_candidate(
+        **unchecked,
+        discovery_source="commoncrawl-cdx",
+        crawl_id="CC-MAIN-2026-39",
+        query_id="smartrecruiters",
+        captured_at="20261003120100",
+        discovered_url=(
+            "https://jobs.smartrecruiters.com/Visa/"
+            "744000112644773-senior-software-engineer"
+        ),
+        observed_at=NOW,
+    )
+    store.record_health(
+        target_identity=active["target_identity"],
+        checked_at=NOW,
+        result={
+            "classification": "active",
+            "request_count": 1,
+            "http_status": 200,
+            "current_postings": 10,
+            "inventory_exact": True,
+            "error": None,
+        },
+    )
+
+    due = store.health_candidates(
+        now=NOW + timedelta(hours=24),
+        limit=1,
+    )
+
+    assert [value["target_identity"] for value in due] == [
+        active["target_identity"]
+    ]
