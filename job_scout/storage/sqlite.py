@@ -395,6 +395,96 @@ class SQLiteRepository:
         )
         return len(values)
 
+
+    def _compact_invalidated_identities_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        identities: Iterable[tuple[str, str, str]],
+        *,
+        invalidated_at: datetime,
+    ) -> int:
+        """Close retained payloads without keeping full descriptions past invalidation."""
+        current = self._aware(invalidated_at).isoformat()
+        count = 0
+        for source, board_id, source_job_id in dict.fromkeys(identities):
+            row = connection.execute(
+                "SELECT id,canonical_url,first_seen_at,last_seen_at,payload_json "
+                "FROM jobs WHERE source=? AND source_board_id=? AND source_job_id=?",
+                (source, board_id, source_job_id),
+            ).fetchone()
+            if row is None:
+                continue
+
+            job = Job.model_validate_json(row["payload_json"])
+            if (
+                job.source != source
+                or job.source_board_id != board_id
+                or job.source_job_id != source_job_id
+            ):
+                raise ValueError("invalidated job payload provenance is inconsistent")
+
+            delivered = connection.execute(
+                "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1",
+                (job.id,),
+            ).fetchone()
+            exported = connection.execute(
+                "SELECT 1 FROM exports WHERE job_id=? LIMIT 1",
+                (job.id,),
+            ).fetchone()
+            connection.execute(
+                "INSERT INTO job_identity_ledger "
+                "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+                "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+                "canonical_url=excluded.canonical_url,"
+                "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
+                "company=excluded.company,"
+                "last_seen_at=excluded.last_seen_at,"
+                "pruned_at=excluded.pruned_at,"
+                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                (
+                    source,
+                    board_id,
+                    source_job_id,
+                    row["canonical_url"],
+                    job.employer_id,
+                    job.company,
+                    row["first_seen_at"],
+                    row["last_seen_at"],
+                    current,
+                    1 if delivered is not None or exported is not None else 0,
+                ),
+            )
+            connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
+            connection.execute(
+                "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)
+            )
+            compact = job.model_copy(
+                update={
+                    "description_text": None,
+                    "description_html": None,
+                    "raw_metadata": {},
+                    "offices": [],
+                }
+            )
+            connection.execute(
+                "UPDATE jobs SET payload_json=?,lifecycle=?,last_verified_at=? "
+                "WHERE id=?",
+                (
+                    compact.model_dump_json(),
+                    JobLifecycle.CLOSED.value,
+                    current,
+                    job.id,
+                ),
+            )
+            connection.execute(
+                "DELETE FROM job_retention_evidence WHERE job_id=?",
+                (job.id,),
+            )
+            count += 1
+        return count
+
     def record_pruned_identities(
         self,
         jobs: Iterable[Job],

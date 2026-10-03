@@ -864,3 +864,117 @@ def test_fan_in_run_identity_includes_invalidation_snapshot(tmp_path: Path) -> N
     )
 
     assert first.run_id != second.run_id
+
+
+def test_fan_in_refuses_invalidation_when_target_collection_is_partial(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000", partial_board="a"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    target_a = registry.targets[0].source_target()
+    retained = _job(target_a).model_copy(
+        update={
+            "id": "retained-partial",
+            "source_job_id": "retained-partial",
+            "content_fingerprint": "retained-partial-fp",
+        }
+    )
+    repository.upsert_job(retained)
+
+    with pytest.raises(
+        ValueError,
+        match="requires successful authoritative target collection",
+    ):
+        persist_shard_artifacts(
+            repository=repository,
+            registry=registry,
+            manifest=manifest,
+            artifacts=artifacts,
+            invalidated_identities=[
+                ("greenhouse", target_a.board_id, retained.source_job_id)
+            ],
+            now=lambda: PERSISTED,
+        )
+
+    with repository.connect() as connection:
+        row = connection.execute(
+            "SELECT lifecycle,payload_json FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            ("greenhouse", target_a.board_id, retained.source_job_id),
+        ).fetchone()
+        run_count = connection.execute(
+            "SELECT COUNT(*) FROM inventory_runs"
+        ).fetchone()[0]
+
+    assert row is not None
+    assert row["lifecycle"] != "closed"
+    assert Job.model_validate_json(row["payload_json"]).description_text is not None
+    assert run_count == 0
+
+
+def test_fan_in_compacts_invalidated_payload_and_preserves_identity_ledger(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(registry, shard_counts_by_source={"greenhouse": 2})
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    target_a = registry.targets[0].source_target()
+    retained = _job(target_a).model_copy(
+        update={
+            "id": "retained-compact",
+            "source_job_id": "retained-compact",
+            "description_text": "Sensitive full description",
+            "description_html": "<p>Sensitive full description</p>",
+            "raw_metadata": {"provider": "full-payload"},
+            "offices": ["Remote"],
+            "content_fingerprint": "retained-compact-fp",
+        }
+    )
+    repository.upsert_job(retained)
+
+    persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        invalidated_identities=[
+            ("greenhouse", target_a.board_id, retained.source_job_id)
+        ],
+        now=lambda: PERSISTED,
+    )
+
+    with repository.connect() as connection:
+        row = connection.execute(
+            "SELECT lifecycle,payload_json FROM jobs "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            ("greenhouse", target_a.board_id, retained.source_job_id),
+        ).fetchone()
+        ledger = connection.execute(
+            "SELECT pruned_at FROM job_identity_ledger "
+            "WHERE source=? AND source_board_id=? AND source_job_id=?",
+            ("greenhouse", target_a.board_id, retained.source_job_id),
+        ).fetchone()
+        retention = connection.execute(
+            "SELECT 1 FROM job_retention_evidence WHERE job_id=?",
+            (retained.id,),
+        ).fetchone()
+
+    assert row is not None
+    assert row["lifecycle"] == "closed"
+    compact = Job.model_validate_json(row["payload_json"])
+    assert compact.description_text is None
+    assert compact.description_html is None
+    assert compact.raw_metadata == {}
+    assert compact.offices == []
+    assert ledger is not None
+    assert ledger["pruned_at"] == PERSISTED.isoformat()
+    assert retention is None

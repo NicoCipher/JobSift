@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from job_scout.domain.models import Job, JobLifecycle
+from job_scout.domain.models import Job
 from job_scout.retention import retention_basis
 
 INVENTORY_RUN_SCHEMA = """
@@ -184,20 +184,17 @@ class InventoryRunStore:
         now = datetime.now(UTC).isoformat()
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            if invalidation_values:
-                connection.executemany(
-                    "UPDATE jobs SET lifecycle=?,last_verified_at=? "
-                    "WHERE source=? AND source_board_id=? AND source_job_id=?",
-                    [
-                        (JobLifecycle.CLOSED.value, now, *identity)
-                        for identity in invalidation_values
-                    ],
-                )
             self.repository._record_pruned_identities_in_connection(
                 connection,
                 stale_values,
                 pruned_at=pruned_at,
             )
+            if invalidation_values:
+                self.repository._compact_invalidated_identities_in_connection(
+                    connection,
+                    invalidation_values,
+                    invalidated_at=completed_at,
+                )
             for job in job_values:
                 self.repository._upsert_job_in_connection(connection, job, now)
             if membership_values:
