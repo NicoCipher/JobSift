@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS source_discovery_targets (
   last_discovery_url TEXT NOT NULL,
   latest_health_classification TEXT,
   latest_health_checked_at TEXT,
+  latest_health_evidence_sha256 TEXT,
   health_current_postings INTEGER,
   health_inventory_exact INTEGER
     CHECK(health_inventory_exact IN (0,1) OR health_inventory_exact IS NULL),
@@ -371,13 +372,15 @@ class SourceDiscoveryStore:
         connection.execute(
             "UPDATE source_discovery_targets SET "
             "latest_health_classification=?,latest_health_checked_at=?,"
-            "health_current_postings=?,health_inventory_exact=?,health_error=?,"
+            "latest_health_evidence_sha256=?,health_current_postings=?,"
+            "health_inventory_exact=?,health_error=?,"
             "admitted=?,admitted_at=CASE WHEN ?=1 THEN COALESCE(admitted_at,?) "
             "ELSE admitted_at END,next_health_check_at=? "
             "WHERE target_identity=?",
             (
                 classification,
                 checked.isoformat(),
+                evidence_sha,
                 result.get("current_postings"),
                 (
                     None
@@ -419,25 +422,26 @@ class SourceDiscoveryStore:
     ) -> None:
         self.record_health_batch([(target_identity, checked_at, result)])
 
-    def admitted_targets(
+    def admitted_snapshot(
         self,
         *,
         now: datetime,
         max_health_age_hours: int = 48,
-    ) -> list[ProductionTarget]:
+    ) -> tuple[list[ProductionTarget], list[dict[str, Any]]]:
         if max_health_age_hours < 1:
             raise ValueError("admission health age must be positive")
         cutoff = (_aware(now) - timedelta(hours=max_health_age_hours)).isoformat()
         with self.repository.connect() as connection:
             rows = connection.execute(
                 "SELECT target_identity,source,coordinates_json,company_hint,"
-                "health_current_postings,health_inventory_exact "
+                "health_current_postings,health_inventory_exact,"
+                "latest_health_checked_at,latest_health_evidence_sha256 "
                 "FROM source_discovery_targets "
                 "WHERE admitted=1 AND latest_health_classification='active' "
                 "AND latest_health_checked_at>=? ORDER BY target_identity",
                 (cutoff,),
             ).fetchall()
-        return [
+        targets = [
             ProductionTarget(
                 target_identity=row["target_identity"],
                 source=row["source"],
@@ -452,6 +456,32 @@ class SourceDiscoveryStore:
             )
             for row in rows
         ]
+        evidence = [
+            {
+                "target_identity": row["target_identity"],
+                "health_checked_at": row["latest_health_checked_at"],
+                "health_evidence_sha256": row["latest_health_evidence_sha256"],
+            }
+            for row in rows
+        ]
+        if any(
+            not value["health_evidence_sha256"]
+            for value in evidence
+        ):
+            raise ValueError("admitted target is missing authoritative health evidence")
+        return targets, evidence
+
+    def admitted_targets(
+        self,
+        *,
+        now: datetime,
+        max_health_age_hours: int = 48,
+    ) -> list[ProductionTarget]:
+        targets, _evidence = self.admitted_snapshot(
+            now=now,
+            max_health_age_hours=max_health_age_hours,
+        )
+        return targets
 
     def summary(self, *, now: datetime, max_health_age_hours: int = 48) -> dict[str, Any]:
         admitted = self.admitted_targets(
