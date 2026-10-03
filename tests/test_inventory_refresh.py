@@ -145,6 +145,68 @@ def test_observed_coverage_report_tracks_revisits_and_registry_scope(tmp_path):
         assert provider.timestamp_known_rate == 0.5
 
 
+def test_observed_coverage_replay_ignores_future_target_state(tmp_path):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry)
+    _plan0, subset0, _manifest0 = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=0,
+        limits=limits,
+    )
+    _plan1, subset1, _manifest1 = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=1,
+        limits=limits,
+    )
+    repo = SQLiteRepository(tmp_path / "coverage-replay.sqlite3")
+    store = InventoryRunStore(repo)
+    first_at = datetime(2026, 10, 3, 0, 0, tzinfo=UTC)
+    second_at = first_at + timedelta(hours=2)
+
+    def persist(run_id: str, observed_at: datetime, subset) -> None:
+        store.create(run_id=run_id, plan_id=subset.registry_id, started_at=observed_at)
+        store.persist_jobs_and_finish(
+            run_id=run_id,
+            jobs=[],
+            memberships=[],
+            target_observations=[
+                (
+                    target.target_identity,
+                    target.source,
+                    "success",
+                    observed_at,
+                    observed_at,
+                    100,
+                    3,
+                    2,
+                    1,
+                    1,
+                )
+                for target in subset.targets
+            ],
+            status="success",
+            completed_at=observed_at,
+        )
+
+    persist("run-old", first_at, subset0)
+    persist("run-new", second_at, subset1)
+
+    replay = inventory_refresh.build_observed_coverage_report(
+        repository=repo,
+        run_id="run-old",
+        parent_registry=registry,
+        selected_registry=subset0,
+        generated_at=first_at,
+    )
+
+    for provider in replay.providers:
+        assert provider.max_hours_since_last_observation == 0.0
+        assert provider.approved_targets_observed_ever == limits[provider.source]
+        assert provider.approved_targets_never_observed == (
+            registry.target_counts_by_source[provider.source] - limits[provider.source]
+        )
+
+
 def test_refresh_includes_approved_smartrecruiters_targets():
     from job_scout.production_registry import ProductionTarget
 
