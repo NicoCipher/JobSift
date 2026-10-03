@@ -408,7 +408,7 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "profile_mutation_lock" not in workflow
     assert persist_job < mutation_lock < verify_snapshot < fan_in < deliver
     assert "verify-profile-snapshot" in workflow
-    assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
+    assert "--parent-registry refresh-plan/parent-registry.json" in workflow
     assert "--refresh-plan refresh-plan/plan.json" in workflow[fan_in:deliver]
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
