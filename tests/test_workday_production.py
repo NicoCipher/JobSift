@@ -98,7 +98,7 @@ def test_monster_board_hydrates_only_bounded_candidate_union():
     candidate_indexes = (7, 4_321, 12_000)
     for index in candidate_indexes:
         postings[index] = WorkdayIndexPosting(
-            external_path=f"/job/example/R{index}",
+            external_path=f"/job/example/Software-Engineer_R{index}",
             title="Software Engineer",
             posted_on="Posted Today",
         )
@@ -118,7 +118,7 @@ def test_monster_board_hydrates_only_bounded_candidate_union():
     assert result.status is CollectionStatus.SUCCESS
     assert result.raw_postings_received == 12_524
     assert hydrator.paths == [
-        f"/job/example/Sales-Associate_R{index}" for index in candidate_indexes
+        f"/job/example/Software-Engineer_R{index}" for index in candidate_indexes
     ]
     assert collector.last_counts["candidate_paths"] == 3
     assert collector.last_counts["index_title_skipped"] == 12_521
