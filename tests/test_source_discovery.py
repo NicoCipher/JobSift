@@ -43,6 +43,7 @@ def _base_registry() -> ProductionSourceRegistry:
 def test_candidate_from_url_supports_all_production_provider_contracts() -> None:
     urls = {
         "greenhouse:acme": "https://job-boards.greenhouse.io/acme/jobs/123456",
+        "greenhouse:legacy": "https://boards.greenhouse.io/legacy/jobs/123456",
         "ashby:acme": (
             "https://jobs.ashbyhq.com/acme/"
             "12345678-1234-1234-1234-123456789abc"
@@ -230,7 +231,11 @@ def test_common_crawl_discovery_advances_persisted_page_cursor(tmp_path: Path) -
         query_id="smartrecruiters",
     )
     assert cursor is not None
-    assert cursor["page"] == 0
+    assert cursor["page"] == CommonCrawlDiscovery._initial_page(
+        crawl_id="CC-MAIN-2026-39",
+        query_id="smartrecruiters",
+        pages=2,
+    )
     assert cursor["pages"] == 2
     # Page count is fetched only for the first encounter with this crawl.
     assert sum("showNumPages=true" in value for value in requests) == 1
