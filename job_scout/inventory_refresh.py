@@ -737,6 +737,7 @@ def main() -> None:
     collect.add_argument("--refresh-plan", type=Path, required=True)
     collect.add_argument("--shard-id", required=True)
     collect.add_argument("--output", type=Path, required=True)
+    collect.add_argument("--repo-root", type=Path, default=Path("."))
 
     fan_in = commands.add_parser("fan-in")
     fan_in.add_argument("--registry", type=Path, required=True)
@@ -857,6 +858,7 @@ def main() -> None:
                 manifest=manifest,
                 plan=refresh_plan,
                 shard_id=args.shard_id,
+                repo_root=args.repo_root,
             )
             _write_json(args.output, artifact)
             print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))

@@ -4,6 +4,7 @@ import argparse
 import json
 import sqlite3
 from collections import Counter
+from contextlib import nullcontext
 from pathlib import Path
 
 from job_scout.collectors.ashby import AshbyCollector
@@ -25,6 +26,7 @@ from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
 from job_scout.orchestration.daily_batch import finalize_daily_batch
 from job_scout.orchestration.pipeline import run_pipeline
+from job_scout.profile_mutation_lock import profile_mutation_guard
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
@@ -374,101 +376,116 @@ def main() -> None:
             repository = SQLiteRepository(args.database)
             store = ClientDeliveryProfileStore(repository)
             command = args.delivery_profile_command
-            if command == "set":
-                value = _set_profile(args.client, args.destination_id, args.plan)
-                print(json.dumps(_public(value), sort_keys=True))
-            elif command == "set-from-registration":
-                registration = ClientSheetRegistrationRequest.model_validate_json(
-                    args.registration_file.read_text(encoding="utf-8")
+            mutating_profile_command = (
+                command not in {"list", "status"}
+                or (command == "status" and args.reconcile)
+            )
+            mutation_guard = (
+                profile_mutation_guard(
+                    repository,
+                    owner_label=f"delivery-profile:{command}",
+                    ttl_seconds=600,
+                    wait_seconds=30,
                 )
-                value = _set_profile(
-                    registration.client_id,
-                    registration.destination_id,
-                    args.plan,
-                )
-                if args.reconcile:
-                    store.reconcile_destination_sheet(
-                        value, gateway=GoogleSheetsGateway()
+                if mutating_profile_command
+                else nullcontext()
+            )
+            with mutation_guard:
+                if command == "set":
+                    value = _set_profile(args.client, args.destination_id, args.plan)
+                    print(json.dumps(_public(value), sort_keys=True))
+                elif command == "set-from-registration":
+                    registration = ClientSheetRegistrationRequest.model_validate_json(
+                        args.registration_file.read_text(encoding="utf-8")
                     )
-                print(json.dumps(_public(value), sort_keys=True))
-            elif command == "list":
-                print(
-                    json.dumps(
-                        [_public(value) for value in store.list()],
-                        sort_keys=True,
+                    value = _set_profile(
+                        registration.client_id,
+                        registration.destination_id,
+                        args.plan,
                     )
-                )
-            elif command == "status":
-                value = _profile_for_control_id()
-                if args.reconcile:
-                    store.reconcile_destination_sheet(
-                        value, gateway=GoogleSheetsGateway()
-                    )
-                print(json.dumps(_public(value), sort_keys=True))
-            elif command in {"pause", "resume", "set-quota", "set-mode", "set-timezone"}:
-                current = _profile_for_control_id()
-                changes = {}
-                if command == "pause":
-                    changes["status"] = "paused"
-                elif command == "resume":
-                    changes["status"] = "active"
-                elif command == "set-quota":
-                    changes["daily_quota"] = args.daily_quota
-                elif command == "set-mode":
-                    changes["delivery_mode"] = args.delivery_mode
-                else:
-                    changes["timezone"] = args.timezone
-                value = store.update_controls(current, **changes)
-                print(json.dumps(_public(value), sort_keys=True))
-            else:
-                profile = _profile_for_control_id()
-                batch_store = DailyBatchStore(repository)
-                if args.delivery_profile_command == "release-batch":
-                    if args.confirm_batch_id != args.batch_id:
-                        parser.error("confirmation must match the reviewed batch ID")
-                    result, reconciliation, _remaining = store.guard_batch_release(
-                        profile,
-                        args.batch_id,
-                        gateway=GoogleSheetsGateway(),
-                    )
-                    result = finalize_daily_batch(
-                        repository=repository,
-                        batch_id=result.batch_id,
-                        expected_generation_id=result.generation_id,
-                    )
-                else:
-                    result = batch_store.get(args.batch_id)
-                    expected_control_id = delivery_profile_control_id(
-                        result.request.client_id,
-                        result.request.destination_id or "",
-                    )
-                    if expected_control_id != args.profile_id.casefold():
-                        parser.error(
-                            "batch does not belong to the selected delivery profile"
+                    if args.reconcile:
+                        store.reconcile_destination_sheet(
+                            value, gateway=GoogleSheetsGateway()
                         )
-                    reconciliation = None
-                    result = batch_store.discard_prepared(
-                        result.batch_id,
-                        expected_generation_id=result.generation_id,
+                    print(json.dumps(_public(value), sort_keys=True))
+                elif command == "list":
+                    print(
+                        json.dumps(
+                            [_public(value) for value in store.list()],
+                            sort_keys=True,
+                        )
                     )
-                payload = {
-                    "profile_id": delivery_profile_control_id(
-                        profile.client_id, profile.destination_id
-                    ),
-                    "batch_id": result.batch_id,
-                    "status": result.status,
-                    "selected_count": result.selected_count,
-                    "shortfall": result.shortfall,
-                    "error": result.error,
-                }
-                if reconciliation is not None:
-                    payload["sheet_reconciliation"] = reconciliation
-                print(json.dumps(payload, sort_keys=True))
-                if (
-                    args.delivery_profile_command == "release-batch"
-                    and result.status != "delivered"
-                ):
-                    parser.exit(1)
+                elif command == "status":
+                    value = _profile_for_control_id()
+                    if args.reconcile:
+                        store.reconcile_destination_sheet(
+                            value, gateway=GoogleSheetsGateway()
+                        )
+                    print(json.dumps(_public(value), sort_keys=True))
+                elif command in {"pause", "resume", "set-quota", "set-mode", "set-timezone"}:
+                    current = _profile_for_control_id()
+                    changes = {}
+                    if command == "pause":
+                        changes["status"] = "paused"
+                    elif command == "resume":
+                        changes["status"] = "active"
+                    elif command == "set-quota":
+                        changes["daily_quota"] = args.daily_quota
+                    elif command == "set-mode":
+                        changes["delivery_mode"] = args.delivery_mode
+                    else:
+                        changes["timezone"] = args.timezone
+                    value = store.update_controls(current, **changes)
+                    print(json.dumps(_public(value), sort_keys=True))
+                else:
+                    profile = _profile_for_control_id()
+                    batch_store = DailyBatchStore(repository)
+                    if args.delivery_profile_command == "release-batch":
+                        if args.confirm_batch_id != args.batch_id:
+                            parser.error("confirmation must match the reviewed batch ID")
+                        result, reconciliation, _remaining = store.guard_batch_release(
+                            profile,
+                            args.batch_id,
+                            gateway=GoogleSheetsGateway(),
+                        )
+                        result = finalize_daily_batch(
+                            repository=repository,
+                            batch_id=result.batch_id,
+                            expected_generation_id=result.generation_id,
+                        )
+                    else:
+                        result = batch_store.get(args.batch_id)
+                        expected_control_id = delivery_profile_control_id(
+                            result.request.client_id,
+                            result.request.destination_id or "",
+                        )
+                        if expected_control_id != args.profile_id.casefold():
+                            parser.error(
+                                "batch does not belong to the selected delivery profile"
+                            )
+                        reconciliation = None
+                        result = batch_store.discard_prepared(
+                            result.batch_id,
+                            expected_generation_id=result.generation_id,
+                        )
+                    payload = {
+                        "profile_id": delivery_profile_control_id(
+                            profile.client_id, profile.destination_id
+                        ),
+                        "batch_id": result.batch_id,
+                        "status": result.status,
+                        "selected_count": result.selected_count,
+                        "shortfall": result.shortfall,
+                        "error": result.error,
+                    }
+                    if reconciliation is not None:
+                        payload["sheet_reconciliation"] = reconciliation
+                    print(json.dumps(payload, sort_keys=True))
+                    if (
+                        args.delivery_profile_command == "release-batch"
+                        and result.status != "delivered"
+                    ):
+                        parser.exit(1)
         except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
             parser.error(f"unable to manage delivery profile: {exc}")
         return

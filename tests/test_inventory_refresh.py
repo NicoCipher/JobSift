@@ -391,18 +391,32 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
 
     assert "python -m job_scout.inventory_refresh collect" in workflow
     assert "--refresh-plan refresh-plan/plan.json" in workflow
+    assert "--repo-root ." in workflow
     assert "--workday-detail-concurrency" in workflow
     assert "inputs.workday_detail_concurrency" in workflow
     assert '--database "$JOBSIFT_DATABASE"' in workflow
     assert "--plan-dir config/sourcing_plans" in workflow
     assert "TURSO_DATABASE_URL" in workflow
     assert workflow.count("group: jobsift-client-delivery-mutation") == 1
+    assert workflow.count("queue: max") == 2
     assert "group: jobsift-live-inventory-refresh" in workflow
     persist_job = workflow.index("persist-and-deliver:")
     mutation_lock = workflow.index("group: jobsift-client-delivery-mutation")
+    acquire_lease = workflow.index("Acquire profile mutation lease")
     verify_snapshot = workflow.index("Verify active profile snapshot")
     fan_in = workflow.index("python -m job_scout.inventory_refresh fan-in")
-    assert persist_job < mutation_lock < verify_snapshot < fan_in
+    deliver = workflow.index("Deliver to active client profiles")
+    release_lease = workflow.index("Release profile mutation lease")
+    assert workflow.count("profile_mutation_lock assert") == 2
+    assert (
+        persist_job
+        < mutation_lock
+        < acquire_lease
+        < verify_snapshot
+        < fan_in
+        < deliver
+        < release_lease
+    )
     assert "verify-profile-snapshot" in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
@@ -420,3 +434,21 @@ def test_live_refresh_delivers_before_retention_cleanup():
 
     assert "--skip-retention" in workflow[fan_in:deliver]
     assert fan_in < deliver < prune
+
+
+def test_profile_mutation_workflows_queue_all_pending_changes():
+    for path in (
+        Path(".github/workflows/client-delivery-control.yml"),
+        Path(".github/workflows/configure-client-delivery-profile.yml"),
+    ):
+        workflow = path.read_text(encoding="utf-8")
+        assert "group: jobsift-client-delivery-mutation" in workflow
+        assert "queue: max" in workflow
+        assert "cancel-in-progress: false" in workflow
+
+
+def test_delivery_profile_cli_uses_database_mutation_guard():
+    cli = Path("job_scout/cli.py").read_text(encoding="utf-8")
+    assert "profile_mutation_guard" in cli
+    assert "mutating_profile_command" in cli
+    assert 'command not in {"list", "status"}' in cli
