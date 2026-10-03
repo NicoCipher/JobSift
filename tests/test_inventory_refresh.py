@@ -396,6 +396,9 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert '--database "$JOBSIFT_DATABASE"' in workflow
     assert "--plan-dir config/sourcing_plans" in workflow
     assert "TURSO_DATABASE_URL" in workflow
+    assert workflow.count("group: jobsift-client-delivery-mutation") == 1
+    assert workflow.index("group: jobsift-client-delivery-mutation") < workflow.index("jobs:")
+    assert "jobsift-live-inventory-refresh" not in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
