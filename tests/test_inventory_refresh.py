@@ -577,3 +577,24 @@ def test_retained_workday_invalidation_identities_are_authoritative_db_keys():
         ("workday", "host:tenant:site", "REQ-1"),
         ("workday", "host:tenant:site", "REQ-2"),
     ]
+
+
+def test_fan_in_parent_registry_snapshot_mismatch_fails_closed():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    plan, _subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=0,
+    )
+    mismatched = registry.model_copy(
+        update={"registry_id": f"{registry.registry_id}-mismatch"}
+    )
+
+    try:
+        inventory_refresh.validate_parent_registry_snapshot(
+            parent_registry=mismatched,
+            refresh_plan=plan,
+        )
+    except ValueError as exc:
+        assert "parent registry does not match refresh-plan snapshot" in str(exc)
+    else:
+        raise AssertionError("mismatched parent registry was accepted")
