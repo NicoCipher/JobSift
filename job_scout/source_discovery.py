@@ -285,8 +285,7 @@ class CommonCrawlDiscovery:
             query_unique: set[str] = set()
             query_supported = 0
             query_base = 0
-            query_new = 0
-            evidence_rows = 0
+            pending_observations: list[dict[str, Any]] = []
             for record in records:
                 totals["index_records"] += 1
                 candidate = candidate_from_url(record["url"])
@@ -300,19 +299,21 @@ class CommonCrawlDiscovery:
                 if identity in base_target_identities:
                     query_base += 1
                     continue
-                inserted, evidence = self.store.observe_candidate(
-                    **candidate,
-                    discovery_source=DISCOVERY_SOURCE,
-                    crawl_id=crawl_id,
-                    query_id=query.query_id,
-                    captured_at=str(record.get("timestamp") or ""),
-                    discovered_url=record["url"],
-                    observed_at=observed_at,
+                pending_observations.append(
+                    {
+                        **candidate,
+                        "discovery_source": DISCOVERY_SOURCE,
+                        "crawl_id": crawl_id,
+                        "query_id": query.query_id,
+                        "captured_at": str(record.get("timestamp") or ""),
+                        "discovered_url": record["url"],
+                        "observed_at": observed_at,
+                    }
                 )
-                if inserted:
-                    query_new += 1
-                if evidence:
-                    evidence_rows += 1
+
+            query_new, evidence_rows = self.store.observe_candidates(
+                pending_observations
+            )
 
             next_page = (page + 1) % pages
             self.store.set_cursor(
@@ -586,6 +587,7 @@ def run_once(
     candidates = store.health_candidates(now=current, limit=max_health_checks)
     classifications = Counter()
     newly_admitted = 0
+    health_results: list[tuple[str, datetime, dict[str, Any]]] = []
     with httpx.Client(
         timeout=httpx.Timeout(20.0),
         headers={"User-Agent": HEALTH_USER_AGENT},
@@ -597,14 +599,11 @@ def run_once(
         for candidate in candidates:
             before = candidate.get("latest_health_classification")
             result = probe.probe(candidate)
-            store.record_health(
-                target_identity=candidate["target_identity"],
-                checked_at=current,
-                result=result,
-            )
+            health_results.append((candidate["target_identity"], current, result))
             classifications[result["classification"]] += 1
             if before != "active" and result["classification"] == "active":
                 newly_admitted += 1
+    store.record_health_batch(health_results)
 
     admitted = store.admitted_targets(
         now=current,
