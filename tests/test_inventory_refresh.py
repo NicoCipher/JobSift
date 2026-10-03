@@ -394,6 +394,7 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "--repo-root ." in workflow
     assert "--workday-detail-concurrency" in workflow
     assert "inputs.workday_detail_concurrency" in workflow
+    assert "inputs.workday_targets || '25'" in workflow
     assert '--database "$JOBSIFT_DATABASE"' in workflow
     assert "--plan-dir config/sourcing_plans" in workflow
     assert "TURSO_DATABASE_URL" in workflow
