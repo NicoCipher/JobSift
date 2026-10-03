@@ -36,6 +36,10 @@ concurrency:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift-plan.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -47,7 +51,7 @@ jobs:
           cache: pip
 
       - name: Install JobSift
-        run: python -m pip install -e .
+        run: python -m pip install -e '.[cloud]'
 
       - name: Build rotating refresh cohort
         env:
@@ -56,9 +60,14 @@ jobs:
           WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '5' }}
           WORKDAY_DETAIL_CONCURRENCY: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_detail_concurrency || '4' }}
         run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
           cohort=$(( $(date -u +%s) / 3600 ))
           python -m job_scout.inventory_refresh plan \
             --registry config/source_registries/production_active_v1.json \
+            --database "$JOBSIFT_DATABASE" \
+            --plan-dir config/sourcing_plans \
+            --repo-root . \
             --cohort "$cohort" \
             --workday-limit "$WORKDAY_TARGETS" \
             --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY" \
