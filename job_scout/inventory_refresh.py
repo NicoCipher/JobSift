@@ -604,9 +604,10 @@ def build_refresh_plan(
     if shards is None:
         shards = {source: DEFAULT_SHARDS[source] for source in providers}
         if "workday" in shards:
-            # Keep Workday shards small enough to isolate provider failures while
-            # bounding matrix growth. Detail concurrency remains independently capped.
-            shards["workday"] = min(limits["workday"], max(1, math.ceil(limits["workday"] / 5)))
+            # Workday target runtimes have a very long tail. Isolate every selected
+            # Workday company so one slow board cannot serialize four healthy boards
+            # behind it. Detail concurrency remains independently capped per target.
+            shards["workday"] = limits["workday"]
     else:
         shards = dict(shards)
     if (
