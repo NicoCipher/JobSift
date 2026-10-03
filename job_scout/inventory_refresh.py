@@ -336,6 +336,9 @@ def build_observed_coverage_report(
     ):
         raise ValueError("selected refresh registry contains a target outside parent registry")
 
+    normalized_generated_at = generated_at.replace(
+        tzinfo=generated_at.tzinfo or UTC
+    ).astimezone(UTC)
     with repository.connect() as connection:
         current_rows = connection.execute(
             "SELECT o.run_id,o.target_identity,o.source,o.started_at,o.completed_at,"
@@ -354,12 +357,38 @@ def build_observed_coverage_report(
             "FROM inventory_target_coverage_state "
             "ORDER BY source,target_identity"
         ).fetchall()
+        relevant_state_rows = [
+            row
+            for row in state_rows
+            if row["target_identity"] in parent_targets
+        ]
+        has_future_state = any(
+            datetime.fromisoformat(row["last_observed_at"]) > normalized_generated_at
+            for row in relevant_state_rows
+        )
+        if has_future_state:
+            # Replay an older run against the observation ledger as it existed at
+            # that run's persisted time. The compact state intentionally tracks
+            # only the latest observation and can otherwise leak future coverage.
+            as_of_rows = connection.execute(
+                "SELECT target_identity,source,MIN(completed_at) AS first_observed_at,"
+                "MAX(completed_at) AS last_observed_at "
+                "FROM inventory_target_observations "
+                "WHERE completed_at<=? "
+                "GROUP BY target_identity,source "
+                "ORDER BY source,target_identity",
+                (normalized_generated_at.isoformat(),),
+            ).fetchall()
+            state_by_target = {
+                row["target_identity"]: row
+                for row in as_of_rows
+                if row["target_identity"] in parent_targets
+            }
+        else:
+            state_by_target = {
+                row["target_identity"]: row for row in relevant_state_rows
+            }
 
-    state_by_target = {
-        row["target_identity"]: row
-        for row in state_rows
-        if row["target_identity"] in parent_targets
-    }
     first_observed = [
         datetime.fromisoformat(row["first_observed_at"])
         for row in state_by_target.values()
@@ -399,9 +428,6 @@ def build_observed_coverage_report(
         )
 
     providers: list[ProviderObservedCoverage] = []
-    normalized_generated_at = generated_at.replace(
-        tzinfo=generated_at.tzinfo or UTC
-    ).astimezone(UTC)
     for source in sorted(selected_limits):
         approved = approved_by_source[source]
         current = [row for row in target_reports if row.source == source]
