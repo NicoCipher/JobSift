@@ -30,7 +30,9 @@ from job_scout.shard_collection import (
     default_collector_factory,
 )
 from job_scout.shard_fanin import persist_shard_artifacts
+from job_scout.source_discovery import overlay_admitted_targets
 from job_scout.storage.inventory_runs import InventoryRunStore
+from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
@@ -822,13 +824,22 @@ def main() -> None:
     args = parser.parse_args()
     try:
         if args.command == "plan":
-            registry = load_production_registry(args.registry)
+            base_registry = load_production_registry(args.registry)
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            planning_repository = SQLiteRepository(args.database)
+            discovery_store = SourceDiscoveryStore(planning_repository)
+            admitted_targets = discovery_store.admitted_targets(
+                now=datetime.now(UTC),
+                max_health_age_hours=48,
+            )
+            registry, admission_overlay = overlay_admitted_targets(
+                base_registry,
+                admitted_targets,
+            )
             limits = default_refresh_limits(
                 registry,
                 workday_limit=args.workday_limit,
             )
-            args.database.parent.mkdir(parents=True, exist_ok=True)
-            planning_repository = SQLiteRepository(args.database)
             workday_briefs = resolve_active_workday_brief_bindings(
                 repository=planning_repository,
                 plan_dir=args.plan_dir,
@@ -850,8 +861,10 @@ def main() -> None:
                 workday_briefs=workday_briefs,
                 workday_retained_candidates=workday_retained_candidates,
             )
+            _write_json(args.output_dir / "parent-registry.json", registry)
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
+            _write_json(args.output_dir / "admission.json", admission_overlay)
             _write_json(args.output_dir / "matrix.json", refresh.matrix)
             _write_json(args.output_dir / "plan.json", refresh)
             _write_json(
@@ -874,6 +887,12 @@ def main() -> None:
                         len(binding.source_job_ids)
                         for binding in (refresh.workday_retained_candidates or [])
                     ),
+                    "dynamic_admitted_targets": admission_overlay[
+                        "dynamic_admitted_targets"
+                    ],
+                    "dynamic_admission_sha256": admission_overlay[
+                        "dynamic_admission_sha256"
+                    ],
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
