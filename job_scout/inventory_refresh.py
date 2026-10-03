@@ -36,6 +36,7 @@ from job_scout.workday_production import (
     WorkdayBriefBinding,
     load_bound_workday_briefs,
     resolve_active_workday_brief_bindings,
+    verify_active_workday_brief_bindings,
 )
 
 DEFAULT_LIMITS = {
@@ -747,6 +748,14 @@ def main() -> None:
     fan_in.add_argument("--retention-hours", type=int, default=72)
     fan_in.add_argument("--skip-retention", action="store_true")
 
+    verify_profiles = commands.add_parser("verify-profile-snapshot")
+    verify_profiles.add_argument("--refresh-plan", type=Path, required=True)
+    verify_profiles.add_argument("--database", type=Path, required=True)
+    verify_profiles.add_argument(
+        "--plan-dir", type=Path, default=Path("config/sourcing_plans")
+    )
+    verify_profiles.add_argument("--repo-root", type=Path, default=Path("."))
+
     prune = commands.add_parser("prune")
     prune.add_argument("--database", type=Path, required=True)
     prune.add_argument("--output", type=Path, required=True)
@@ -797,6 +806,25 @@ def main() -> None:
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
+            return
+
+        if args.command == "verify-profile-snapshot":
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            verify_active_workday_brief_bindings(
+                repository=repository,
+                plan_dir=args.plan_dir,
+                repo_root=args.repo_root,
+                expected=refresh_plan.workday_briefs,
+            )
+            payload = {
+                "active_workday_briefs": len(refresh_plan.workday_briefs),
+                "snapshot_unchanged": True,
+            }
+            print(json.dumps(payload, sort_keys=True))
             return
 
         if args.command == "prune":
