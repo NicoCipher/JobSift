@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -50,6 +52,8 @@ class DiscoveryQuery:
 DISCOVERY_QUERIES = (
     DiscoveryQuery("greenhouse-global", "job-boards.greenhouse.io/*"),
     DiscoveryQuery("greenhouse-eu", "job-boards.eu.greenhouse.io/*"),
+    DiscoveryQuery("greenhouse-legacy", "boards.greenhouse.io/*"),
+    DiscoveryQuery("greenhouse-legacy-eu", "boards.eu.greenhouse.io/*"),
     DiscoveryQuery("ashby", "jobs.ashbyhq.com/*"),
     DiscoveryQuery("lever-global", "jobs.lever.co/*"),
     DiscoveryQuery("lever-eu", "jobs.eu.lever.co/*"),
@@ -213,6 +217,23 @@ class CommonCrawlDiscovery:
             raise ValueError(f"Common Crawl page count is invalid for {query.query_id}")
         return pages
 
+    @staticmethod
+    def _initial_page(*, crawl_id: str, query_id: str, pages: int) -> int:
+        if pages == 1:
+            return 0
+        digest = hashlib.sha256(f"{crawl_id}:{query_id}".encode()).hexdigest()
+        return int(digest[:16], 16) % pages
+
+    @staticmethod
+    def _page_stride(*, query_id: str, pages: int) -> int:
+        if pages == 1:
+            return 1
+        digest = hashlib.sha256(query_id.encode()).hexdigest()
+        stride = int(digest[:16], 16) % pages or 1
+        while math.gcd(stride, pages) != 1:
+            stride = (stride + 1) % pages or 1
+        return stride
+
     def _page(self, endpoint: str, query: DiscoveryQuery, page: int) -> list[dict[str, Any]]:
         params = [
             ("url", query.pattern),
@@ -262,7 +283,11 @@ class CommonCrawlDiscovery:
             )
             if cursor is None or cursor["crawl_id"] != crawl_id:
                 pages = self._page_count(endpoint, query)
-                page = 0
+                page = self._initial_page(
+                    crawl_id=crawl_id,
+                    query_id=query.query_id,
+                    pages=pages,
+                )
             else:
                 pages = int(cursor["pages"])
                 page = int(cursor["page"])
@@ -315,7 +340,10 @@ class CommonCrawlDiscovery:
                 pending_observations
             )
 
-            next_page = (page + 1) % pages
+            next_page = (
+                page
+                + self._page_stride(query_id=query.query_id, pages=pages)
+            ) % pages
             self.store.set_cursor(
                 discovery_source=DISCOVERY_SOURCE,
                 query_id=query.query_id,
