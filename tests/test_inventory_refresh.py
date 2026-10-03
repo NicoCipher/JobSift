@@ -397,8 +397,13 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "--plan-dir config/sourcing_plans" in workflow
     assert "TURSO_DATABASE_URL" in workflow
     assert workflow.count("group: jobsift-client-delivery-mutation") == 1
-    assert workflow.index("group: jobsift-client-delivery-mutation") < workflow.index("jobs:")
-    assert "jobsift-live-inventory-refresh" not in workflow
+    assert "group: jobsift-live-inventory-refresh" in workflow
+    persist_job = workflow.index("persist-and-deliver:")
+    mutation_lock = workflow.index("group: jobsift-client-delivery-mutation")
+    verify_snapshot = workflow.index("Verify active profile snapshot")
+    fan_in = workflow.index("python -m job_scout.inventory_refresh fan-in")
+    assert persist_job < mutation_lock < verify_snapshot < fan_in
+    assert "verify-profile-snapshot" in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
