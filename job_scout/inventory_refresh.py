@@ -602,6 +602,21 @@ def rotating_registry(
     )
 
 
+def validate_parent_registry_snapshot(
+    *,
+    parent_registry: ProductionSourceRegistry,
+    refresh_plan: RefreshPlan | None,
+) -> None:
+    if refresh_plan is None:
+        return
+    parent_registry_sha = sha256_json(parent_registry.model_dump(mode="json"))
+    if (
+        refresh_plan.parent_registry_id != parent_registry.registry_id
+        or refresh_plan.parent_registry_sha256 != parent_registry_sha
+    ):
+        raise ValueError("fan-in parent registry does not match refresh-plan snapshot")
+
+
 def _write_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
@@ -963,6 +978,17 @@ def main() -> None:
             print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))
             return
 
+        refresh_plan: RefreshPlan | None = None
+        if args.refresh_plan is not None:
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+        parent_registry = load_production_registry(args.parent_registry)
+        validate_parent_registry_snapshot(
+            parent_registry=parent_registry,
+            refresh_plan=refresh_plan,
+        )
+
         artifact_paths = sorted(args.artifacts_dir.glob("*.json"))
         if not artifact_paths:
             raise ValueError("no shard artifact files found")
@@ -977,10 +1003,7 @@ def main() -> None:
             for target in artifact.targets
         )
         invalidated_identities: list[tuple[str, str, str]] = []
-        if args.refresh_plan is not None:
-            refresh_plan = RefreshPlan.model_validate_json(
-                args.refresh_plan.read_text(encoding="utf-8")
-            )
+        if refresh_plan is not None:
             registry_sha = sha256_json(registry.model_dump(mode="json"))
             if (
                 refresh_plan.refresh_registry_id != registry.registry_id
@@ -1048,16 +1071,6 @@ def main() -> None:
             ),
             flush=True,
         )
-        parent_registry = load_production_registry(args.parent_registry)
-        if args.refresh_plan is not None:
-            parent_registry_sha = sha256_json(parent_registry.model_dump(mode="json"))
-            if (
-                refresh_plan.parent_registry_id != parent_registry.registry_id
-                or refresh_plan.parent_registry_sha256 != parent_registry_sha
-            ):
-                raise ValueError(
-                    "fan-in parent registry does not match refresh-plan snapshot"
-                )
         coverage_proof = build_coverage_proof(
             parent_registry,
             limits=registry.target_counts_by_source,
