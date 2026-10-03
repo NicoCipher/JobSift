@@ -14,6 +14,15 @@ on:
           - "10"
           - "20"
           - "25"
+      workday_detail_concurrency:
+        description: "Guarded concurrent Workday detail reads per target"
+        required: false
+        default: "4"
+        type: choice
+        options:
+          - "4"
+          - "6"
+          - "8"
   schedule:
     - cron: "17 * * * *"
 
@@ -45,12 +54,14 @@ jobs:
           # Scheduled production is promoted to 5 after the successful guarded
           # post-#51 run at 5. Manual dispatch remains available for staged tests.
           WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '5' }}
+          WORKDAY_DETAIL_CONCURRENCY: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_detail_concurrency || '4' }}
         run: |
           cohort=$(( $(date -u +%s) / 3600 ))
           python -m job_scout.inventory_refresh plan \
             --registry config/source_registries/production_active_v1.json \
             --cohort "$cohort" \
             --workday-limit "$WORKDAY_TARGETS" \
+            --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY" \
             --output-dir refresh-plan
 
       - name: Export worker matrix

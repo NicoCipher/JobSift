@@ -694,6 +694,13 @@ def main() -> None:
         default=DEFAULT_LIMITS["workday"],
         help="Explicit guarded Workday ramp level; never auto-escalates.",
     )
+    plan.add_argument(
+        "--workday-detail-concurrency",
+        type=int,
+        choices=range(1, 9),
+        default=DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
+        help="Bounded concurrent Workday detail reads per target.",
+    )
 
     collect = commands.add_parser("collect")
     collect.add_argument("--registry", type=Path, required=True)
@@ -729,6 +736,7 @@ def main() -> None:
                 registry=registry,
                 cohort=args.cohort,
                 limits=limits,
+                workday_detail_concurrency=args.workday_detail_concurrency,
             )
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)

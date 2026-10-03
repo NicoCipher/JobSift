@@ -275,6 +275,20 @@ def test_workday_ramp_rejects_unapproved_level():
         raise AssertionError("unapproved Workday ramp level was accepted")
 
 
+def test_refresh_plan_records_guarded_workday_detail_concurrency():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry, workday_limit=10)
+
+    plan, _subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        limits=limits,
+        workday_detail_concurrency=6,
+    )
+
+    assert plan.workday_detail_concurrency == 6
+
+
 def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
     from job_scout.shard_benchmark import MAX_BOUNDED_TARGETS, select_registry_subset
 
@@ -361,6 +375,8 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
 
     assert "python -m job_scout.inventory_refresh collect" in workflow
     assert "--refresh-plan refresh-plan/plan.json" in workflow
+    assert "--workday-detail-concurrency" in workflow
+    assert "inputs.workday_detail_concurrency" in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
     assert "--benchmark-plan refresh-plan/plan.json" not in workflow
