@@ -377,7 +377,7 @@ def test_retained_candidate_snapshot_keeps_only_titles_matching_active_briefs(tm
     from job_scout.domain.models import Job
     from job_scout.storage.sqlite import SQLiteRepository
 
-    registry, production_target = _target()
+    _registry, production_target = _target()
     board_id = production_target.source_target().board_id
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
 
