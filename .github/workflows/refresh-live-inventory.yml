@@ -177,22 +177,8 @@ jobs:
           test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
 
-      - name: Acquire profile mutation lease
-        shell: bash
-        run: |
-          token="$(python -m job_scout.profile_mutation_lock acquire \
-            --database "$JOBSIFT_DATABASE" \
-            --owner "refresh:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}" \
-            --ttl-seconds 1500 \
-            --wait-seconds 120)"
-          echo "::add-mask::$token"
-          echo "JOBSIFT_PROFILE_MUTATION_LOCK_TOKEN=$token" >> "$GITHUB_ENV"
-
       - name: Verify active profile snapshot
         run: |
-          python -m job_scout.profile_mutation_lock assert \
-            --database "$JOBSIFT_DATABASE" \
-            --token "$JOBSIFT_PROFILE_MUTATION_LOCK_TOKEN"
           python -m job_scout.inventory_refresh verify-profile-snapshot \
             --refresh-plan refresh-plan/plan.json \
             --database "$JOBSIFT_DATABASE" \
@@ -219,11 +205,7 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
 
       - name: Deliver to active client profiles
-        run: |
-          python -m job_scout.profile_mutation_lock assert \
-            --database "$JOBSIFT_DATABASE" \
-            --token "$JOBSIFT_PROFILE_MUTATION_LOCK_TOKEN"
-          python -m job_scout.profile_delivery_runner
+        run: python -m job_scout.profile_delivery_runner
 
       - name: Prune stale inventory
         if: ${{ always() }}
@@ -232,16 +214,6 @@ jobs:
             --database "$JOBSIFT_DATABASE" \
             --retention-hours "$JOBSIFT_INVENTORY_RETENTION_HOURS" \
             --output refresh-result/retention.json
-
-      - name: Release profile mutation lease
-        if: always()
-        shell: bash
-        run: |
-          if [ -n "${JOBSIFT_PROFILE_MUTATION_LOCK_TOKEN:-}" ]; then
-            python -m job_scout.profile_mutation_lock release \
-              --database "$JOBSIFT_DATABASE" \
-              --token "$JOBSIFT_PROFILE_MUTATION_LOCK_TOKEN"
-          fi
 
       - uses: actions/upload-artifact@v4
         if: always()

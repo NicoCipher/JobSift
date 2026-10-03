@@ -402,21 +402,11 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "group: jobsift-live-inventory-refresh" in workflow
     persist_job = workflow.index("persist-and-deliver:")
     mutation_lock = workflow.index("group: jobsift-client-delivery-mutation")
-    acquire_lease = workflow.index("Acquire profile mutation lease")
     verify_snapshot = workflow.index("Verify active profile snapshot")
     fan_in = workflow.index("python -m job_scout.inventory_refresh fan-in")
     deliver = workflow.index("Deliver to active client profiles")
-    release_lease = workflow.index("Release profile mutation lease")
-    assert workflow.count("profile_mutation_lock assert") == 2
-    assert (
-        persist_job
-        < mutation_lock
-        < acquire_lease
-        < verify_snapshot
-        < fan_in
-        < deliver
-        < release_lease
-    )
+    assert "profile_mutation_lock" not in workflow
+    assert persist_job < mutation_lock < verify_snapshot < fan_in < deliver
     assert "verify-profile-snapshot" in workflow
     assert "--parent-registry config/source_registries/production_active_v1.json" in workflow
     assert "job_scout.shard_benchmark collect" not in workflow
@@ -447,8 +437,56 @@ def test_profile_mutation_workflows_queue_all_pending_changes():
         assert "cancel-in-progress: false" in workflow
 
 
-def test_delivery_profile_cli_uses_database_mutation_guard():
+def test_delivery_profile_cli_restricts_remote_mutations_to_queued_workflows():
     cli = Path("job_scout/cli.py").read_text(encoding="utf-8")
-    assert "profile_mutation_guard" in cli
-    assert "mutating_profile_command" in cli
-    assert 'command not in {"list", "status"}' in cli
+    assert "_require_serialized_profile_mutation" in cli
+    assert "SERIALIZED_PROFILE_MUTATION_WORKFLOWS" in cli
+    assert "Client Delivery Control" in cli
+    assert "Configure Client Delivery Profile" in cli
+    assert "profile_mutation_guard" not in cli
+
+
+def test_legacy_refresh_plan_without_workday_snapshot_uses_full_collector(monkeypatch):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    plan, subset, manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        workday_briefs=None,
+    )
+    assert plan.workday_briefs is None
+
+    captured = {}
+    sentinel = object()
+
+    def fake_collect_shard(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(inventory_refresh, "collect_shard", fake_collect_shard)
+    result = inventory_refresh.collect_refresh_shard(
+        registry=subset,
+        manifest=manifest,
+        plan=plan,
+        shard_id=next(
+            shard.shard_id for shard in manifest.shards if shard.source == "workday"
+        ),
+    )
+    assert result is sentinel
+    collector = captured["collector_factory"]("workday")
+    assert collector.__class__.__name__ == "WorkdayCollector"
+    collector.close()
+
+
+def test_explicit_empty_workday_snapshot_remains_distinct_from_legacy():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    plan, _subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=17,
+        workday_briefs=[],
+    )
+    assert plan.workday_briefs == []
+
+    payload = plan.model_dump(mode="json")
+    payload.pop("workday_briefs")
+    legacy = inventory_refresh.RefreshPlan.model_validate(payload)
+    assert legacy.workday_briefs is None

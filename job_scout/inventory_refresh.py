@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from job_scout.collectors.workday import WorkdayCollector
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -158,7 +159,9 @@ class RefreshPlan(BaseModel):
     total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
     total_shards: int = Field(ge=1)
     workday_detail_concurrency: int = Field(ge=1, le=8)
-    workday_briefs: list[WorkdayBriefBinding] = Field(default_factory=list)
+    # None is reserved for pre-index-first/legacy plans that did not freeze a brief snapshot.
+    # New production plans always store a list, including [] when no profiles are active.
+    workday_briefs: list[WorkdayBriefBinding] | None = None
     matrix: dict[str, list[dict[str, str]]]
 
 
@@ -650,7 +653,7 @@ def build_refresh_plan(
         total_targets=len(subset.targets),
         total_shards=len(manifest.shards),
         workday_detail_concurrency=workday_detail_concurrency,
-        workday_briefs=list(workday_briefs or []),
+        workday_briefs=(None if workday_briefs is None else list(workday_briefs)),
         matrix=matrix,
     )
     return plan, subset, manifest
@@ -664,6 +667,8 @@ def _refresh_collector_factory(
     workday_briefs,
 ):
     if source == "workday":
+        if workday_briefs is None:
+            return WorkdayCollector(detail_concurrency=workday_detail_concurrency)
         return IndexFirstWorkdayCollector(
             registry=registry,
             briefs=workday_briefs,
@@ -688,9 +693,13 @@ def collect_refresh_shard(
         or plan.shard_manifest_sha256 != manifest.manifest_sha256
     ):
         raise ValueError("refresh plan does not match registry/manifest")
-    workday_briefs = load_bound_workday_briefs(
-        plan.workday_briefs,
-        repo_root=repo_root,
+    workday_briefs = (
+        None
+        if plan.workday_briefs is None
+        else load_bound_workday_briefs(
+            plan.workday_briefs,
+            repo_root=repo_root,
+        )
     )
     return collect_shard(
         registry=registry,
@@ -813,6 +822,10 @@ def main() -> None:
             refresh_plan = RefreshPlan.model_validate_json(
                 args.refresh_plan.read_text(encoding="utf-8")
             )
+            if refresh_plan.workday_briefs is None:
+                raise ValueError(
+                    "refresh plan predates active Workday SearchBrief snapshot binding"
+                )
             args.database.parent.mkdir(parents=True, exist_ok=True)
             repository = SQLiteRepository(args.database)
             verify_active_workday_brief_bindings(
