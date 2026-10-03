@@ -49,13 +49,12 @@ def test_profile_mutation_lock_allows_takeover_after_expiry(tmp_path):
 def test_profile_mutation_guard_releases_after_failure(tmp_path):
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
 
-    with pytest.raises(RuntimeError, match="boom"):
-        with profile_mutation_guard(
-            repository,
-            owner_label="failing-operation",
-            wait_seconds=0,
-        ):
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError, match="boom"), profile_mutation_guard(
+        repository,
+        owner_label="failing-operation",
+        wait_seconds=0,
+    ):
+        raise RuntimeError("boom")
 
     lock = ProfileMutationLock(repository)
     token = lock.acquire(owner_label="next-operation", wait_seconds=0)
