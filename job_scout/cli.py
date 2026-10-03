@@ -26,7 +26,7 @@ from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.history import explicit_blacklist_evidence, historical_records, workbook_sha256
 from job_scout.orchestration.daily_batch import finalize_daily_batch
 from job_scout.orchestration.pipeline import run_pipeline
-from job_scout.profile_mutation_lock import profile_mutation_guard
+from job_scout.profile_mutation_lock import ProfileMutationLockError, profile_mutation_guard
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
@@ -486,7 +486,13 @@ def main() -> None:
                         and result.status != "delivered"
                     ):
                         parser.exit(1)
-        except (BatchConflict, OSError, ValueError, sqlite3.Error) as exc:
+        except (
+            BatchConflict,
+            OSError,
+            ProfileMutationLockError,
+            ValueError,
+            sqlite3.Error,
+        ) as exc:
             parser.error(f"unable to manage delivery profile: {exc}")
         return
 
