@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 REFRESH_SCHEDULE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS inventory_refresh_schedule_state (
   schedule_key TEXT PRIMARY KEY,
-  last_completed_cohort INTEGER NOT NULL CHECK(last_completed_cohort >= 0),
+  last_completed_cohort INTEGER NOT NULL CHECK(last_completed_cohort >= -1),
   updated_at TEXT NOT NULL
 );
 """
@@ -35,21 +35,25 @@ class InventoryRefreshScheduleStore:
         return int(normalized.timestamp() // 3600)
 
     def next_due(self, *, now: datetime | None = None) -> ScheduledCohortDecision:
-        current = self.cohort_for(now or datetime.now(UTC))
+        moment = now or datetime.now(UTC)
+        current = self.cohort_for(moment)
+        normalized = moment.replace(tzinfo=moment.tzinfo or UTC).astimezone(UTC)
         with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT last_completed_cohort FROM inventory_refresh_schedule_state "
                 "WHERE schedule_key=?",
                 (self.schedule_key,),
             ).fetchone()
-        if row is None:
-            return ScheduledCohortDecision(
-                should_run=True,
-                cohort=current,
-                current_cohort=current,
-                last_completed_cohort=None,
-            )
-        last_completed = int(row["last_completed_cohort"])
+            if row is None:
+                last_completed = current - 1
+                connection.execute(
+                    "INSERT INTO inventory_refresh_schedule_state "
+                    "(schedule_key,last_completed_cohort,updated_at) VALUES (?,?,?)",
+                    (self.schedule_key, last_completed, normalized.isoformat()),
+                )
+            else:
+                last_completed = int(row["last_completed_cohort"])
         if last_completed >= current:
             return ScheduledCohortDecision(
                 should_run=False,
