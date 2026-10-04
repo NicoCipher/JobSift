@@ -76,12 +76,15 @@ def test_completion_requires_initialized_scheduler_state(tmp_path):
 
 
 def test_first_failed_cohort_is_not_skipped_when_clock_advances(tmp_path):
-    repository = SQLiteRepository(tmp_path / "first-failure.sqlite3")
-    store = InventoryRefreshScheduleStore(repository)
+    database = tmp_path / "first-failure.sqlite3"
+    store = InventoryRefreshScheduleStore(SQLiteRepository(database))
     first_at = datetime(2026, 10, 4, 4, 17, tzinfo=UTC)
 
     first = store.next_due(now=first_at)
-    next_hour = store.next_due(now=first_at + timedelta(hours=1, minutes=5))
+
+    # Model the next trigger on a fresh runner/process reopening durable state.
+    retry_store = InventoryRefreshScheduleStore(SQLiteRepository(database))
+    next_hour = retry_store.next_due(now=first_at + timedelta(hours=1, minutes=5))
 
     assert first.should_run is True
     assert next_hour.should_run is True
