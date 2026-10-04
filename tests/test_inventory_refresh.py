@@ -19,10 +19,13 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
     )
 
     limits = inventory_refresh.default_refresh_limits(registry)
-    assert sum(limits.values()) == 100
-    assert len(subset0.targets) == 100
+    assert limits["greenhouse"] == 111
+    assert limits["ashby"] == 102
+    assert limits["lever"] == 40
+    assert limits["workday"] == 1
+    assert len(subset0.targets) == sum(limits.values())
     assert subset0.target_counts_by_source == limits
-    assert plan0.total_targets == 100
+    assert plan0.total_targets == sum(limits.values())
     assert len(manifest0.shards) == plan0.total_shards
     assert [target.target_identity for target in subset0.targets] == sorted(
         target.target_identity for target in subset0.targets
@@ -98,17 +101,36 @@ def test_dynamic_smartrecruiters_rotation_stays_inside_24_hour_window():
     expanded = type(registry).model_validate(payload)
 
     limits = inventory_refresh.default_refresh_limits(expanded, workday_limit=25)
-    assert limits["greenhouse"] == 33
-    assert limits["smartrecruiters"] == 7
+    assert limits["greenhouse"] == 111
+    assert limits["ashby"] == 102
+    assert limits["lever"] == 40
+    assert limits["smartrecruiters"] == 28
     assert limits["workday"] == 25
-    assert sum(limits.values()) == 124
+    assert sum(limits.values()) == 306
 
     proof = inventory_refresh.build_coverage_proof(expanded, limits=limits)
     smartrecruiters = next(
         item for item in proof.providers if item.source == "smartrecruiters"
     )
-    assert smartrecruiters.targets_per_cohort == 7
-    assert smartrecruiters.worst_case_full_coverage_cohorts <= 24
+    assert smartrecruiters.targets_per_cohort == 28
+    assert (
+        smartrecruiters.worst_case_full_coverage_cohorts
+        <= inventory_refresh.FAST_PROVIDER_COVERAGE_COHORTS
+    )
+
+def test_fast_provider_rotation_covers_every_target_within_six_cohorts():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry, workday_limit=25)
+    proof = inventory_refresh.build_coverage_proof(registry, limits=limits)
+
+    for provider in proof.providers:
+        if provider.source == "workday":
+            continue
+        assert (
+            provider.worst_case_full_coverage_cohorts
+            <= inventory_refresh.FAST_PROVIDER_COVERAGE_COHORTS
+        )
+
 
 def test_default_rotation_proves_full_registry_coverage():
     registry = inventory_refresh.load_production_registry(REGISTRY)
@@ -394,7 +416,8 @@ def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
     )
 
     assert MAX_BOUNDED_TARGETS == 100
-    assert plan.total_targets == 124
+    assert plan.total_targets == sum(limits.values())
+    assert plan.total_targets > MAX_BOUNDED_TARGETS
     assert len(subset.targets) == 124
     try:
         select_registry_subset(registry, target_limits_by_source=limits)
