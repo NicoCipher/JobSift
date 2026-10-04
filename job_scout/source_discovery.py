@@ -22,12 +22,12 @@ from job_scout.production_registry import (
     load_production_registry,
     sha256_json,
 )
-from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.factory import create_repository
+from job_scout.storage.source_discovery import SourceDiscoveryStore
+from job_scout.target_universe import HistoricalLink, derive_link
 
 # Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
 SQLiteRepository = create_repository
-from job_scout.target_universe import HistoricalLink, derive_link
 
 COMMON_CRAWL_COLLECTIONS = "https://index.commoncrawl.org/collinfo.json"
 DISCOVERY_SOURCE = "commoncrawl-cdx"
