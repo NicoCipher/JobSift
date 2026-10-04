@@ -17,7 +17,6 @@ from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.sqlite import SQLiteRepository
 
-
 POSTGRES_URL = os.getenv("JOBSIFT_TEST_POSTGRES_URL", "").strip()
 
 
@@ -50,18 +49,26 @@ def _bootstrap_schema(url: str) -> None:
             """
         )
         for statement in (
-            "CREATE TRIGGER outcome_events_no_update "
-            "BEFORE UPDATE ON operator_outcome_events FOR EACH ROW "
-            "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()",
-            "CREATE TRIGGER outcome_events_no_delete "
-            "BEFORE DELETE ON operator_outcome_events FOR EACH ROW "
-            "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()",
-            "CREATE TRIGGER outcome_imports_no_update "
-            "BEFORE UPDATE ON operator_outcome_imports FOR EACH ROW "
-            "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()",
-            "CREATE TRIGGER outcome_imports_no_delete "
-            "BEFORE DELETE ON operator_outcome_imports FOR EACH ROW "
-            "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()",
+            (
+                "CREATE TRIGGER outcome_events_no_update "
+                "BEFORE UPDATE ON operator_outcome_events FOR EACH ROW "
+                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
+            ),
+            (
+                "CREATE TRIGGER outcome_events_no_delete "
+                "BEFORE DELETE ON operator_outcome_events FOR EACH ROW "
+                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
+            ),
+            (
+                "CREATE TRIGGER outcome_imports_no_update "
+                "BEFORE UPDATE ON operator_outcome_imports FOR EACH ROW "
+                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
+            ),
+            (
+                "CREATE TRIGGER outcome_imports_no_delete "
+                "BEFORE DELETE ON operator_outcome_imports FOR EACH ROW "
+                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
+            ),
         ):
             connection.execute(statement)
 
@@ -128,13 +135,14 @@ def test_operator_outcome_rows_remain_immutable(repository):
             ),
         )
 
-    with pytest.raises(sqlite3.DatabaseError, match="immutable"):
-        with repository.connect() as connection:
-            connection.execute(
-                "UPDATE operator_outcome_events SET value=? WHERE event_id=?",
-                ("not_applied", "postgres-ci-event"),
-            )
-
+    with (
+        pytest.raises(sqlite3.DatabaseError, match="immutable"),
+        repository.connect() as connection,
+    ):
+        connection.execute(
+            "UPDATE operator_outcome_events SET value=? WHERE event_id=?",
+            ("not_applied", "postgres-ci-event"),
+        )
 
 
 @pytest.fixture()
