@@ -567,6 +567,15 @@ def test_cli_sheet_controls_use_opaque_profile_id_and_fail_safe(tmp_path, monkey
     assert "client-a" not in serialized
     assert "jobs" not in serialized
 
+    # Model a legacy/inconsistent state where a disabled Sheet still has an
+    # active profile. Re-enable must fail safe by pausing it before verification.
+    with repo.connect() as connection:
+        connection.execute(
+            "UPDATE client_delivery_profiles SET status='active' "
+            "WHERE client_id=? AND destination_id=?",
+            ("client-a", "jobs"),
+        )
+
     monkeypatch.setattr(cli, "GoogleSheetsGateway", FakeSheet)
     monkeypatch.setattr(
         sys,
