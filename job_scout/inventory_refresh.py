@@ -32,8 +32,8 @@ from job_scout.shard_collection import (
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.source_discovery import overlay_admitted_targets
 from job_scout.storage.inventory_runs import InventoryRunStore
-from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
+from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
