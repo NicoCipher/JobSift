@@ -69,6 +69,14 @@ DEFAULT_SHARDS = {
     "lever": 4,
     "smartrecruiters": 2,
 }
+MAX_TARGETS_PER_SHARD = {
+    "greenhouse": 20,
+    "ashby": 20,
+    "workday": 1,
+    "lever": 10,
+    "smartrecruiters": 10,
+}
+MAX_REFRESH_SHARDS = 128
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
 # GitHub's scheduled triggers have been materially less frequent than the logical
 # hourly cadence in production. Keep fast ATS providers on a six-cohort coverage
@@ -177,7 +185,8 @@ class RefreshPlan(BaseModel):
     shard_counts_by_source: dict[str, int]
     target_counts_by_source: dict[str, int]
     total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
-    total_shards: int = Field(ge=1)
+    total_shards: int = Field(ge=1, le=MAX_REFRESH_SHARDS)
+    selection_strategy: str = "cohort-rotation-v1"
     workday_detail_concurrency: int = Field(ge=1, le=8)
     # None is reserved for pre-index-first/legacy plans that did not freeze a brief snapshot.
     # New production plans always store a list, including [] when no profiles are active.
@@ -568,6 +577,159 @@ def build_observed_coverage_report(
         targets=target_reports,
     )
 
+def load_target_selection_state(
+    repository,
+    registry: ProductionSourceRegistry,
+) -> dict[str, dict[str, str | None]]:
+    """Load durable fairness timestamps for the current approved registry.
+
+    A target's due timestamp is its last successful/partial observation when one
+    exists, otherwise its first discovery time. Static registry targets that
+    predate live discovery have no discovery row and are treated as oldest.
+    """
+
+    InventoryRunStore(repository)
+    approved = {target.target_identity for target in registry.targets}
+    state = {
+        target_identity: {
+            "last_observed_at": None,
+            "first_discovered_at": None,
+        }
+        for target_identity in approved
+    }
+    with repository.connect() as connection:
+        observed_rows = connection.execute(
+            "SELECT target_identity,last_observed_at "
+            "FROM inventory_target_coverage_state"
+        ).fetchall()
+        discovered_rows = connection.execute(
+            "SELECT target_identity,first_discovered_at "
+            "FROM source_discovery_targets"
+        ).fetchall()
+
+    for row in observed_rows:
+        target_identity = row["target_identity"]
+        if target_identity in state:
+            state[target_identity]["last_observed_at"] = row["last_observed_at"]
+    for row in discovered_rows:
+        target_identity = row["target_identity"]
+        if target_identity in state:
+            state[target_identity]["first_discovered_at"] = row[
+                "first_discovered_at"
+            ]
+    return state
+
+
+def _selection_due_key(
+    target,
+    selection_state: dict[str, dict[str, str | None]],
+) -> tuple[datetime, str, str]:
+    value = selection_state.get(target.target_identity, {})
+    raw_due = value.get("last_observed_at") or value.get("first_discovered_at")
+    if raw_due:
+        due = datetime.fromisoformat(raw_due)
+        due = due.replace(tzinfo=due.tzinfo or UTC).astimezone(UTC)
+    else:
+        due = datetime.min.replace(tzinfo=UTC)
+    return (
+        due,
+        hashlib.sha256(target.target_identity.encode()).hexdigest(),
+        target.target_identity,
+    )
+
+
+def history_aware_registry(
+    registry: ProductionSourceRegistry,
+    *,
+    cohort: int,
+    limits: dict[str, int],
+    selection_state: dict[str, dict[str, str | None]],
+) -> ProductionSourceRegistry:
+    """Select the oldest-due targets without resetting progress on registry growth."""
+
+    if cohort < 0:
+        raise ValueError("cohort must be non-negative")
+    providers = tuple(
+        source for source in PROVIDERS if source in registry.target_counts_by_source
+    )
+    if set(limits) != set(providers) or any(value < 1 for value in limits.values()):
+        raise ValueError("refresh limits must contain positive counts for every provider")
+    approved = {target.target_identity for target in registry.targets}
+    if not approved.issubset(selection_state):
+        raise ValueError("selection state is missing an approved target")
+
+    selected = []
+    for source in providers:
+        candidates = sorted(
+            (target for target in registry.targets if target.source == source),
+            key=lambda target: _selection_due_key(target, selection_state),
+        )
+        limit = limits[source]
+        if limit > len(candidates):
+            raise ValueError(f"refresh limit exceeds {source} registry size")
+        selected.extend(candidates[:limit])
+
+    selected.sort(key=lambda target: target.target_identity)
+    parent_sha = sha256_json(registry.model_dump(mode="json"))
+    identity = sha256_json(
+        {
+            "parent_registry_sha256": parent_sha,
+            "cohort": cohort,
+            "limits": limits,
+            "selection_strategy": "oldest-due-v1",
+            "targets": [target.target_identity for target in selected],
+        }
+    )[:16]
+    return ProductionSourceRegistry(
+        registry_id=f"{registry.registry_id}-refresh-{cohort}-{identity}",
+        target_universe_git_blob_sha=registry.target_universe_git_blob_sha,
+        health_manifest_sha256=registry.health_manifest_sha256,
+        health_evidence_updated_at=registry.health_evidence_updated_at,
+        approval_policy=registry.approval_policy,
+        target_counts_by_source=dict(
+            sorted(Counter(target.source for target in selected).items())
+        ),
+        targets=selected,
+    )
+
+
+def build_history_coverage_capacity(
+    registry: ProductionSourceRegistry,
+    *,
+    limits: dict[str, int],
+) -> dict[str, object]:
+    providers = []
+    for source in PROVIDERS:
+        count = registry.target_counts_by_source.get(source)
+        if count is None:
+            continue
+        limit = limits[source]
+        stable_full_coverage = math.ceil(count / limit)
+        providers.append(
+            {
+                "source": source,
+                "registry_targets": count,
+                "targets_per_cohort": limit,
+                "stable_registry_full_coverage_cohorts": stable_full_coverage,
+                "fast_provider_horizon_met": (
+                    None
+                    if source == "workday"
+                    else stable_full_coverage <= FAST_PROVIDER_COVERAGE_COHORTS
+                ),
+            }
+        )
+    return {
+        "selection_strategy": "oldest-due-v1",
+        "registry_id": registry.registry_id,
+        "registry_sha256": sha256_json(registry.model_dump(mode="json")),
+        "growth_semantics": (
+            "targets are ordered by durable due timestamp; new admissions do not "
+            "recompute or reset existing targets' progress"
+        ),
+        "providers": providers,
+    }
+
+
 def _stable(values):
     return sorted(
         values,
@@ -697,19 +859,21 @@ def build_refresh_plan(
     workday_briefs: list[WorkdayBriefBinding] | None = None,
     workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None,
     incremental_target_state: list[IncrementalTargetState] | None = None,
+    selection_state: dict[str, dict[str, str | None]] | None = None,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
     if shards is None:
         shards = {
-            source: min(DEFAULT_SHARDS[source], limits[source])
+            source: min(
+                limits[source],
+                max(
+                    DEFAULT_SHARDS[source],
+                    math.ceil(limits[source] / MAX_TARGETS_PER_SHARD[source]),
+                ),
+            )
             for source in providers
         }
-        if "workday" in shards:
-            # Workday target runtimes have a very long tail. Isolate every selected
-            # Workday company so one slow board cannot serialize four healthy boards
-            # behind it. Detail concurrency remains independently capped per target.
-            shards["workday"] = limits["workday"]
     else:
         shards = dict(shards)
     if (
@@ -721,10 +885,28 @@ def build_refresh_plan(
     if set(shards) != set(providers) or any(value < 1 for value in shards.values()):
         raise ValueError("refresh shards must contain positive counts for every provider")
 
-    subset = rotating_registry(registry, cohort=cohort, limits=limits)
+    selection_strategy = (
+        "cohort-rotation-v1" if selection_state is None else "oldest-due-v1"
+    )
+    subset = (
+        rotating_registry(registry, cohort=cohort, limits=limits)
+        if selection_state is None
+        else history_aware_registry(
+            registry,
+            cohort=cohort,
+            limits=limits,
+            selection_state=selection_state,
+        )
+    )
     for source in providers:
         if shards[source] > subset.target_counts_by_source[source]:
             raise ValueError(f"shard count exceeds selected {source} targets")
+        if math.ceil(subset.target_counts_by_source[source] / shards[source]) > (
+            MAX_TARGETS_PER_SHARD[source]
+        ):
+            raise ValueError(f"{source} shard capacity exceeds production bound")
+    if sum(shards.values()) > MAX_REFRESH_SHARDS:
+        raise ValueError("refresh shard count exceeds production matrix ceiling")
     manifest = build_shard_manifest(subset, shard_counts_by_source=shards)
 
     planned_retained_candidates = None
@@ -794,6 +976,7 @@ def build_refresh_plan(
         target_counts_by_source=subset.target_counts_by_source,
         total_targets=len(subset.targets),
         total_shards=len(manifest.shards),
+        selection_strategy=selection_strategy,
         workday_detail_concurrency=workday_detail_concurrency,
         workday_briefs=(None if workday_briefs is None else list(workday_briefs)),
         workday_retained_candidates=planned_retained_candidates,
@@ -1016,6 +1199,10 @@ def main() -> None:
                 planning_repository,
                 registry,
             )
+            selection_state = load_target_selection_state(
+                planning_repository,
+                registry,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
@@ -1024,6 +1211,7 @@ def main() -> None:
                 workday_briefs=workday_briefs,
                 workday_retained_candidates=workday_retained_candidates,
                 incremental_target_state=incremental_target_state,
+                selection_state=selection_state,
             )
             _write_json(args.output_dir / "parent-registry.json", registry)
             _write_json(args.output_dir / "registry.json", subset)
@@ -1033,7 +1221,7 @@ def main() -> None:
             _write_json(args.output_dir / "plan.json", refresh)
             _write_json(
                 args.output_dir / "coverage.json",
-                build_coverage_proof(registry, limits=limits),
+                build_history_coverage_capacity(registry, limits=limits),
             )
             _write_json(
                 args.output_dir / "refresh.json",
@@ -1045,7 +1233,9 @@ def main() -> None:
                     ),
                     "selected_registry_id": subset.registry_id,
                     "selected_targets": len(subset.targets),
+                    "selection_strategy": refresh.selection_strategy,
                     "target_counts_by_source": subset.target_counts_by_source,
+                    "shard_counts_by_source": refresh.shard_counts_by_source,
                     "active_workday_briefs": len(refresh.workday_briefs),
                     "retained_workday_candidate_ids": sum(
                         len(binding.source_job_ids)
@@ -1221,7 +1411,7 @@ def main() -> None:
             ),
             flush=True,
         )
-        coverage_proof = build_coverage_proof(
+        coverage_proof = build_history_coverage_capacity(
             parent_registry,
             limits=registry.target_counts_by_source,
         )
