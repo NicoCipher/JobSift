@@ -418,7 +418,7 @@ def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
     assert MAX_BOUNDED_TARGETS == 100
     assert plan.total_targets == sum(limits.values())
     assert plan.total_targets > MAX_BOUNDED_TARGETS
-    assert len(subset.targets) == 124
+    assert len(subset.targets) == sum(limits.values())
     try:
         select_registry_subset(registry, target_limits_by_source=limits)
     except ValueError as exc:
