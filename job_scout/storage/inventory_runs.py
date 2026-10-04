@@ -89,7 +89,7 @@ class InventoryRunStore:
         )
 
     def get(self, run_id: str) -> InventoryRunRecord | None:
-        with self.repository.connect() as connection:
+        with self.repository.connect(push=False) as connection:
             row = connection.execute(
                 "SELECT run_id,plan_id,started_at,completed_at,status "
                 "FROM inventory_runs WHERE run_id=?",
@@ -318,7 +318,7 @@ class InventoryRunStore:
 
     def membership_count(self, run_id: str) -> int:
         """Return the persisted target/job membership count for one run."""
-        with self.repository.connect() as connection:
+        with self.repository.connect(push=False) as connection:
             row = connection.execute(
                 "SELECT COUNT(*) FROM inventory_run_jobs WHERE run_id=?",
                 (run_id,),
@@ -326,7 +326,7 @@ class InventoryRunStore:
         return int(row[0])
 
     def job_ids(self, run_id: str) -> tuple[str, ...]:
-        with self.repository.connect() as connection:
+        with self.repository.connect(push=False) as connection:
             rows = connection.execute(
                 "SELECT DISTINCT job_id FROM inventory_run_jobs "
                 "WHERE run_id=? ORDER BY job_id",
@@ -352,7 +352,7 @@ class InventoryRunStore:
         )
         cutoff = evaluation_time - timedelta(hours=retention_hours)
         active: list[str] = []
-        with self.repository.connect() as connection:
+        with self.repository.connect(push=False) as connection:
             rows = connection.execute(
                 "SELECT DISTINCT r.job_id,j.payload_json,j.first_seen_at,"
                 "e.posted_at AS retention_posted_at FROM inventory_run_jobs r "
@@ -379,7 +379,7 @@ class InventoryRunStore:
         return tuple(active)
 
     def target_job_ids(self, run_id: str, target_identity: str) -> tuple[str, ...]:
-        with self.repository.connect() as connection:
+        with self.repository.connect(push=False) as connection:
             rows = connection.execute(
                 "SELECT job_id FROM inventory_run_jobs "
                 "WHERE run_id=? AND target_identity=? ORDER BY job_id",
