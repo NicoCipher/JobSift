@@ -123,8 +123,22 @@ export function OperationsControl() {
   }, []);
 
   useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
+    let cancelled = false;
+    void fetch("/api/control/status", { cache: "no-store" })
+      .then(readJson)
+      .then((body) => {
+        if (cancelled) return;
+        setStatus((body as { data: ControlStatus }).data);
+        setStatusError("");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setStatusError(error instanceof Error ? error.message : "Could not load control status.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function send(payload: Record<string, string>) {
     setBusy(true);
