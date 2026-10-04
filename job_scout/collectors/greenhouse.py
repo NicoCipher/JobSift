@@ -98,6 +98,7 @@ class GreenhouseCollector:
             "raw_received": 0,
             "normalized": 0,
             "detail_requests": 0,
+            "detail_budget_used": 0,
             "incremental_known_ids": len(known_ids),
             "incremental_new_ids": 0,
             "reused_posted_at": 0,
@@ -163,15 +164,21 @@ class GreenhouseCollector:
                         continue
 
                     self.last_counts["incremental_new_ids"] += 1
-                    if self.last_counts["detail_requests"] >= self.incremental_detail_limit:
+                    if self.last_counts["detail_budget_used"] >= self.incremental_detail_limit:
                         self.last_counts["detail_deferred"] += 1
                         continue
 
                     self.last_counts["detail_requests"] += 1
                     detail_response = self.client.get(f"{url}/{item.id}")
                     if detail_response.status_code in {404, 410}:
+                        # Vanished postings are terminal evidence for this index row.
+                        # They must not consume the hydration cap, otherwise a run can
+                        # retry the same leading 404/410 rows forever and never reach
+                        # later unseen postings.
                         self.last_counts["vanished"] += 1
                         continue
+
+                    self.last_counts["detail_budget_used"] += 1
                     if detail_response.status_code == 429:
                         errors.append(f"detail[{item.id}] HTTP 429")
                         terminal_status = CollectionStatus.RATE_LIMITED
