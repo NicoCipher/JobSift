@@ -94,6 +94,9 @@ test("operations control fails closed without server command credentials", async
   await expect(page.getByRole("button", { name: "Pause schedule" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Resume schedule" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Run refresh" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Check Sheet" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Disable Sheet" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Re-enable Sheet" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Apply control" })).toBeDisabled();
 });
 
@@ -116,6 +119,26 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
   });
   expect(invalidProfile.status()).toBe(400);
 
+  const maliciousTimezone = await request.post("/api/control/dispatch", {
+    data: {
+      command: "client-control",
+      operation: "set-timezone",
+      profile_id: "0123456789abcdef",
+      timezone: "\"; echo pwned; #",
+    },
+  });
+  expect(maliciousTimezone.status()).toBe(400);
+
+  const maliciousBatch = await request.post("/api/control/dispatch", {
+    data: {
+      command: "client-control",
+      operation: "release-batch",
+      profile_id: "0123456789abcdef",
+      batch_id: "\"; echo pwned; #",
+    },
+  });
+  expect(maliciousBatch.status()).toBe(400);
+
   const crossOrigin = await request.post("/api/control/dispatch", {
     headers: { Origin: "https://example.invalid" },
     data: {
@@ -125,6 +148,49 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
     },
   });
   expect(crossOrigin.status()).toBe(403);
+});
+
+test("destructive controls name their exact profile, batch, and consequence", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+        },
+      }),
+    });
+  });
+  await page.route("**/api/control/dispatch", async (route) => {
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { accepted: true } }),
+    });
+  });
+
+  await page.goto("/operations");
+  const dialogs: string[] = [];
+  page.on("dialog", async (dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.dismiss();
+  });
+
+  await page.getByLabel("Delivery profile ID").fill("0123456789abcdef");
+  await page.getByRole("combobox", { name: "Operation" }).selectOption("pause");
+  await page.getByRole("button", { name: "Apply control" }).click();
+  await expect.poll(() => dialogs.length).toBe(1);
+  expect(dialogs[0]).toContain("0123456789abcdef");
+  expect(dialogs[0]).toContain("New deliveries");
+
+  await page.getByLabel("Sheet profile ID").fill("fedcba9876543210");
+  await page.getByRole("button", { name: "Disable Sheet" }).click();
+  await expect.poll(() => dialogs.length).toBe(2);
+  expect(dialogs[1]).toContain("fedcba9876543210");
+  expect(dialogs[1]).toContain("blocks new deliveries");
 });
 
 test("partial run is data, not a service failure; missing and zero are explicit", async ({
