@@ -159,7 +159,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
   expect(crossOrigin.status()).toBe(403);
 });
 
-test("client Sheet selectors hide raw control IDs and dispatch the opaque profile handle", async ({ page }) => {
+test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -192,7 +192,6 @@ test("client Sheet selectors hide raw control IDs and dispatch the opaque profil
   await expect(deliveryProfile.locator("option").first()).toHaveText(
     "Example client — Example delivery destination",
   );
-  await expect(page.getByPlaceholder("Opaque profile ID")).toHaveCount(0);
 
   const dialogs: string[] = [];
   page.on("dialog", async (dialog) => {
@@ -205,28 +204,41 @@ test("client Sheet selectors hide raw control IDs and dispatch the opaque profil
   await expect.poll(() => dialogs.length).toBe(1);
   expect(dialogs[0]).toContain("Example client — Example delivery destination");
   expect(dialogs[0]).toContain("ad763a0336d92204");
-  expect(dialogs[0]).toContain("New deliveries");
   await expect.poll(() => dispatched.length).toBe(1);
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
 
-  await page.getByRole("button", { name: "Disable Sheet" }).click();
-  await expect.poll(() => dialogs.length).toBe(2);
-  expect(dialogs[1]).toContain("Example client — Example delivery destination");
-  expect(dialogs[1]).toContain("ad763a0336d92204");
-  expect(dialogs[1]).toContain("blocks new deliveries");
-  await expect.poll(() => dispatched.length).toBe(2);
-  expect(dispatched[1]?.profile_id).toBe("ad763a0336d92204");
-
   const sheetSection = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "Client Sheets" }) });
-  await sheetSection.getByText("Use a profile ID instead").click();
+  await sheetSection.getByRole("combobox", { name: "Sheet target" }).selectOption("manual");
   await sheetSection.getByLabel("Sheet profile ID").fill("0123456789abcdef");
   await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
+  await expect.poll(() => dispatched.length).toBe(2);
+  expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
+
+  await sheetSection.getByRole("combobox", { name: "Sheet target" }).selectOption("listed");
+  await expect(sheetSection.getByLabel("Sheet profile ID")).toHaveCount(0);
+  await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
-  expect(dispatched[2]?.profile_id).toBe("0123456789abcdef");
+  expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
+
+  const deliverySection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Client delivery control" }) });
+  await deliverySection.getByRole("combobox", { name: "Delivery target" }).selectOption("manual");
+  await deliverySection.getByLabel("Delivery profile ID").fill("fedcba9876543210");
+  await deliverySection.getByRole("combobox", { name: "Operation" }).selectOption("set-quota");
+  await deliverySection.getByRole("button", { name: "Apply control" }).click();
+  await expect.poll(() => dispatched.length).toBe(4);
+  expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
+
+  await deliverySection.getByRole("combobox", { name: "Delivery target" }).selectOption("listed");
+  await expect(deliverySection.getByLabel("Delivery profile ID")).toHaveCount(0);
+  await deliverySection.getByRole("button", { name: "Apply control" }).click();
+  await expect.poll(() => dispatched.length).toBe(5);
+  expect(dispatched[4]?.profile_id).toBe("ad763a0336d92204");
 });
 
 test("partial run is data, not a service failure; missing and zero are explicit", async ({
