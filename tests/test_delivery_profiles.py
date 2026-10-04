@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import UTC, datetime
 
 import pytest
 
+from job_scout import cli
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import (
     ClientDeliveryProfileStore,
@@ -521,6 +523,92 @@ def test_control_id_is_stable_opaque_and_resolves_profile(tmp_path):
     assert store.public_status(profile)["profile_id"] == control_id
     assert "client_id" not in store.public_status(profile)
     assert "destination_id" not in store.public_status(profile)
+
+
+def test_cli_sheet_controls_use_opaque_profile_id_and_fail_safe(tmp_path, monkeypatch, capsys):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    register(repo)
+    store = ClientDeliveryProfileStore(repo)
+    profile = store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+    control_id = delivery_profile_control_id(
+        profile.client_id, profile.destination_id
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "delivery-profile",
+            "sheet-disable",
+            "--database",
+            str(database),
+            "--profile-id",
+            control_id,
+        ],
+    )
+    cli.main()
+    disabled_payload = json.loads(capsys.readouterr().out)
+    assert disabled_payload == {
+        "profile_id": control_id,
+        "profile_status": "paused",
+        "sheet_status": "disabled",
+    }
+    serialized = json.dumps(disabled_payload)
+    assert "client-a" not in serialized
+    assert "jobs" not in serialized
+
+    monkeypatch.setattr(cli, "GoogleSheetsGateway", FakeSheet)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "delivery-profile",
+            "sheet-enable",
+            "--database",
+            str(database),
+            "--profile-id",
+            control_id,
+        ],
+    )
+    cli.main()
+    enabled_payload = json.loads(capsys.readouterr().out)
+    assert enabled_payload == {
+        "profile_id": control_id,
+        "profile_status": "paused",
+        "sheet_status": "ready",
+    }
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "job-scout",
+            "delivery-profile",
+            "sheet-check",
+            "--database",
+            str(database),
+            "--profile-id",
+            control_id,
+        ],
+    )
+    cli.main()
+    checked_payload = json.loads(capsys.readouterr().out)
+    assert checked_payload["profile_id"] == control_id
+    assert checked_payload["profile_status"] == "paused"
+    assert checked_payload["sheet_status"] == "ready"
+    assert checked_payload["observed_links"] == 0
+    assert checked_payload["newly_recorded_links"] == 0
 
 
 def test_observed_sheet_links_are_scoped_to_one_destination(tmp_path):
