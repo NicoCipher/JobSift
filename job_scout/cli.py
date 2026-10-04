@@ -180,7 +180,7 @@ def main() -> None:
     delivery_profile_status.add_argument("--profile-id", required=True)
     delivery_profile_status.add_argument("--reconcile", action="store_true")
 
-    for name in ("pause", "resume"):
+    for name in ("pause", "resume", "sheet-check", "sheet-disable", "sheet-enable"):
         command = delivery_profile_commands.add_parser(name)
         command.add_argument("--database", default="jobs.sqlite3")
         command.add_argument("--profile-id", required=True)
@@ -448,6 +448,65 @@ def main() -> None:
                     changes["timezone"] = args.timezone
                 value = store.update_controls(current, **changes)
                 print(json.dumps(_public(value), sort_keys=True))
+            elif command == "sheet-check":
+                profile = _profile_for_control_id()
+                reconciliation = store.reconcile_destination_sheet(
+                    profile, gateway=GoogleSheetsGateway()
+                )
+                destination = ClientSheetDestinationStore(repository).get(
+                    profile.client_id, profile.destination_id, require_ready=False
+                )
+                print(
+                    json.dumps(
+                        {
+                            "profile_id": delivery_profile_control_id(
+                                profile.client_id, profile.destination_id
+                            ),
+                            "profile_status": profile.status,
+                            "sheet_status": destination.status,
+                            **reconciliation,
+                        },
+                        sort_keys=True,
+                    )
+                )
+            elif command == "sheet-disable":
+                profile = _profile_for_control_id()
+                if profile.status != "paused":
+                    profile = store.update_controls(profile, status="paused")
+                destination = ClientSheetDestinationStore(repository).disable(
+                    profile.client_id, profile.destination_id
+                )
+                print(
+                    json.dumps(
+                        {
+                            "profile_id": delivery_profile_control_id(
+                                profile.client_id, profile.destination_id
+                            ),
+                            "profile_status": profile.status,
+                            "sheet_status": destination.status,
+                        },
+                        sort_keys=True,
+                    )
+                )
+            elif command == "sheet-enable":
+                profile = _profile_for_control_id()
+                destination = ClientSheetDestinationStore(repository).enable_verified(
+                    profile.client_id,
+                    profile.destination_id,
+                    gateway=GoogleSheetsGateway(),
+                )
+                print(
+                    json.dumps(
+                        {
+                            "profile_id": delivery_profile_control_id(
+                                profile.client_id, profile.destination_id
+                            ),
+                            "profile_status": profile.status,
+                            "sheet_status": destination.status,
+                        },
+                        sort_keys=True,
+                    )
+                )
             else:
                 profile = _profile_for_control_id()
                 batch_store = DailyBatchStore(repository)
