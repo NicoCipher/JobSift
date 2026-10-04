@@ -1,5 +1,6 @@
 name: One-time Neon Data Migration
 
+# Retry marker: pooled Neon connections use SET LOCAL lock_timeout.
 on:
   push:
     branches:
