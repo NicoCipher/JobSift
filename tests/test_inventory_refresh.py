@@ -473,7 +473,9 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "inputs.workday_detail_concurrency" in workflow
     assert '--database "$JOBSIFT_DATABASE"' in workflow
     assert "--plan-dir config/sourcing_plans" in workflow
-    assert "TURSO_DATABASE_URL" in workflow
+    assert "JOBSIFT_PERSISTENCE_BACKEND: postgres" in workflow
+    assert "NEON_DATABASE_URL" in workflow
+    assert "TURSO_DATABASE_URL" not in workflow
     assert workflow.count("group: jobsift-client-delivery-mutation") == 1
     assert workflow.count("queue: max") == 2
     assert "group: jobsift-live-inventory-refresh" in workflow
