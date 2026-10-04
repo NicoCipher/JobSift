@@ -32,7 +32,9 @@ def test_schedule_catches_up_oldest_missed_hour_first(tmp_path):
     store = InventoryRefreshScheduleStore(repository)
     start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
     cohort = store.cohort_for(start)
-    store.mark_completed(cohort=cohort, completed_at=start)
+    initial = store.next_due(now=start)
+    assert initial.cohort == cohort
+    assert store.mark_completed(cohort=cohort, completed_at=start) is True
 
     later = start + timedelta(hours=4)
     due = store.next_due(now=later)
@@ -56,10 +58,21 @@ def test_schedule_rejects_completion_gaps(tmp_path):
     store = InventoryRefreshScheduleStore(repository)
     start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
     cohort = store.cohort_for(start)
-    store.mark_completed(cohort=cohort, completed_at=start)
+    initial = store.next_due(now=start)
+    assert initial.cohort == cohort
+    assert store.mark_completed(cohort=cohort, completed_at=start) is True
 
     with pytest.raises(ValueError, match="must be contiguous"):
         store.mark_completed(cohort=cohort + 2, completed_at=start + timedelta(hours=2))
+
+
+def test_completion_requires_initialized_scheduler_state(tmp_path):
+    repository = SQLiteRepository(tmp_path / "missing-state.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    cohort = store.cohort_for(datetime(2026, 10, 4, 4, 17, tzinfo=UTC))
+
+    with pytest.raises(RuntimeError, match="requires initialized scheduler state"):
+        store.mark_completed(cohort=cohort)
 
 
 def test_first_failed_cohort_is_not_skipped_when_clock_advances(tmp_path):
