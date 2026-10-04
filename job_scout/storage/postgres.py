@@ -200,7 +200,11 @@ def translate_sql(statement: str) -> tuple[str, tuple[Any, ...] | None]:
         "MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
         "GREATEST(job_identity_ledger.was_delivered,excluded.was_delivered)",
     )
-    sql = sql.replace("?", "%s")
+    if "?" in sql:
+        # psycopg interprets percent signs whenever parameters are supplied.
+        # Preserve literal SQL percent signs (for example LIKE 'prefix:%')
+        # while converting SQLite qmark placeholders to psycopg placeholders.
+        sql = sql.replace("%", "%%").replace("?", "%s")
     return sql, None
 
 
@@ -286,6 +290,10 @@ class PostgresRepository(SQLiteRepository):
                 raise RuntimeError(
                     "Neon operator-state immutability triggers are not installed"
                 )
+
+            # Startup may repair legacy jobs lacking delivery groups. Serialize
+            # that repair with every other JobSift writer before inspecting rows.
+            connection.execute("BEGIN IMMEDIATE")
 
             # Preserve the SQLite repository's idempotent legacy backfill.
             rows = connection.execute(
