@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -18,6 +18,7 @@ from job_scout.domain.models import (
     RemoteStatus,
     SourceTarget,
 )
+from job_scout.incremental_collection import IncrementalTargetState
 from job_scout.normalization.core import canonicalize_url, content_fingerprint, html_to_text
 from job_scout.normalization.country_codes import country_name
 
@@ -127,6 +128,7 @@ class SmartRecruitersCollector:
     source = "smartrecruiters"
     base_url = "https://api.smartrecruiters.com/v1/companies"
     page_size = 100
+    incremental_overlap = timedelta(hours=26)
 
     def __init__(
         self,
@@ -135,6 +137,7 @@ class SmartRecruitersCollector:
         max_pages: int = 50,
         max_postings: int = 5000,
         title_filter: Callable[[str], bool] | None = None,
+        incremental_states: list[IncrementalTargetState] | None = None,
     ) -> None:
         if max_pages < 1:
             raise ValueError("max_pages must be at least 1")
@@ -151,6 +154,12 @@ class SmartRecruitersCollector:
         self.title_filter = title_filter
         self.max_pages = max_pages
         self.max_postings = max_postings
+        self.incremental_states = {
+            state.board_id.casefold(): state
+            for state in (incremental_states or [])
+            if state.source == self.source
+        }
+        self.incremental_enabled = incremental_states is not None
         self.last_counts: dict[str, int] = {}
 
     def collect(self, target: SourceTarget) -> CollectionResult:
@@ -167,6 +176,10 @@ class SmartRecruitersCollector:
             "index_fresh_24h": 0,
             "plausible_index_matches": 0,
             "prefilter_suppressed": 0,
+            "incremental_known_ids": 0,
+            "incremental_reused_posted_at": 0,
+            "incremental_stale_suppressed": 0,
+            "incremental_known_unknown_age_suppressed": 0,
         }
         board = target.board_id.strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", board):
@@ -175,6 +188,12 @@ class SmartRecruitersCollector:
                 CollectionStatus.INVALID_TARGET,
                 "invalid company identifier",
             )
+        state = self.incremental_states.get(board.casefold()) if self.incremental_enabled else None
+        known_ids = set(state.known_source_job_ids) if state is not None else set()
+        active_posted = (
+            state.active_posted_at_by_source_job_id if state is not None else {}
+        )
+        self.last_counts["incremental_known_ids"] = len(known_ids)
 
         indexed: list[_Posting] = []
         errors: list[str] = []
@@ -274,6 +293,21 @@ class SmartRecruitersCollector:
                 self.last_counts["index_timestamped"] += 1
                 age = (datetime.now(UTC) - item.releasedDate.astimezone(UTC)).total_seconds()
                 self.last_counts["index_fresh_24h"] += int(-300 <= age <= 86400)
+            if state is not None:
+                previous_posted_at = active_posted.get(item.id)
+                if item.releasedDate is None and previous_posted_at is not None:
+                    item = item.model_copy(update={"releasedDate": previous_posted_at})
+                    self.last_counts["incremental_reused_posted_at"] += 1
+                effective_posted_at = item.releasedDate
+                if (
+                    effective_posted_at is not None
+                    and self._outside_incremental_overlap(effective_posted_at)
+                ):
+                    self.last_counts["incremental_stale_suppressed"] += 1
+                    continue
+                if effective_posted_at is None and item.id in known_ids:
+                    self.last_counts["incremental_known_unknown_age_suppressed"] += 1
+                    continue
             if self.title_filter is not None and not self.title_filter(item.name):
                 self.last_counts["prefilter_suppressed"] += 1
                 continue
@@ -334,6 +368,12 @@ class SmartRecruitersCollector:
             errors=errors,
             raw_postings_received=raw,
         )
+
+    @classmethod
+    def _outside_incremental_overlap(cls, posted_at: datetime) -> bool:
+        if posted_at.tzinfo is None:
+            return False
+        return datetime.now(UTC) - posted_at.astimezone(UTC) > cls.incremental_overlap
 
     @staticmethod
     def _validate_detail_identity(
