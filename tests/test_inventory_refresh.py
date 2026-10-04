@@ -36,7 +36,7 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
 
 
 def test_smartrecruiters_budget_does_not_make_small_greenhouse_limit_nonpositive():
-    from job_scout.production_registry import ProductionSourceRegistry, ProductionTarget
+    from job_scout.production_registry import ProductionTarget
 
     targets = [
         *[
