@@ -31,46 +31,14 @@ def _bootstrap_schema(url: str) -> None:
 
     root = Path(__file__).resolve().parents[1]
     schema = (root / "job_scout/storage/postgres_schema.sql").read_text()
+    immutability = (
+        root / "job_scout/storage/postgres_operator_immutability.sql"
+    ).read_text()
     with psycopg.connect(url, autocommit=True) as connection:
         for statement in schema.split(";"):
             if statement.strip():
                 connection.execute(statement)
-
-        connection.execute(
-            """
-            CREATE OR REPLACE FUNCTION jobsift_reject_operator_state_mutation()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $$
-            BEGIN
-              RAISE EXCEPTION 'operator outcome state is immutable';
-            END;
-            $$
-            """
-        )
-        for statement in (
-            (
-                "CREATE TRIGGER outcome_events_no_update "
-                "BEFORE UPDATE ON operator_outcome_events FOR EACH ROW "
-                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
-            ),
-            (
-                "CREATE TRIGGER outcome_events_no_delete "
-                "BEFORE DELETE ON operator_outcome_events FOR EACH ROW "
-                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
-            ),
-            (
-                "CREATE TRIGGER outcome_imports_no_update "
-                "BEFORE UPDATE ON operator_outcome_imports FOR EACH ROW "
-                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
-            ),
-            (
-                "CREATE TRIGGER outcome_imports_no_delete "
-                "BEFORE DELETE ON operator_outcome_imports FOR EACH ROW "
-                "EXECUTE FUNCTION jobsift_reject_operator_state_mutation()"
-            ),
-        ):
-            connection.execute(statement)
+        connection.execute(immutability)
 
 
 @pytest.fixture(scope="module")
@@ -143,6 +111,20 @@ def test_operator_outcome_rows_remain_immutable(repository):
             "UPDATE operator_outcome_events SET value=? WHERE event_id=?",
             ("not_applied", "postgres-ci-event"),
         )
+
+
+def test_operator_outcome_tables_reject_truncate(repository):
+    with (
+        pytest.raises(sqlite3.DatabaseError, match="immutable"),
+        repository.connect() as connection,
+    ):
+        connection.execute("TRUNCATE operator_outcome_events")
+
+    with (
+        pytest.raises(sqlite3.DatabaseError, match="immutable"),
+        repository.connect() as connection,
+    ):
+        connection.execute("TRUNCATE operator_outcome_imports")
 
 
 @pytest.fixture()
