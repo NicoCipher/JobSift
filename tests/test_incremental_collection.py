@@ -186,6 +186,70 @@ def test_greenhouse_vanished_rows_do_not_exhaust_detail_budget() -> None:
     assert collector.last_counts["detail_deferred"] == 0
 
 
+def test_greenhouse_quarantined_details_make_bounded_progress() -> None:
+    indexed = [greenhouse_job(job_id) for job_id in range(1, 202)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/boards/acme/jobs":
+            return httpx.Response(
+                200,
+                json={"jobs": indexed},
+                request=request,
+            )
+        job_id = int(request.url.path.rsplit("/", 1)[-1])
+        if job_id <= 200:
+            return httpx.Response(
+                200,
+                json={"id": job_id, "title": None},
+                request=request,
+            )
+        assert job_id == 201
+        return httpx.Response(
+            200,
+            json={
+                **greenhouse_job(201),
+                "first_published": datetime.now(UTC).isoformat(),
+            },
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        first = GreenhouseCollector(
+            client,
+            incremental_states=[
+                IncrementalTargetState(source="greenhouse", board_id="acme")
+            ],
+            incremental_detail_limit=200,
+        )
+        first_result = first.collect(target())
+
+        assert first_result.status is CollectionStatus.PARTIAL
+        assert len(first_result.jobs) == 200
+        assert all(job.posted_at is None for job in first_result.jobs)
+        assert first.last_counts["quarantined"] == 200
+        assert first.last_counts["detail_deferred"] == 1
+
+        retry_state = IncrementalTargetState(
+            source="greenhouse",
+            board_id="acme",
+            known_source_job_ids=sorted(
+                job.source_job_id for job in first_result.jobs
+            ),
+        )
+        second = GreenhouseCollector(
+            client,
+            incremental_states=[retry_state],
+            incremental_detail_limit=200,
+        )
+        second_result = second.collect(target())
+
+    assert second_result.status is CollectionStatus.SUCCESS
+    assert [job.source_job_id for job in second_result.jobs] == ["201"]
+    assert second.last_counts["suppressed_known_unknown_age"] == 200
+    assert second.last_counts["detail_requests"] == 1
+    assert second.last_counts["detail_deferred"] == 0
+
+
 def test_smartrecruiters_incremental_skips_stale_detail_hydration() -> None:
     state = IncrementalTargetState(source="smartrecruiters", board_id="acme")
 
