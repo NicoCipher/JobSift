@@ -4,8 +4,10 @@ import { api } from "@/lib/api/client";
 import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
 import { PresentationSettings } from "@/components/preferences";
+import { OperationsControl } from "@/components/operations-control";
 const titles: Record<string, string> = {
   dashboard: "Dashboard",
+  operations: "Operations",
   review: "Review",
   briefs: "Search Briefs",
   runs: "Runs",
@@ -31,13 +33,15 @@ export default async function SectionPage({
 }) {
   const { section } = await params;
   if (!titles[section]) notFound();
-  if (liveMode && section !== "settings") {
+  if (liveMode && !["operations", "settings"].includes(section)) {
     return <div className="section-content"><h1>{titles[section]}</h1><p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p><Link href="/jobs">Open Jobs</Link></div>;
   }
   const session = await api.getSession();
   const clientId = session.data.client_scopes[0].client_id;
   let content: React.ReactNode;
-  if (section === "settings")
+  if (section === "operations")
+    content = <OperationsControl />;
+  else if (section === "settings")
     content = (
       <section className="section-block reading">
         <h2>Presentation</h2>
@@ -332,7 +336,9 @@ export default async function SectionPage({
       <header className="page-head">
         <h1>{titles[section]}</h1>
         <p className="scope-line">
-          Example client · Read-only development evidence
+          {section === "operations"
+            ? "Production workflows · explicit operator commands"
+            : "Example client · Read-only development evidence"}
         </p>
       </header>
       {content}
