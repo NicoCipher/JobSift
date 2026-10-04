@@ -41,6 +41,15 @@ def test_schedule_catches_up_oldest_missed_hour_first(tmp_path):
     assert due.cohort == cohort + 1
     assert due.should_run is True
 
+    assert store.mark_completed(
+        cohort=cohort + 1,
+        completed_at=start + timedelta(hours=1),
+    ) is True
+    next_due = store.next_due(now=later)
+    assert next_due.current_cohort == cohort + 4
+    assert next_due.cohort == cohort + 2
+    assert next_due.should_run is True
+
 
 def test_schedule_rejects_completion_gaps(tmp_path):
     repository = SQLiteRepository(tmp_path / "gap.sqlite3")
