@@ -65,17 +65,19 @@ def _canonical_row(row, columns: tuple[str, ...]) -> bytes:
 
 
 def _table_digest(connection, table: str, columns: tuple[str, ...]) -> tuple[int, str]:
-    keys = TABLE_KEYS[table]
-    order = ",".join(keys)
+    """Hash the row multiset without trusting backend-specific text collation."""
+
     selected = ",".join(columns)
+    row_hashes: list[bytes] = []
+    for row in connection.execute(f"SELECT {selected} FROM {table}"):
+        row_hashes.append(hashlib.sha256(_canonical_row(row, columns)).digest())
+
+    row_hashes.sort()
     digest = hashlib.sha256()
-    count = 0
-    for row in connection.execute(
-        f"SELECT {selected} FROM {table} ORDER BY {order}"
-    ):
-        digest.update(_canonical_row(row, columns))
-        count += 1
-    return count, digest.hexdigest()
+    digest.update(f"{len(row_hashes)}\n".encode())
+    for row_hash in row_hashes:
+        digest.update(row_hash)
+    return len(row_hashes), digest.hexdigest()
 
 
 def _sqlite_table_columns(connection, table: str) -> tuple[str, ...] | None:
