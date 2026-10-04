@@ -281,12 +281,23 @@ class PostgresRepository(SQLiteRepository):
                     "Neon schema is not initialized at the expected JobSift version"
                 )
             trigger_count = connection.execute(
-                "SELECT COUNT(*) AS count FROM pg_trigger "
-                "WHERE NOT tgisinternal AND tgname IN ("
-                "'outcome_events_no_update','outcome_events_no_delete',"
-                "'outcome_imports_no_update','outcome_imports_no_delete')"
+                "SELECT COUNT(*) AS count "
+                "FROM pg_trigger t "
+                "JOIN pg_class c ON c.oid=t.tgrelid "
+                "JOIN pg_namespace n ON n.oid=c.relnamespace "
+                "JOIN (VALUES "
+                "('outcome_events_no_update','operator_outcome_events'),"
+                "('outcome_events_no_delete','operator_outcome_events'),"
+                "('outcome_events_no_truncate','operator_outcome_events'),"
+                "('outcome_imports_no_update','operator_outcome_imports'),"
+                "('outcome_imports_no_delete','operator_outcome_imports'),"
+                "('outcome_imports_no_truncate','operator_outcome_imports')"
+                ") AS expected(trigger_name,table_name) "
+                "ON expected.trigger_name=t.tgname AND expected.table_name=c.relname "
+                "WHERE NOT t.tgisinternal AND n.nspname='public' "
+                "AND t.tgenabled IN ('O','A')"
             ).fetchone()
-            if trigger_count is None or int(trigger_count["count"]) != 4:
+            if trigger_count is None or int(trigger_count["count"]) != 6:
                 raise RuntimeError(
                     "Neon operator-state immutability triggers are not installed"
                 )
@@ -325,6 +336,8 @@ class PostgresRepository(SQLiteRepository):
                 self.database_url,
                 row_factory=dict_row,
                 autocommit=False,
+                connect_timeout=5,
+                options="-c lock_timeout=5000",
             )
             connection = PostgresConnection(raw)
             yield connection
