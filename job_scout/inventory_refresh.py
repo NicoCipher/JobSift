@@ -34,7 +34,7 @@ from job_scout.source_discovery import overlay_admitted_targets
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.source_discovery import SourceDiscoveryStore
-from job_scout.storage.sqlite import SQLiteRepository
+from job_scout.storage.factory import create_repository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
     WorkdayBriefBinding,
@@ -877,7 +877,7 @@ def main() -> None:
     try:
         if args.command == "schedule-next":
             args.database.parent.mkdir(parents=True, exist_ok=True)
-            repository = SQLiteRepository(args.database)
+            repository = create_repository(args.database)
             decision = InventoryRefreshScheduleStore(repository).next_due()
             payload = {
                 "should_run": decision.should_run,
@@ -891,7 +891,7 @@ def main() -> None:
 
         if args.command == "schedule-complete":
             args.database.parent.mkdir(parents=True, exist_ok=True)
-            repository = SQLiteRepository(args.database)
+            repository = create_repository(args.database)
             payload = complete_scheduled_cohort(
                 repository=repository,
                 cohort=args.cohort,
@@ -904,7 +904,7 @@ def main() -> None:
         if args.command == "plan":
             base_registry = load_production_registry(args.registry)
             args.database.parent.mkdir(parents=True, exist_ok=True)
-            planning_repository = SQLiteRepository(args.database)
+            planning_repository = create_repository(args.database)
             discovery_store = SourceDiscoveryStore(planning_repository)
             admitted_targets, admission_health_evidence = (
                 discovery_store.admitted_snapshot(
@@ -991,7 +991,7 @@ def main() -> None:
                     "refresh plan predates active Workday SearchBrief snapshot binding"
                 )
             args.database.parent.mkdir(parents=True, exist_ok=True)
-            repository = SQLiteRepository(args.database)
+            repository = create_repository(args.database)
             verify_active_workday_brief_bindings(
                 repository=repository,
                 plan_dir=args.plan_dir,
@@ -1007,7 +1007,7 @@ def main() -> None:
 
         if args.command == "prune":
             args.database.parent.mkdir(parents=True, exist_ok=True)
-            repository = SQLiteRepository(args.database)
+            repository = create_repository(args.database)
             retention_started = time.perf_counter()
             retention = repository.prune_stale_inventory(
                 retention_hours=args.retention_hours
@@ -1099,7 +1099,7 @@ def main() -> None:
         )
         args.database.parent.mkdir(parents=True, exist_ok=True)
         repository_started = time.perf_counter()
-        repository = SQLiteRepository(args.database)
+        repository = create_repository(args.database)
         print(
             json.dumps(
                 {
