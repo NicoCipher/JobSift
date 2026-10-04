@@ -857,6 +857,12 @@ summary {
 .control-form button {
   min-width: 120px;
 }
+.control-actions {
+  display: flex;
+  gap: var(--s8);
+  flex-wrap: wrap;
+  margin-top: var(--s12);
+}
 .control-ready {
   border-left: 2px solid var(--accent);
   padding: var(--s8) var(--s12);
