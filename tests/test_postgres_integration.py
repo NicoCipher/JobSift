@@ -118,7 +118,7 @@ def test_operator_outcome_tables_reject_truncate(repository):
         pytest.raises(sqlite3.DatabaseError, match="immutable"),
         repository.connect() as connection,
     ):
-        connection.execute("TRUNCATE operator_outcome_events")
+        connection.execute("TRUNCATE operator_outcome_events CASCADE")
 
     with (
         pytest.raises(sqlite3.DatabaseError, match="immutable"),
