@@ -208,9 +208,26 @@ class GreenhouseCollector:
                         terminal_status = CollectionStatus.PROVIDER_ERROR
                         break
                     detail_response.raise_for_status()
-                    detail = _GreenhouseJob.model_validate(detail_response.json())
-                    if detail.id != item.id:
-                        raise ValueError("hydrated posting id does not match indexed posting")
+                    try:
+                        detail = _GreenhouseJob.model_validate(detail_response.json())
+                        if detail.id != item.id:
+                            raise ValueError(
+                                "hydrated posting id does not match indexed posting"
+                            )
+                    except (ValueError, ValidationError) as exc:
+                        # A provider row that consistently returns HTTP 200 but an
+                        # unusable detail payload is terminal for freshness
+                        # hydration. Persist the valid index identity with unknown
+                        # age so downstream freshness still fails closed and the
+                        # next incremental retry can advance past this row.
+                        placeholder = self._normalize(item, target)
+                        placeholder.raw_metadata["incremental_detail_quarantined"] = (
+                            type(exc).__name__
+                        )
+                        jobs.append(placeholder)
+                        errors.append(f"detail[{item.id}] rejected: {exc}")
+                        self.last_counts["quarantined"] += 1
+                        continue
                     jobs.append(self._normalize(detail, target))
                 except (httpx.TimeoutException, httpx.NetworkError) as exc:
                     errors.append(f"detail job[{index}] failed: {type(exc).__name__}")
