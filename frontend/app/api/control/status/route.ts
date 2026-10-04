@@ -28,14 +28,13 @@ type GithubWorkflow = {
   html_url: string;
 };
 
-async function github<T>(path: string): Promise<T> {
-  const token = process.env.JOBSIFT_GITHUB_TOKEN?.trim();
+async function github<T>(path: string, token: string): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "JobSift-operator-control",
+    Authorization: `Bearer ${token}`,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(`https://api.github.com${path}`, {
     headers,
     cache: "no-store",
@@ -45,13 +44,15 @@ async function github<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function workflowStatus(workflow: string) {
+async function workflowStatus(workflow: string, token: string) {
   const [definition, runs] = await Promise.all([
     github<GithubWorkflow>(
       `/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(workflow)}`,
+      token,
     ),
     github<{ workflow_runs: GithubRun[] }>(
       `/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=8`,
+      token,
     ),
   ]);
   return {
@@ -73,15 +74,34 @@ async function workflowStatus(workflow: string) {
 }
 
 export async function GET() {
+  const token = process.env.JOBSIFT_GITHUB_TOKEN?.trim() ?? "";
+  if (!token) {
+    const unavailable = (name: string, workflow: string) => ({
+      name,
+      state: "unavailable",
+      url: `https://github.com/${owner}/${repo}/actions/workflows/${workflow}`,
+      runs: [],
+    });
+    return NextResponse.json(
+      {
+        data: {
+          control_ready: false,
+          inventory: unavailable("Refresh Live Job Inventory", workflows.inventory),
+          delivery: unavailable("Client Delivery Control", workflows.delivery),
+        },
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   try {
     const [inventory, delivery] = await Promise.all([
-      workflowStatus(workflows.inventory),
-      workflowStatus(workflows.delivery),
+      workflowStatus(workflows.inventory, token),
+      workflowStatus(workflows.delivery, token),
     ]);
     return NextResponse.json(
       {
         data: {
-          control_ready: Boolean(process.env.JOBSIFT_GITHUB_TOKEN?.trim()),
+          control_ready: true,
           inventory,
           delivery,
         },
