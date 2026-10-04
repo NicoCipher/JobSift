@@ -827,6 +827,7 @@ def main() -> None:
     schedule_complete = commands.add_parser("schedule-complete")
     schedule_complete.add_argument("--database", type=Path, required=True)
     schedule_complete.add_argument("--cohort", type=int, required=True)
+    schedule_complete.add_argument("--fan-in-report", type=Path, required=True)
     schedule_complete.add_argument("--output", type=Path, required=True)
 
     args = parser.parse_args()
@@ -846,6 +847,19 @@ def main() -> None:
             return
 
         if args.command == "schedule-complete":
+            fan_in_payload = json.loads(args.fan_in_report.read_text(encoding="utf-8"))
+            fan_in = fan_in_payload.get("fan_in")
+            fan_in_status = fan_in.get("status") if isinstance(fan_in, dict) else None
+            if fan_in_status != "success":
+                payload = {
+                    "cohort": args.cohort,
+                    "marked_completed": False,
+                    "fan_in_status": fan_in_status,
+                    "reason": "fan-in is not complete; logical cohort remains due for retry",
+                }
+                _write_json(args.output, payload)
+                print(json.dumps(payload, sort_keys=True))
+                return
             args.database.parent.mkdir(parents=True, exist_ok=True)
             repository = SQLiteRepository(args.database)
             store = InventoryRefreshScheduleStore(repository)
@@ -853,6 +867,7 @@ def main() -> None:
             payload = {
                 "cohort": args.cohort,
                 "marked_completed": changed,
+                "fan_in_status": fan_in_status,
                 "last_completed_cohort": store.next_due().last_completed_cohort,
             }
             _write_json(args.output, payload)
