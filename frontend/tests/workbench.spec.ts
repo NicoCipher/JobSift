@@ -91,6 +91,8 @@ test("operations control fails closed without server command credentials", async
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Production control plane" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pause schedule" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Resume schedule" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Run refresh" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Apply control" })).toBeDisabled();
 });
