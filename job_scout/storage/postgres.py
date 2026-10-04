@@ -337,8 +337,8 @@ class PostgresRepository(SQLiteRepository):
                 row_factory=dict_row,
                 autocommit=False,
                 connect_timeout=5,
-                options="-c lock_timeout=5000",
             )
+            raw.execute("SET LOCAL lock_timeout = '5s'")
             connection = PostgresConnection(raw)
             yield connection
             connection.commit()
