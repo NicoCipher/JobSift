@@ -607,6 +607,32 @@ def _write_json(path: Path, value) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def complete_scheduled_cohort(
+    *,
+    repository: SQLiteRepository,
+    cohort: int,
+    fan_in_report: Path,
+) -> dict[str, object]:
+    fan_in_payload = json.loads(fan_in_report.read_text(encoding="utf-8"))
+    fan_in = fan_in_payload.get("fan_in")
+    fan_in_status = fan_in.get("status") if isinstance(fan_in, dict) else None
+    if fan_in_status != "success":
+        return {
+            "cohort": cohort,
+            "marked_completed": False,
+            "fan_in_status": fan_in_status,
+            "reason": "fan-in is not complete; logical cohort remains due for retry",
+        }
+    store = InventoryRefreshScheduleStore(repository)
+    changed = store.mark_completed(cohort=cohort)
+    return {
+        "cohort": cohort,
+        "marked_completed": changed,
+        "fan_in_status": fan_in_status,
+        "last_completed_cohort": store.next_due().last_completed_cohort,
+    }
+
+
 def build_refresh_plan(
     *,
     registry: ProductionSourceRegistry,
@@ -847,29 +873,13 @@ def main() -> None:
             return
 
         if args.command == "schedule-complete":
-            fan_in_payload = json.loads(args.fan_in_report.read_text(encoding="utf-8"))
-            fan_in = fan_in_payload.get("fan_in")
-            fan_in_status = fan_in.get("status") if isinstance(fan_in, dict) else None
-            if fan_in_status != "success":
-                payload = {
-                    "cohort": args.cohort,
-                    "marked_completed": False,
-                    "fan_in_status": fan_in_status,
-                    "reason": "fan-in is not complete; logical cohort remains due for retry",
-                }
-                _write_json(args.output, payload)
-                print(json.dumps(payload, sort_keys=True))
-                return
             args.database.parent.mkdir(parents=True, exist_ok=True)
             repository = SQLiteRepository(args.database)
-            store = InventoryRefreshScheduleStore(repository)
-            changed = store.mark_completed(cohort=args.cohort)
-            payload = {
-                "cohort": args.cohort,
-                "marked_completed": changed,
-                "fan_in_status": fan_in_status,
-                "last_completed_cohort": store.next_due().last_completed_cohort,
-            }
+            payload = complete_scheduled_cohort(
+                repository=repository,
+                cohort=args.cohort,
+                fan_in_report=args.fan_in_report,
+            )
             _write_json(args.output, payload)
             print(json.dumps(payload, sort_keys=True))
             return
