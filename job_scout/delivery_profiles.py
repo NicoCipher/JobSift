@@ -345,10 +345,13 @@ class ClientDeliveryProfileStore:
         profile: ClientDeliveryProfile,
         *,
         gateway,
+        require_ready: bool = True,
     ) -> dict[str, int]:
         """Observe every existing Job Link before preparing another delivery."""
         destination = ClientSheetDestinationStore(self.repository).get(
-            profile.client_id, profile.destination_id
+            profile.client_id,
+            profile.destination_id,
+            require_ready=require_ready,
         )
         metadata = gateway.sheet_metadata(destination.spreadsheet_id)
         matches = [
