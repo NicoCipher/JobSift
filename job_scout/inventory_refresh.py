@@ -30,8 +30,10 @@ from job_scout.shard_collection import (
     default_collector_factory,
 )
 from job_scout.shard_fanin import persist_shard_artifacts
+from job_scout.source_discovery import overlay_admitted_targets
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
+from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
@@ -601,6 +603,21 @@ def rotating_registry(
     )
 
 
+
+def validate_parent_registry_snapshot(
+    *,
+    parent_registry: ProductionSourceRegistry,
+    refresh_plan: RefreshPlan | None,
+) -> None:
+    if refresh_plan is None:
+        return
+    parent_registry_sha = sha256_json(parent_registry.model_dump(mode="json"))
+    if (
+        refresh_plan.parent_registry_id != parent_registry.registry_id
+        or refresh_plan.parent_registry_sha256 != parent_registry_sha
+    ):
+        raise ValueError("fan-in parent registry does not match refresh-plan snapshot")
+
 def _write_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
@@ -885,13 +902,28 @@ def main() -> None:
             return
 
         if args.command == "plan":
-            registry = load_production_registry(args.registry)
+            base_registry = load_production_registry(args.registry)
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            planning_repository = SQLiteRepository(args.database)
+            discovery_store = SourceDiscoveryStore(planning_repository)
+            admitted_targets, admission_health_evidence = (
+                discovery_store.admitted_snapshot(
+                    now=datetime.now(UTC),
+                    max_health_age_hours=48,
+                )
+            )
+            registry, admission_overlay = overlay_admitted_targets(
+                base_registry,
+                admitted_targets,
+            )
+            admission_overlay["health_evidence"] = admission_health_evidence
+            admission_overlay["health_evidence_sha256"] = sha256_json(
+                admission_health_evidence
+            )
             limits = default_refresh_limits(
                 registry,
                 workday_limit=args.workday_limit,
             )
-            args.database.parent.mkdir(parents=True, exist_ok=True)
-            planning_repository = SQLiteRepository(args.database)
             workday_briefs = resolve_active_workday_brief_bindings(
                 repository=planning_repository,
                 plan_dir=args.plan_dir,
@@ -913,8 +945,10 @@ def main() -> None:
                 workday_briefs=workday_briefs,
                 workday_retained_candidates=workday_retained_candidates,
             )
+            _write_json(args.output_dir / "parent-registry.json", registry)
             _write_json(args.output_dir / "registry.json", subset)
             _write_json(args.output_dir / "manifest.json", manifest)
+            _write_json(args.output_dir / "admission.json", admission_overlay)
             _write_json(args.output_dir / "matrix.json", refresh.matrix)
             _write_json(args.output_dir / "plan.json", refresh)
             _write_json(
@@ -937,6 +971,12 @@ def main() -> None:
                         len(binding.source_job_ids)
                         for binding in (refresh.workday_retained_candidates or [])
                     ),
+                    "dynamic_admitted_targets": admission_overlay[
+                        "dynamic_admitted_targets"
+                    ],
+                    "dynamic_admission_sha256": admission_overlay[
+                        "dynamic_admission_sha256"
+                    ],
                 },
             )
             print(json.dumps(refresh.model_dump(mode="json"), sort_keys=True))
@@ -1001,6 +1041,17 @@ def main() -> None:
             print(json.dumps(artifact.model_dump(mode="json"), sort_keys=True))
             return
 
+        refresh_plan: RefreshPlan | None = None
+        if args.refresh_plan is not None:
+            refresh_plan = RefreshPlan.model_validate_json(
+                args.refresh_plan.read_text(encoding="utf-8")
+            )
+        parent_registry = load_production_registry(args.parent_registry)
+        validate_parent_registry_snapshot(
+            parent_registry=parent_registry,
+            refresh_plan=refresh_plan,
+        )
+
         artifact_paths = sorted(args.artifacts_dir.glob("*.json"))
         if not artifact_paths:
             raise ValueError("no shard artifact files found")
@@ -1015,10 +1066,7 @@ def main() -> None:
             for target in artifact.targets
         )
         invalidated_identities: list[tuple[str, str, str]] = []
-        if args.refresh_plan is not None:
-            refresh_plan = RefreshPlan.model_validate_json(
-                args.refresh_plan.read_text(encoding="utf-8")
-            )
+        if refresh_plan is not None:
             registry_sha = sha256_json(registry.model_dump(mode="json"))
             if (
                 refresh_plan.refresh_registry_id != registry.registry_id
@@ -1086,7 +1134,6 @@ def main() -> None:
             ),
             flush=True,
         )
-        parent_registry = load_production_registry(args.parent_registry)
         coverage_proof = build_coverage_proof(
             parent_registry,
             limits=registry.target_counts_by_source,

@@ -27,7 +27,12 @@ _PKG_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 _BOARD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
 _WORKDAY_HOST = re.compile(r"^(?P<tenant>[a-z0-9][a-z0-9-]*)\.wd\d+\.myworkdayjobs\.com$")
 _LOCALE = re.compile(r"^[a-z]{2}(?:-[a-z]{2})?$")
-_GREENHOUSE_HOSTS = {"job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
+_GREENHOUSE_HOSTS = {
+    "job-boards.greenhouse.io",
+    "job-boards.eu.greenhouse.io",
+    "boards.greenhouse.io",
+    "boards.eu.greenhouse.io",
+}
 _LEVER_HOSTS = {"jobs.lever.co": "global", "jobs.eu.lever.co": "eu"}
 
 
