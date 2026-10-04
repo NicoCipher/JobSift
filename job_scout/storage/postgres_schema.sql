@@ -419,33 +419,6 @@ CREATE TABLE IF NOT EXISTS operator_outcome_imports (
   UNIQUE(actor_type, actor_id, client_id, source_reference, external_record_id)
 );
 
-CREATE OR REPLACE FUNCTION jobsift_reject_operator_state_mutation()
-RETURNS trigger
-LANGUAGE plpgsql
-AS 'BEGIN
-  RAISE EXCEPTION ''operator outcome state is immutable'';
-END';
-
-DROP TRIGGER IF EXISTS outcome_events_no_update ON operator_outcome_events;
-CREATE TRIGGER outcome_events_no_update
-BEFORE UPDATE ON operator_outcome_events
-FOR EACH ROW EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
-
-DROP TRIGGER IF EXISTS outcome_events_no_delete ON operator_outcome_events;
-CREATE TRIGGER outcome_events_no_delete
-BEFORE DELETE ON operator_outcome_events
-FOR EACH ROW EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
-
-DROP TRIGGER IF EXISTS outcome_imports_no_update ON operator_outcome_imports;
-CREATE TRIGGER outcome_imports_no_update
-BEFORE UPDATE ON operator_outcome_imports
-FOR EACH ROW EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
-
-DROP TRIGGER IF EXISTS outcome_imports_no_delete ON operator_outcome_imports;
-CREATE TRIGGER outcome_imports_no_delete
-BEFORE DELETE ON operator_outcome_imports
-FOR EACH ROW EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
-
 INSERT INTO jobsift_schema_metadata(singleton, schema_version, installed_at)
 VALUES (TRUE, 'postgres-v1', CURRENT_TIMESTAMP::text)
 ON CONFLICT (singleton) DO NOTHING;
