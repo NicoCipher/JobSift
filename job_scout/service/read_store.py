@@ -1,4 +1,4 @@
-"""Bounded read-only SQLite evidence projection. No domain repository constructors."""
+"""Bounded read-only evidence projection for SQLite or PostgreSQL."""
 
 import ipaddress
 import json
@@ -75,6 +75,41 @@ class ReadStore:
 
     @contextmanager
     def connect(self):
+        database_url = os.getenv("NEON_DATABASE_URL", "").strip()
+        if database_url:
+            raw = None
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+
+                from job_scout.storage.postgres import PostgresConnection
+
+                raw = psycopg.connect(
+                    database_url,
+                    row_factory=dict_row,
+                    autocommit=False,
+                    connect_timeout=5,
+                )
+                c = PostgresConnection(raw)
+                c.execute("SET TRANSACTION READ ONLY")
+                c.execute("SET LOCAL statement_timeout = '5s'")
+                yield c
+                raw.rollback()
+            except (ValueError, KeyError, TypeError):
+                if raw is not None:
+                    raw.rollback()
+                raise ServiceError("EVIDENCE_UNAVAILABLE") from None
+            except Exception as error:
+                if raw is not None:
+                    raw.rollback()
+                if error.__class__.__module__.startswith("psycopg"):
+                    raise ServiceError("EVIDENCE_UNAVAILABLE") from None
+                raise
+            finally:
+                if raw is not None:
+                    raw.close()
+            return
+
         c = None
         try:
             c = sqlite3.connect(
