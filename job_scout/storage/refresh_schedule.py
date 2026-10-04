@@ -86,12 +86,9 @@ class InventoryRefreshScheduleStore:
                 (self.schedule_key,),
             ).fetchone()
             if row is None:
-                connection.execute(
-                    "INSERT INTO inventory_refresh_schedule_state "
-                    "(schedule_key,last_completed_cohort,updated_at) VALUES (?,?,?)",
-                    (self.schedule_key, cohort, completed.isoformat()),
+                raise RuntimeError(
+                    "scheduled cohort completion requires initialized scheduler state"
                 )
-                return True
             last_completed = int(row["last_completed_cohort"])
             if cohort == last_completed:
                 return False
