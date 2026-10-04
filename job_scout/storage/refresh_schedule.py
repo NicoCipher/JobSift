@@ -75,9 +75,8 @@ class InventoryRefreshScheduleStore:
     ) -> bool:
         if cohort < 0:
             raise ValueError("scheduled cohort must be non-negative")
-        completed = (completed_at or datetime.now(UTC)).replace(
-            tzinfo=(completed_at or datetime.now(UTC)).tzinfo or UTC
-        ).astimezone(UTC)
+        moment = completed_at or datetime.now(UTC)
+        completed = moment.replace(tzinfo=moment.tzinfo or UTC).astimezone(UTC)
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
