@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from job_scout import inventory_refresh
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -64,3 +65,42 @@ def test_first_failed_cohort_is_not_skipped_when_clock_advances(tmp_path):
     assert next_hour.should_run is True
     assert next_hour.cohort == first.cohort
     assert next_hour.current_cohort == first.current_cohort + 1
+
+
+def test_partial_fan_in_keeps_logical_cohort_due(tmp_path):
+    repository = SQLiteRepository(tmp_path / "partial.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    now = datetime(2026, 10, 4, 4, 17, tzinfo=UTC)
+    due = store.next_due(now=now)
+    report = tmp_path / "report.json"
+    report.write_text('{"fan_in":{"status":"partial"}}', encoding="utf-8")
+
+    result = inventory_refresh.complete_scheduled_cohort(
+        repository=repository,
+        cohort=due.cohort,
+        fan_in_report=report,
+    )
+
+    assert result["marked_completed"] is False
+    assert result["fan_in_status"] == "partial"
+    retry = store.next_due(now=now + timedelta(hours=1))
+    assert retry.cohort == due.cohort
+
+
+def test_successful_fan_in_advances_logical_cohort(tmp_path):
+    repository = SQLiteRepository(tmp_path / "success.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    now = datetime(2026, 10, 4, 4, 17, tzinfo=UTC)
+    due = store.next_due(now=now)
+    report = tmp_path / "report.json"
+    report.write_text('{"fan_in":{"status":"success"}}', encoding="utf-8")
+
+    result = inventory_refresh.complete_scheduled_cohort(
+        repository=repository,
+        cohort=due.cohort,
+        fan_in_report=report,
+    )
+
+    assert result["marked_completed"] is True
+    done = store.next_due(now=now + timedelta(minutes=20))
+    assert done.should_run is False
