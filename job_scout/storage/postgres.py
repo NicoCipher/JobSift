@@ -147,8 +147,7 @@ def translate_sql(statement: str) -> tuple[str, tuple[Any, ...] | None]:
         if not _IDENTIFIER.fullmatch(table):
             raise ValueError("unsafe table name in schema inspection")
         return (
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema='public' AND table_name=%s",
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=%s",
             (table,),
         )
     if re.fullmatch(
@@ -157,8 +156,7 @@ def translate_sql(statement: str) -> tuple[str, tuple[Any, ...] | None]:
         flags=re.IGNORECASE,
     ):
         return (
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema='public' AND table_name=%s",
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=%s",
             None,
         )
 
