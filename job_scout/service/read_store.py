@@ -8,6 +8,7 @@ from time import monotonic
 from urllib.parse import quote, urlsplit
 
 from job_scout.service.catalog import capabilities, url
+from job_scout.storage.factory import postgres_database_url
 from job_scout.service.errors import ServiceError
 from job_scout.service.schemas import (
     ApplicationDestination,
@@ -75,7 +76,7 @@ class ReadStore:
 
     @contextmanager
     def connect(self):
-        database_url = os.getenv("NEON_DATABASE_URL", "").strip()
+        database_url = postgres_database_url()
         if database_url:
             raw = None
             try:
