@@ -218,6 +218,15 @@ test("client Sheet selectors hide raw control IDs and dispatch the opaque profil
   expect(dialogs[1]).toContain("blocks new deliveries");
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("ad763a0336d92204");
+
+  const sheetSection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Client Sheets" }) });
+  await sheetSection.getByText("Use a profile ID instead").click();
+  await sheetSection.getByLabel("Sheet profile ID").fill("0123456789abcdef");
+  await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
+  await expect.poll(() => dispatched.length).toBe(3);
+  expect(dispatched[2]?.profile_id).toBe("0123456789abcdef");
 });
 
 test("partial run is data, not a service failure; missing and zero are explicit", async ({
