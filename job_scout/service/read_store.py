@@ -1,4 +1,4 @@
-"""Bounded read-only SQLite evidence projection. No domain repository constructors."""
+"""Bounded read-only evidence projection for SQLite or PostgreSQL."""
 
 import ipaddress
 import json
@@ -22,6 +22,7 @@ from job_scout.service.schemas import (
     Posting,
     Provenance,
 )
+from job_scout.storage.factory import postgres_database_url
 
 
 def safe_url(value, vacancy=False):
@@ -75,6 +76,41 @@ class ReadStore:
 
     @contextmanager
     def connect(self):
+        database_url = postgres_database_url()
+        if database_url:
+            raw = None
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+
+                from job_scout.storage.postgres import PostgresConnection
+
+                raw = psycopg.connect(
+                    database_url,
+                    row_factory=dict_row,
+                    autocommit=False,
+                    connect_timeout=5,
+                )
+                c = PostgresConnection(raw)
+                c.execute("SET TRANSACTION READ ONLY")
+                c.execute("SET LOCAL statement_timeout = '5s'")
+                yield c
+                raw.rollback()
+            except (ValueError, KeyError, TypeError):
+                if raw is not None:
+                    raw.rollback()
+                raise ServiceError("EVIDENCE_UNAVAILABLE") from None
+            except Exception as error:
+                if raw is not None:
+                    raw.rollback()
+                if error.__class__.__module__.startswith("psycopg"):
+                    raise ServiceError("EVIDENCE_UNAVAILABLE") from None
+                raise
+            finally:
+                if raw is not None:
+                    raw.close()
+            return
+
         c = None
         try:
             c = sqlite3.connect(
@@ -94,9 +130,24 @@ class ReadStore:
                 c.close()
 
     def bounded(self, c, sql, params=()):
-        rows = c.execute(
-            sql + " LIMIT ?", (*params, self.config.max_projection_rows + 1)
-        ).fetchall()
+        limited_sql = sql + " LIMIT ?"
+        limited_params = (*params, self.config.max_projection_rows + 1)
+
+        if getattr(c, "is_postgres", False):
+            preflight = c.execute(
+                "SELECT COUNT(*) AS row_count, "
+                "COALESCE(SUM(pg_column_size(q)), 0) AS total_bytes "
+                f"FROM ({limited_sql}) AS q",
+                limited_params,
+            ).fetchone()
+            if (
+                preflight is None
+                or int(preflight["row_count"]) > self.config.max_projection_rows
+                or int(preflight["total_bytes"]) > self.config.max_projection_bytes
+            ):
+                raise ServiceError("EVIDENCE_SCOPE_UNAVAILABLE")
+
+        rows = c.execute(limited_sql, limited_params).fetchall()
         if len(rows) > self.config.max_projection_rows:
             raise ServiceError("EVIDENCE_SCOPE_UNAVAILABLE")
         return rows

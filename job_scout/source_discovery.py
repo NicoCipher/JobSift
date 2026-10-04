@@ -22,9 +22,12 @@ from job_scout.production_registry import (
     load_production_registry,
     sha256_json,
 )
+from job_scout.storage.factory import create_repository
 from job_scout.storage.source_discovery import SourceDiscoveryStore
-from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.target_universe import HistoricalLink, derive_link
+
+# Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
+SQLiteRepository = create_repository
 
 COMMON_CRAWL_COLLECTIONS = "https://index.commoncrawl.org/collinfo.json"
 DISCOVERY_SOURCE = "commoncrawl-cdx"
@@ -566,7 +569,7 @@ def run_once(
 ) -> dict[str, Any]:
     current = (now or utc_now()).astimezone(UTC)
     database.parent.mkdir(parents=True, exist_ok=True)
-    repository = SQLiteRepository(database)
+    repository = create_repository(database)
     store = SourceDiscoveryStore(repository)
     base = load_production_registry(base_registry_path)
 
@@ -697,7 +700,7 @@ def main() -> None:
         print(json.dumps(payload, sort_keys=True))
         return
 
-    repository = SQLiteRepository(args.database)
+    repository = create_repository(args.database)
     store = SourceDiscoveryStore(repository)
     base = load_production_registry(args.base_registry)
     current = utc_now()

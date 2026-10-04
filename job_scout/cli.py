@@ -29,7 +29,10 @@ from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
-from job_scout.storage.sqlite import SQLiteRepository
+from job_scout.storage.factory import create_repository
+
+# Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
+SQLiteRepository = create_repository
 
 SERIALIZED_PROFILE_MUTATION_WORKFLOWS = frozenset(
     {
@@ -40,7 +43,7 @@ SERIALIZED_PROFILE_MUTATION_WORKFLOWS = frozenset(
 
 
 def _require_serialized_profile_mutation(repository, command: str) -> None:
-    """Reject Turso-backed profile mutations outside the queued production workflows."""
+    """Reject remote profile mutations outside the queued production workflows."""
     if not repository.remote_url:
         return
     if (
@@ -48,7 +51,7 @@ def _require_serialized_profile_mutation(repository, command: str) -> None:
         or os.getenv("GITHUB_WORKFLOW", "") not in SERIALIZED_PROFILE_MUTATION_WORKFLOWS
     ):
         raise RuntimeError(
-            "Turso-backed delivery-profile mutations must run through "
+            "Remote delivery-profile mutations must run through "
             "Client Delivery Control or Configure Client Delivery Profile"
         )
 
@@ -234,7 +237,7 @@ def main() -> None:
     if args.command == "destination":
         from job_scout.domain.daily_batch import BatchConflict
 
-        repository = SQLiteRepository(args.database)
+        repository = create_repository(args.database)
         store = ClientSheetDestinationStore(repository)
         try:
             if args.destination_command == "register-google-sheet":
@@ -393,7 +396,7 @@ def main() -> None:
             )
 
         try:
-            repository = SQLiteRepository(args.database)
+            repository = create_repository(args.database)
             store = ClientDeliveryProfileStore(repository)
             command = args.delivery_profile_command
             mutating_profile_command = (
@@ -579,7 +582,7 @@ def main() -> None:
             if args.batch_command == "review":
                 result, rows = DailyBatchStore.review_readonly(args.database, args.batch_id)
             else:
-                repository = SQLiteRepository(args.database)
+                repository = create_repository(args.database)
                 store = DailyBatchStore(repository)
                 result = store.get(args.batch_id)
                 if result.request.destination_id is not None:
@@ -649,7 +652,7 @@ def main() -> None:
                 if Path(args.client).is_file()
                 else args.client
             )
-            inserted, already_present = SQLiteRepository(args.database).import_historical_records(
+            inserted, already_present = create_repository(args.database).import_historical_records(
                 client_id=client_id,
                 workbook_sha256=checksum,
                 records=records,
@@ -711,7 +714,7 @@ def main() -> None:
         }[args.source](),
         target=target,
         profile=profile,
-        repository=SQLiteRepository(args.database),
+        repository=create_repository(args.database),
         csv_path=args.csv,
     )
     print(json.dumps(summary.__dict__, sort_keys=True))

@@ -45,7 +45,7 @@ def base(monkeypatch, tmp_path, profile, *, delivered=0):
 
     monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
     monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
-    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: repository)
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
     monkeypatch.setattr(
         live_runner,
