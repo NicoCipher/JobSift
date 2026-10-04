@@ -7,9 +7,10 @@ import hashlib
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from job_scout.storage.postgres import PostgresConnection, PostgresRepository
 from job_scout.storage.sqlite import compatible_row_factory
@@ -180,69 +181,68 @@ def migrate(
     }
     destination = PostgresRepository(destination_url)
 
-    with source_connection(source_database) as source:
-        with destination.connect() as target:
-            target.execute("BEGIN IMMEDIATE")
-            _assert_destination_empty(target)
+    with source_connection(source_database) as source, destination.connect() as target:
+        target.execute("BEGIN IMMEDIATE")
+        _assert_destination_empty(target)
 
-            for table in TABLE_KEYS:
-                source_columns = _sqlite_table_columns(source, table)
-                if source_columns is None:
-                    report["tables"][table] = {
-                        "source_present": False,
-                        "rows": 0,
-                    }
-                    continue
+        for table in TABLE_KEYS:
+            source_columns = _sqlite_table_columns(source, table)
+            if source_columns is None:
+                report["tables"][table] = {
+                    "source_present": False,
+                    "rows": 0,
+                }
+                continue
 
-                destination_columns = _postgres_table_columns(target, table)
-                missing = [column for column in source_columns if column not in destination_columns]
-                if missing:
-                    raise RuntimeError(
-                        f"Postgres table {table} is missing source columns: {missing}"
-                    )
+            destination_columns = _postgres_table_columns(target, table)
+            missing = [column for column in source_columns if column not in destination_columns]
+            if missing:
+                raise RuntimeError(
+                    f"Postgres table {table} is missing source columns: {missing}"
+                )
 
-                selected = ",".join(source_columns)
-                placeholders = ",".join("?" for _ in source_columns)
-                rows = source.execute(f"SELECT {selected} FROM {table}")
-                statement = f"INSERT INTO {table} ({selected}) VALUES ({placeholders})"
-                inserted = 0
-                batch: list[tuple[Any, ...]] = []
-                for row in rows:
-                    batch.append(tuple(row[column] for column in source_columns))
-                    if len(batch) >= 100:
-                        target.executemany(statement, batch)
-                        inserted += len(batch)
-                        batch.clear()
-                if batch:
+            selected = ",".join(source_columns)
+            placeholders = ",".join("?" for _ in source_columns)
+            rows = source.execute(f"SELECT {selected} FROM {table}")
+            statement = f"INSERT INTO {table} ({selected}) VALUES ({placeholders})"
+            inserted = 0
+            batch: list[tuple[Any, ...]] = []
+            for row in rows:
+                batch.append(tuple(row[column] for column in source_columns))
+                if len(batch) >= 100:
                     target.executemany(statement, batch)
                     inserted += len(batch)
+                    batch.clear()
+            if batch:
+                target.executemany(statement, batch)
+                inserted += len(batch)
 
-                source_count, source_digest = _table_digest(
-                    source,
-                    table,
-                    source_columns,
+            source_count, source_digest = _table_digest(
+                source,
+                table,
+                source_columns,
+            )
+            target_count, target_digest = _table_digest(
+                target,
+                table,
+                source_columns,
+            )
+            if inserted != source_count or target_count != source_count:
+                raise RuntimeError(
+                    f"row-count mismatch for {table}: "
+                    f"inserted={inserted} source={source_count} target={target_count}"
                 )
-                target_count, target_digest = _table_digest(
-                    target,
-                    table,
-                    source_columns,
-                )
-                if inserted != source_count or target_count != source_count:
-                    raise RuntimeError(
-                        f"row-count mismatch for {table}: "
-                        f"inserted={inserted} source={source_count} target={target_count}"
-                    )
-                if target_digest != source_digest:
-                    raise RuntimeError(f"row-digest mismatch for {table}")
+            if target_digest != source_digest:
+                raise RuntimeError(f"row-digest mismatch for {table}")
 
-                report["tables"][table] = {
-                    "source_present": True,
-                    "rows": source_count,
-                    "sha256": source_digest,
-                }
+            report["tables"][table] = {
+                "source_present": True,
+                "rows": source_count,
+                "sha256": source_digest,
+            }
 
-            _reset_identity_sequences(target)
-            report["verified"] = True
+        _reset_identity_sequences(target)
+        report["verified"] = True
 
     return report
 
