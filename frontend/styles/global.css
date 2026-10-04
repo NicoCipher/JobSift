@@ -327,7 +327,7 @@ main {
 }
 .jobs-table td {
   padding: var(--cell-y) var(--cell-x);
-  height: var(--row-height);
+  height: calc(var(--row-height) - (2 * var(--cell-y)));
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
