@@ -18,8 +18,10 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
         registry=registry, cohort=1
     )
 
-    assert len(subset0.targets) == sum(v for k, v in inventory_refresh.DEFAULT_LIMITS.items() if k in registry.target_counts_by_source) == 100
-    assert subset0.target_counts_by_source == {k: v for k, v in inventory_refresh.DEFAULT_LIMITS.items() if k in registry.target_counts_by_source}
+    limits = inventory_refresh.default_refresh_limits(registry)
+    assert sum(limits.values()) == 100
+    assert len(subset0.targets) == 100
+    assert subset0.target_counts_by_source == limits
     assert plan0.total_targets == 100
     assert len(manifest0.shards) == plan0.total_shards
     assert [target.target_identity for target in subset0.targets] == sorted(
@@ -29,9 +31,84 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
     first = {target.target_identity for target in subset0.targets}
     second = {target.target_identity for target in subset1.targets}
     assert first != second
-    assert subset1.target_counts_by_source == {k: v for k, v in inventory_refresh.DEFAULT_LIMITS.items() if k in registry.target_counts_by_source}
+    assert subset1.target_counts_by_source == limits
     assert manifest1.registry_id == subset1.registry_id
 
+
+def test_smartrecruiters_budget_does_not_make_small_greenhouse_limit_nonpositive():
+    from job_scout.production_registry import ProductionTarget
+
+    targets = [
+        *[
+            ProductionTarget(
+                source="greenhouse",
+                target_identity=f"greenhouse:green-{index}",
+                coordinates={"board": f"green-{index}"},
+                company_hint=f"Green {index}",
+            )
+            for index in range(5)
+        ],
+        *[
+            ProductionTarget(
+                source="smartrecruiters",
+                target_identity=f"smartrecruiters:smart-{index}",
+                coordinates={"board": f"smart-{index}"},
+                company_hint=f"Smart {index}",
+            )
+            for index in range(7)
+        ],
+    ]
+    base = inventory_refresh.load_production_registry(REGISTRY)
+    registry = base.model_copy(
+        update={
+            "registry_id": "small-greenhouse-smartrecruiters",
+            "targets": sorted(targets, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"greenhouse": 5, "smartrecruiters": 7},
+        }
+    )
+
+    limits = inventory_refresh.default_refresh_limits(registry)
+
+    assert limits == {"greenhouse": 5, "smartrecruiters": 7}
+    plan, subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=0,
+        limits=limits,
+    )
+    assert plan.total_targets == 12
+    assert subset.target_counts_by_source == limits
+
+
+def test_dynamic_smartrecruiters_rotation_stays_inside_24_hour_window():
+    from job_scout.production_registry import ProductionTarget
+
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    payload = registry.model_dump(mode="json")
+    payload["targets"].extend(
+        ProductionTarget(
+            source="smartrecruiters",
+            target_identity=f"smartrecruiters:dynamic-{index}",
+            coordinates={"board": f"dynamic-{index}"},
+            company_hint=f"Dynamic {index}",
+        ).model_dump(mode="json")
+        for index in range(164)
+    )
+    payload["targets"].sort(key=lambda target: target["target_identity"])
+    payload["target_counts_by_source"]["smartrecruiters"] = 164
+    expanded = type(registry).model_validate(payload)
+
+    limits = inventory_refresh.default_refresh_limits(expanded, workday_limit=25)
+    assert limits["greenhouse"] == 33
+    assert limits["smartrecruiters"] == 7
+    assert limits["workday"] == 25
+    assert sum(limits.values()) == 124
+
+    proof = inventory_refresh.build_coverage_proof(expanded, limits=limits)
+    smartrecruiters = next(
+        item for item in proof.providers if item.source == "smartrecruiters"
+    )
+    assert smartrecruiters.targets_per_cohort == 7
+    assert smartrecruiters.worst_case_full_coverage_cohorts <= 24
 
 def test_default_rotation_proves_full_registry_coverage():
     registry = inventory_refresh.load_production_registry(REGISTRY)

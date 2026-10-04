@@ -50,14 +50,14 @@ DEFAULT_LIMITS = {
     "ashby": 40,
     "workday": 1,
     "lever": 19,
-    "smartrecruiters": 1,
+    "smartrecruiters": 7,
 }
 DEFAULT_SHARDS = {
     "greenhouse": 6,
     "ashby": 6,
     "workday": 1,
     "lever": 4,
-    "smartrecruiters": 1,
+    "smartrecruiters": 2,
 }
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
 MAX_REFRESH_TARGETS = 125
@@ -179,7 +179,7 @@ def default_refresh_limits(
     workday_limit: int | None = None,
 ) -> dict[str, int]:
     limits = {
-        source: DEFAULT_LIMITS[source]
+        source: min(DEFAULT_LIMITS[source], registry.target_counts_by_source[source])
         for source in PROVIDERS
         if source in registry.target_counts_by_source
     }
@@ -192,9 +192,16 @@ def default_refresh_limits(
             workday_limit,
             registry.target_counts_by_source["workday"],
         )
-    # SmartRecruiters is additive only after explicit registry admission.
+    # Greenhouse and SmartRecruiters share the historical 40-target non-Workday
+    # budget. Only trim Greenhouse when their combined selection would exceed it;
+    # a small valid registry must never be driven to a zero/negative provider limit.
     if "smartrecruiters" in limits and "greenhouse" in limits:
-        limits["greenhouse"] -= limits["smartrecruiters"]
+        combined_budget = DEFAULT_LIMITS["greenhouse"]
+        overflow = max(
+            0,
+            limits["greenhouse"] + limits["smartrecruiters"] - combined_budget,
+        )
+        limits["greenhouse"] -= overflow
     if sum(limits.values()) > MAX_REFRESH_TARGETS:
         raise ValueError("default refresh cohort exceeds safety ceiling")
     return limits
@@ -663,7 +670,10 @@ def build_refresh_plan(
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
     if shards is None:
-        shards = {source: DEFAULT_SHARDS[source] for source in providers}
+        shards = {
+            source: min(DEFAULT_SHARDS[source], limits[source])
+            for source in providers
+        }
         if "workday" in shards:
             # Workday target runtimes have a very long tail. Isolate every selected
             # Workday company so one slow board cannot serialize four healthy boards
