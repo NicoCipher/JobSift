@@ -54,8 +54,8 @@ jobs:
       JOBSIFT_DESTINATION_ID: taiwo-test-jobs
       JOBSIFT_SHEET_ID: ${{ vars.JOBSIFT_SHEET_ID }}
       JOBSIFT_SHEET_TAB: ${{ vars.JOBSIFT_SHEET_TAB }}
-      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      JOBSIFT_PERSISTENCE_BACKEND: postgres
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
 
     steps:
@@ -69,15 +69,14 @@ jobs:
       - name: Install JobSift
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[sheets,cloud]'
+          python -m pip install -e '.[sheets,postgres]'
 
       - name: Validate runtime configuration
         shell: bash
         run: |
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
           if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.validate }}" != "true" ]]; then
-            test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
-            test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+            test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
           fi
 
       - name: Configure run mode
@@ -98,8 +97,8 @@ jobs:
             echo "JOBSIFT_BATCH_QUOTA=${{ inputs.quota }}" >> "$GITHUB_ENV"
             if [[ "${{ inputs.validate }}" == "true" ]]; then
               echo "JOBSIFT_DATABASE=/tmp/jobsift-validation.sqlite3" >> "$GITHUB_ENV"
-              echo "TURSO_DATABASE_URL=" >> "$GITHUB_ENV"
-              echo "TURSO_AUTH_TOKEN=" >> "$GITHUB_ENV"
+              echo "JOBSIFT_PERSISTENCE_BACKEND=sqlite" >> "$GITHUB_ENV"
+              echo "NEON_DATABASE_URL=" >> "$GITHUB_ENV"
             fi
           else
             echo "JOBSIFT_AUTO_RELEASE=false" >> "$GITHUB_ENV"
