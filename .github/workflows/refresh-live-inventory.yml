@@ -247,6 +247,9 @@ jobs:
             --fan-in-report refresh-result/report.json \
             --output refresh-result/schedule-complete.json
 
+      # Retention cleanup is housekeeping, not part of logical cohort completion.
+      # A cleanup failure is surfaced by this run and retried on a later mutation run
+      # without replaying an already-completed logical cohort.
       - name: Prune stale inventory
         if: ${{ always() }}
         run: |
