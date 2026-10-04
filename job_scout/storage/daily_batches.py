@@ -23,6 +23,7 @@ from job_scout.domain.daily_batch import (
 from job_scout.domain.models import Job, JobMatch, MatchDecision
 from job_scout.normalization.company import employer_key
 from job_scout.posting_freshness import posting_freshness_disposition
+from job_scout.storage.factory import postgres_database_url
 
 if TYPE_CHECKING:
     from job_scout.storage.sqlite import SQLiteRepository
@@ -371,7 +372,42 @@ class DailyBatchStore:
     def review_readonly(
         database: str, batch_id: str
     ) -> tuple[DailyBatchResult, list[dict[str, str]]]:
-        """Read a prepared snapshot without creating, migrating, or locking its database."""
+        """Read a prepared snapshot from the explicitly selected backend without mutation."""
+        database_url = postgres_database_url()
+        if database_url is not None:
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+
+                from job_scout.storage.postgres import PostgresConnection
+            except ImportError as error:
+                raise RuntimeError(
+                    "install job-scout[postgres] for Neon/Postgres persistence"
+                ) from error
+
+            raw = None
+            try:
+                raw = psycopg.connect(
+                    database_url,
+                    row_factory=dict_row,
+                    autocommit=False,
+                    connect_timeout=5,
+                )
+                connection = PostgresConnection(raw)
+                connection.execute("SET TRANSACTION READ ONLY")
+                connection.execute("SET LOCAL statement_timeout = '5s'")
+                result = DailyBatchStore._load(connection, batch_id)
+                rows = DailyBatchStore._frozen_rows(connection, result)
+                raw.rollback()
+                return result, rows
+            except psycopg.Error as error:
+                if raw is not None:
+                    raw.rollback()
+                raise sqlite3.DatabaseError(str(error)) from error
+            finally:
+                if raw is not None:
+                    raw.close()
+
         uri = Path(database).resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True)) as connection:
             connection.row_factory = sqlite3.Row
