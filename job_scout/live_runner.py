@@ -26,8 +26,8 @@ from job_scout.sourcing_plan import (
     load_sourcing_plan,
 )
 from job_scout.storage.daily_batches import DailyBatchStore
-from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.factory import create_repository
+from job_scout.storage.inventory_runs import InventoryRunStore
 
 # Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
 SQLiteRepository = create_repository
