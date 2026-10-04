@@ -263,6 +263,16 @@ class PostgresRepository(SQLiteRepository):
                 raise RuntimeError(
                     "Neon schema is not initialized at the expected JobSift version"
                 )
+            trigger_count = connection.execute(
+                "SELECT COUNT(*) AS count FROM pg_trigger "
+                "WHERE NOT tgisinternal AND tgname IN ("
+                "'outcome_events_no_update','outcome_events_no_delete',"
+                "'outcome_imports_no_update','outcome_imports_no_delete')"
+            ).fetchone()
+            if trigger_count is None or int(trigger_count["count"]) != 4:
+                raise RuntimeError(
+                    "Neon operator-state immutability triggers are not installed"
+                )
 
             # Preserve the SQLite repository's idempotent legacy backfill.
             rows = connection.execute(
