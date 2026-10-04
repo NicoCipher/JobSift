@@ -1,0 +1,99 @@
+name: One-time Neon Data Migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/neon-cutover-migrate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-neon-cutover-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate cutover secrets
+        shell: bash
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[cloud,postgres]'
+
+      - name: Migrate and verify durable state
+        run: |
+          mkdir -p cutover-result
+          python -m job_scout.storage.migrate_to_postgres \
+            --source-database "$RUNNER_TEMP/jobsift-turso-cutover.sqlite3" \
+            --report cutover-result/migration.json
+
+      - name: Verify Neon runtime can open migrated state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from job_scout.storage.postgres import PostgresRepository
+
+          repository = PostgresRepository(os.environ["NEON_DATABASE_URL"])
+          with repository.connect() as connection:
+              counts = {
+                  "jobs": int(connection.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"]),
+                  "inventory_runs": int(
+                      connection.execute("SELECT COUNT(*) AS n FROM inventory_runs").fetchone()["n"]
+                  ),
+                  "delivery_profiles": int(
+                      connection.execute(
+                          "SELECT COUNT(*) AS n FROM client_delivery_profiles"
+                      ).fetchone()["n"]
+                  ),
+                  "source_discovery_targets": int(
+                      connection.execute(
+                          "SELECT COUNT(*) AS n FROM source_discovery_targets"
+                      ).fetchone()["n"]
+                  ),
+                  "exports": int(connection.execute("SELECT COUNT(*) AS n FROM exports").fetchone()["n"]),
+                  "identity_ledger": int(
+                      connection.execute("SELECT COUNT(*) AS n FROM job_identity_ledger").fetchone()["n"]
+                  ),
+              }
+
+          Path("cutover-result/runtime-verification.json").write_text(
+              json.dumps({"runtime_opened": True, "counts": counts}, indent=2, sort_keys=True)
+              + "\n"
+          )
+          print(json.dumps({"runtime_opened": True, "counts": counts}, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jobsift-neon-cutover-${{ github.run_id }}
+          path: cutover-result/
+          if-no-files-found: warn
+          retention-days: 30
