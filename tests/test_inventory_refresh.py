@@ -36,23 +36,22 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
 
 
 def test_dynamic_smartrecruiters_rotation_stays_inside_24_hour_window():
+    from job_scout.production_registry import ProductionTarget
+
     registry = inventory_refresh.load_production_registry(REGISTRY)
-    seed = next(target for target in registry.targets if target.source == "smartrecruiters")
-    extra = [
-        seed.model_copy(
-            update={
-                "target_identity": f"smartrecruiters:dynamic-{index}",
-                "coordinates": {"board": f"Dynamic{index}"},
-                "company_hint": f"Dynamic {index}",
-            }
-        )
-        for index in range(163)
-    ]
-    counts = dict(registry.target_counts_by_source)
-    counts["smartrecruiters"] = 164
-    expanded = registry.model_copy(
-        update={"targets": [*registry.targets, *extra], "target_counts_by_source": counts}
+    payload = registry.model_dump(mode="json")
+    payload["targets"].extend(
+        ProductionTarget(
+            source="smartrecruiters",
+            target_identity=f"smartrecruiters:dynamic-{index}",
+            coordinates={"board": f"dynamic-{index}"},
+            company_hint=f"Dynamic {index}",
+        ).model_dump(mode="json")
+        for index in range(164)
     )
+    payload["targets"].sort(key=lambda target: target["target_identity"])
+    payload["target_counts_by_source"]["smartrecruiters"] = 164
+    expanded = type(registry).model_validate(payload)
 
     limits = inventory_refresh.default_refresh_limits(expanded, workday_limit=25)
     assert limits["greenhouse"] == 33
@@ -66,7 +65,6 @@ def test_dynamic_smartrecruiters_rotation_stays_inside_24_hour_window():
     )
     assert smartrecruiters.targets_per_cohort == 7
     assert smartrecruiters.worst_case_full_coverage_cohorts <= 24
-
 
 def test_default_rotation_proves_full_registry_coverage():
     registry = inventory_refresh.load_production_registry(REGISTRY)
