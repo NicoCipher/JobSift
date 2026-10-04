@@ -137,6 +137,8 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sheetProfileOverride, setSheetProfileOverride] = useState("");
+  const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
 
   const loadStatus = useCallback(async () => {
     try {
@@ -200,11 +202,20 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const operation = String(data.get("operation") ?? "status");
-    const profileId = String(data.get("profile_id") ?? "").trim();
+    const selectedProfileId = String(data.get("profile_id") ?? "").trim();
+    const overrideProfileId = String(
+      data.get("profile_id_override") ?? "",
+    ).trim();
+    if (overrideProfileId && !/^[0-9a-f]{16}$/.test(overrideProfileId)) {
+      setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
+      return;
+    }
+    const profileId = overrideProfileId || selectedProfileId;
     const batchId = String(data.get("batch_id") ?? "").trim();
     const profileSelect = event.currentTarget.elements.namedItem("profile_id") as HTMLSelectElement | null;
-    const profileLabel =
-      profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
+    const profileLabel = overrideProfileId
+      ? "Manual delivery profile"
+      : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     const confirmation = deliveryConfirmation(
       operation,
       profileId,
@@ -228,12 +239,23 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
     const data = new FormData(event.currentTarget);
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const operation = submitter?.value ?? "sheet-check";
-    const profileId = String(data.get("sheet_profile_id") ?? "").trim();
+    const selectedProfileId = String(
+      data.get("sheet_profile_id") ?? "",
+    ).trim();
+    const overrideProfileId = String(
+      data.get("sheet_profile_id_override") ?? "",
+    ).trim();
+    if (overrideProfileId && !/^[0-9a-f]{16}$/.test(overrideProfileId)) {
+      setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
+      return;
+    }
+    const profileId = overrideProfileId || selectedProfileId;
     const profileSelect = event.currentTarget.elements.namedItem(
       "sheet_profile_id",
     ) as HTMLSelectElement | null;
-    const profileLabel =
-      profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
+    const profileLabel = overrideProfileId
+      ? "Manual delivery profile"
+      : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     if (
       operation === "sheet-disable" &&
       !window.confirm(
@@ -372,24 +394,55 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
               )}
             </select>
           </label>
+          <details>
+            <summary>Use a profile ID instead</summary>
+            <label>
+              Sheet profile ID
+              <input
+                name="sheet_profile_id_override"
+                value={sheetProfileOverride}
+                onChange={(event) => setSheetProfileOverride(event.target.value)}
+                autoComplete="off"
+                inputMode="text"
+                pattern="[0-9a-f]{16}"
+                placeholder="16-character profile ID"
+                disabled={busy || !status?.control_ready}
+              />
+            </label>
+            <p className="metadata">
+              Use this only when the real delivery profile is not listed above.
+            </p>
+          </details>
           <button
             type="submit"
             value="sheet-check"
-            disabled={busy || !status?.control_ready}
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (profiles.length === 0 && !/^[0-9a-f]{16}$/.test(sheetProfileOverride.trim()))
+            }
           >
             Check Sheet
           </button>
           <button
             type="submit"
             value="sheet-disable"
-            disabled={busy || !status?.control_ready}
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (profiles.length === 0 && !/^[0-9a-f]{16}$/.test(sheetProfileOverride.trim()))
+            }
           >
             Disable Sheet
           </button>
           <button
             type="submit"
             value="sheet-enable"
-            disabled={busy || !status?.control_ready}
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (profiles.length === 0 && !/^[0-9a-f]{16}$/.test(sheetProfileOverride.trim()))
+            }
           >
             Re-enable Sheet
           </button>
@@ -436,6 +489,25 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
               )}
             </select>
           </label>
+          <details>
+            <summary>Use a profile ID instead</summary>
+            <label>
+              Delivery profile ID
+              <input
+                name="profile_id_override"
+                value={deliveryProfileOverride}
+                onChange={(event) => setDeliveryProfileOverride(event.target.value)}
+                autoComplete="off"
+                inputMode="text"
+                pattern="[0-9a-f]{16}"
+                placeholder="16-character profile ID"
+                disabled={busy || !status?.control_ready}
+              />
+            </label>
+            <p className="metadata">
+              Use this only when the real delivery profile is not listed above.
+            </p>
+          </details>
           <label>
             Daily quota
             <input
