@@ -29,7 +29,7 @@ from job_scout.orchestration.pipeline import run_pipeline
 from job_scout.search_brief import create_search_brief_interactively, load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan, run_sourcing_plan
 from job_scout.storage.daily_batches import DailyBatchStore
-from job_scout.storage.factory import create_repository
+from job_scout.storage.factory import create_repository as SQLiteRepository
 
 SERIALIZED_PROFILE_MUTATION_WORKFLOWS = frozenset(
     {
@@ -234,7 +234,7 @@ def main() -> None:
     if args.command == "destination":
         from job_scout.domain.daily_batch import BatchConflict
 
-        repository = create_repository(args.database)
+        repository = SQLiteRepository(args.database)
         store = ClientSheetDestinationStore(repository)
         try:
             if args.destination_command == "register-google-sheet":
@@ -393,7 +393,7 @@ def main() -> None:
             )
 
         try:
-            repository = create_repository(args.database)
+            repository = SQLiteRepository(args.database)
             store = ClientDeliveryProfileStore(repository)
             command = args.delivery_profile_command
             mutating_profile_command = (
@@ -579,7 +579,7 @@ def main() -> None:
             if args.batch_command == "review":
                 result, rows = DailyBatchStore.review_readonly(args.database, args.batch_id)
             else:
-                repository = create_repository(args.database)
+                repository = SQLiteRepository(args.database)
                 store = DailyBatchStore(repository)
                 result = store.get(args.batch_id)
                 if result.request.destination_id is not None:
@@ -649,7 +649,7 @@ def main() -> None:
                 if Path(args.client).is_file()
                 else args.client
             )
-            inserted, already_present = create_repository(args.database).import_historical_records(
+            inserted, already_present = SQLiteRepository(args.database).import_historical_records(
                 client_id=client_id,
                 workbook_sha256=checksum,
                 records=records,
@@ -711,7 +711,7 @@ def main() -> None:
         }[args.source](),
         target=target,
         profile=profile,
-        repository=create_repository(args.database),
+        repository=SQLiteRepository(args.database),
         csv_path=args.csv,
     )
     print(json.dumps(summary.__dict__, sort_keys=True))
