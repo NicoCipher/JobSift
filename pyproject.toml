@@ -13,6 +13,7 @@ dependencies = ["httpx>=0.27,<1", "pydantic>=2.8,<3"]
 service = ["fastapi==0.141.1", "uvicorn==0.52.4"]
 sheets = ["google-auth>=2,<3", "requests>=2.31,<3"]
 cloud = ["pyturso==0.7.2"]
+postgres = ["psycopg[binary]>=3.2,<4"]
 dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
 
 [project.scripts]
