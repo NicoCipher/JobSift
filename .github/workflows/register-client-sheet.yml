@@ -16,8 +16,8 @@ jobs:
     timeout-minutes: 10
     env:
       JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
-      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      JOBSIFT_PERSISTENCE_BACKEND: postgres
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON: ${{ secrets.JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON }}
 
@@ -32,13 +32,12 @@ jobs:
       - name: Install JobSift
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[sheets,cloud]'
+          python -m pip install -e '.[sheets,postgres]'
 
       - name: Validate private configuration
         shell: bash
         run: |
-          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
-          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
           test -n "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" || {
             echo "Missing JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON secret"
