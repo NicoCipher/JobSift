@@ -45,6 +45,19 @@ function shortSha(value: string) {
   return value.slice(0, 8);
 }
 
+function deliveryConfirmation(operation: string, profileId: string, batchId: string) {
+  if (operation === "pause") {
+    return `Pause delivery profile ${profileId}? New deliveries for this profile will stop until you resume it.`;
+  }
+  if (operation === "release-batch") {
+    return `Release batch ${batchId} for profile ${profileId}? This publishes the reviewed batch to the client's registered Sheet and counts it toward today's quota.`;
+  }
+  if (operation === "discard-batch") {
+    return `Discard batch ${batchId} for profile ${profileId}? This permanently removes the unpublished prepared batch.`;
+  }
+  return null;
+}
+
 function WorkflowRuns({
   title,
   workflow,
@@ -173,20 +186,43 @@ export function OperationsControl() {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const operation = String(data.get("operation") ?? "status");
+    const profileId = String(data.get("profile_id") ?? "").trim();
+    const batchId = String(data.get("batch_id") ?? "").trim();
+    const confirmation = deliveryConfirmation(operation, profileId, batchId);
+    if (confirmation && !window.confirm(confirmation)) return;
+    await send({
+      command: "client-control",
+      operation,
+      profile_id: profileId,
+      daily_quota: String(data.get("daily_quota") ?? "100"),
+      delivery_mode: String(data.get("delivery_mode") ?? "review"),
+      timezone: String(data.get("timezone") ?? "Africa/Lagos"),
+      batch_id: batchId,
+    });
+  }
+
+  async function submitSheetControl(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const operation = submitter?.value ?? "sheet-check";
+    const profileId = String(data.get("sheet_profile_id") ?? "").trim();
     if (
-      ["pause", "release-batch", "discard-batch"].includes(operation) &&
-      !window.confirm(`Confirm ${operation.replace("-", " ")}?`)
+      operation === "sheet-disable" &&
+      !window.confirm(
+        `Disable the client Sheet for profile ${profileId}? This pauses the profile and blocks new deliveries until the Sheet is verified, re-enabled, and the profile is resumed.`,
+      )
     ) {
       return;
     }
     await send({
       command: "client-control",
       operation,
-      profile_id: String(data.get("profile_id") ?? ""),
-      daily_quota: String(data.get("daily_quota") ?? "100"),
-      delivery_mode: String(data.get("delivery_mode") ?? "review"),
-      timezone: String(data.get("timezone") ?? "Africa/Lagos"),
-      batch_id: String(data.get("batch_id") ?? ""),
+      profile_id: profileId,
+      daily_quota: "100",
+      delivery_mode: "review",
+      timezone: "Africa/Lagos",
+      batch_id: "",
     });
   }
 
@@ -278,6 +314,48 @@ export function OperationsControl() {
       </section>
 
       <section className="section-block">
+        <h2>Client Sheets</h2>
+        <p>
+          Control the already-registered Google Sheet behind a delivery profile without
+          exposing its spreadsheet ID or tab in public GitHub Actions. Re-enabling verifies
+          the exact stored worksheet identity and header first; the profile remains paused
+          until you explicitly resume it.
+        </p>
+        <form className="control-form" onSubmit={submitSheetControl}>
+          <label>
+            Sheet profile ID
+            <input
+              name="sheet_profile_id"
+              autoComplete="off"
+              placeholder="Opaque profile ID"
+              disabled={busy || !status?.control_ready}
+            />
+          </label>
+          <button
+            type="submit"
+            value="sheet-check"
+            disabled={busy || !status?.control_ready}
+          >
+            Check Sheet
+          </button>
+          <button
+            type="submit"
+            value="sheet-disable"
+            disabled={busy || !status?.control_ready}
+          >
+            Disable Sheet
+          </button>
+          <button
+            type="submit"
+            value="sheet-enable"
+            disabled={busy || !status?.control_ready}
+          >
+            Re-enable Sheet
+          </button>
+        </form>
+      </section>
+
+      <section className="section-block">
         <h2>Client delivery control</h2>
         <p>
           Uses the existing delivery mutation queue. Profile IDs are the opaque control IDs
@@ -300,7 +378,7 @@ export function OperationsControl() {
             </select>
           </label>
           <label>
-            Profile ID
+            Delivery profile ID
             <input
               name="profile_id"
               autoComplete="off"
