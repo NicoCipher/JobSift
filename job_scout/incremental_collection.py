@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from job_scout.domain.models import Job
 from job_scout.production_registry import ProductionSourceRegistry
 
 INCREMENTAL_SOURCES = frozenset({"greenhouse", "smartrecruiters"})
@@ -49,6 +50,28 @@ def snapshot_incremental_target_state(
     }
 
     with repository.connect() as connection:
+        # Current jobs are the authoritative live crawler memory. They are not
+        # copied to the long-term identity ledger until pruning, and normal
+        # upserts intentionally clear job_retention_evidence.
+        active_rows = connection.execute(
+            "SELECT source,source_board_id,source_job_id,payload_json "
+            "FROM jobs "
+            "WHERE source IN (?,?) "
+            "ORDER BY source,source_board_id,source_job_id",
+            tuple(sorted(INCREMENTAL_SOURCES)),
+        ).fetchall()
+        for row in active_rows:
+            key = (row["source"], row["source_board_id"])
+            if key not in approved:
+                continue
+            source_job_id = row["source_job_id"]
+            known[key].add(source_job_id)
+            job = Job.model_validate_json(row["payload_json"])
+            if job.posted_at is not None:
+                active_posted[key][source_job_id] = job.posted_at
+
+        # The ledger remembers pruned identities, preventing repeated hydration
+        # of postings whose age was already unknown/stale in earlier runs.
         rows = connection.execute(
             "SELECT source,source_board_id,source_job_id "
             "FROM job_identity_ledger "
@@ -60,21 +83,6 @@ def snapshot_incremental_target_state(
             key = (row["source"], row["source_board_id"])
             if key in approved:
                 known[key].add(row["source_job_id"])
-
-        active_rows = connection.execute(
-            "SELECT j.source,j.source_board_id,j.source_job_id,e.posted_at "
-            "FROM jobs j JOIN job_retention_evidence e ON e.job_id=j.id "
-            "WHERE j.source IN (?,?) "
-            "ORDER BY j.source,j.source_board_id,j.source_job_id",
-            tuple(sorted(INCREMENTAL_SOURCES)),
-        ).fetchall()
-        for row in active_rows:
-            key = (row["source"], row["source_board_id"])
-            if key not in approved:
-                continue
-            source_job_id = row["source_job_id"]
-            known[key].add(source_job_id)
-            active_posted[key][source_job_id] = datetime.fromisoformat(row["posted_at"])
 
     return [
         IncrementalTargetState(
