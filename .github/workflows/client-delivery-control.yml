@@ -13,6 +13,9 @@ on:
           - list
           - pause
           - resume
+          - sheet-check
+          - sheet-disable
+          - sheet-enable
           - set-quota
           - set-mode
           - set-timezone
@@ -118,6 +121,10 @@ jobs:
               python -m job_scout.cli delivery-profile "$operation" \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id"
+              ;;
+            sheet-check|sheet-disable|sheet-enable)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile "$operation"                 --database "$JOBSIFT_DATABASE"                 --profile-id "$profile_id"
               ;;
             set-quota)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
