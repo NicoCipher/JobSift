@@ -34,7 +34,7 @@ from job_scout.orchestration.pipeline import PipelineSummary, run_pipeline
 from job_scout.retention import retention_basis
 from job_scout.search_brief import load_search_brief
 from job_scout.storage.inventory_runs import InventoryRunStore
-from job_scout.storage.factory import create_repository
+from job_scout.storage.factory import create_repository as SQLiteRepository
 
 
 def _non_blank(value: str) -> str:
@@ -685,7 +685,7 @@ def run_sourcing_plan(
     brief = load_search_brief(_resolve_path(plan.search_brief, base_dir))
     database_path = _resolve_path(plan.database, base_dir)
     database_path.parent.mkdir(parents=True, exist_ok=True)
-    repository = create_repository(database_path)
+    repository = SQLiteRepository(database_path)
     csv_path = _resolve_path(plan.csv, base_dir)
     target_reports: list[SourcingTargetReport] = []
 
