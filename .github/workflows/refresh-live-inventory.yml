@@ -24,7 +24,10 @@ on:
           - "6"
           - "8"
   schedule:
-    - cron: "17 * * * *"
+    # GitHub scheduled workflows are best-effort. Four staggered trigger
+    # opportunities per hour let the persistent logical scheduler recover
+    # delayed/dropped events without processing an hour twice.
+    - cron: "2,17,32,47 * * * *"
 
 permissions:
   contents: read
@@ -43,6 +46,8 @@ jobs:
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      should_run: ${{ steps.matrix.outputs.should_run }}
+      cohort: ${{ steps.schedule.outputs.cohort }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,22 +59,41 @@ jobs:
       - name: Install JobSift
         run: python -m pip install -e '.[cloud]'
 
+      - name: Resolve logical refresh cohort
+        id: schedule
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+          mkdir -p refresh-plan
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python -m job_scout.inventory_refresh schedule-next \
+              --database "$JOBSIFT_DATABASE" \
+              --output refresh-plan/schedule.json
+            should_run="$(python -c 'import json; print(str(json.load(open("refresh-plan/schedule.json"))["should_run"]).lower())')"
+            cohort="$(python -c 'import json; v=json.load(open("refresh-plan/schedule.json"))["cohort"]; print("" if v is None else v)')"
+          else
+            should_run=true
+            cohort=$(( $(date -u +%s) / 3600 ))
+            python -c 'import json,sys; json.dump({"should_run": True, "cohort": int(sys.argv[1]), "trigger": "workflow_dispatch"}, open("refresh-plan/schedule.json","w"), indent=2)' "$cohort"
+          fi
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+          echo "cohort=$cohort" >> "$GITHUB_OUTPUT"
+
       - name: Build rotating refresh cohort
+        if: ${{ steps.schedule.outputs.should_run == 'true' }}
         env:
           # Scheduled production is promoted to 25 after the successful guarded
           # index-first Workday run at 25. Manual dispatch remains available for staged tests.
           WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '25' }}
           WORKDAY_DETAIL_CONCURRENCY: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_detail_concurrency || '4' }}
+          LOGICAL_COHORT: ${{ steps.schedule.outputs.cohort }}
         run: |
-          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
-          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
-          cohort=$(( $(date -u +%s) / 3600 ))
           python -m job_scout.inventory_refresh plan \
             --registry config/source_registries/production_active_v1.json \
             --database "$JOBSIFT_DATABASE" \
             --plan-dir config/sourcing_plans \
             --repo-root . \
-            --cohort "$cohort" \
+            --cohort "$LOGICAL_COHORT" \
             --workday-limit "$WORKDAY_TARGETS" \
             --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY" \
             --output-dir refresh-plan
@@ -77,8 +101,13 @@ jobs:
       - name: Export worker matrix
         id: matrix
         run: |
-          matrix="$(python -c 'import json; print(json.dumps(json.load(open("refresh-plan/matrix.json")), separators=(",", ":")))' )"
+          if [ "${{ steps.schedule.outputs.should_run }}" = "true" ]; then
+            matrix="$(python -c 'import json; print(json.dumps(json.load(open("refresh-plan/matrix.json")), separators=(",", ":")))' )"
+          else
+            matrix='{"include":[]}'
+          fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "should_run=${{ steps.schedule.outputs.should_run }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -88,6 +117,7 @@ jobs:
           retention-days: 2
 
   collect:
+    if: ${{ needs.plan.outputs.should_run == 'true' }}
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -130,7 +160,7 @@ jobs:
           retention-days: 2
 
   persist-and-deliver:
-    if: ${{ always() && needs.plan.result == 'success' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.should_run == 'true' }}
     concurrency:
       group: jobsift-client-delivery-mutation
       queue: max
@@ -207,6 +237,14 @@ jobs:
 
       - name: Deliver to active client profiles
         run: python -m job_scout.profile_delivery_runner
+
+      - name: Mark scheduled cohort complete
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          python -m job_scout.inventory_refresh schedule-complete \
+            --database "$JOBSIFT_DATABASE" \
+            --cohort "${{ needs.plan.outputs.cohort }}" \
+            --output refresh-result/schedule-complete.json
 
       - name: Prune stale inventory
         if: ${{ always() }}
