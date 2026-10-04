@@ -1,5 +1,31 @@
 # JobSift operator frontend — JOB-31
 
+## Production Operations control
+
+`/operations` is a separate production control surface. It does not turn the
+read-only evidence API into a mutation API. Instead, same-origin server routes
+dispatch a strict allowlist of existing GitHub Actions workflows:
+
+- `refresh-live-inventory.yml` for guarded manual refreshes;
+- `client-delivery-control.yml` for existing serialized delivery controls.
+
+The browser never receives GitHub, Turso, Google or provider credentials. Set a
+server-only `JOBSIFT_GITHUB_TOKEN` with Actions write access to
+`NicoCipher/JobSift` to enable commands. Without it, workflow status remains
+visible and every production command is disabled/fails closed.
+
+The deployed Vercel project must remain protected by Vercel Authentication for
+all deployment targets. Do not treat a shareable deployment-protection bypass
+link as an operator session. POST controls also reject cross-origin requests.
+
+Manual inventory refreshes preserve the existing workflow contract: choices are
+limited to Workday targets 1/5/10/20/25 and detail concurrency 4/6/8, and manual
+runs do not advance the scheduled logical-cohort cursor. Scheduled production
+remains 25 Workday targets/hour. Delivery commands go through the existing
+`jobsift-client-delivery-mutation` queue; the frontend does not write Turso
+directly.
+
+
 ## Local service connection
 
 The Jobs view can read registered evidence from the Python operator service. Start
@@ -65,7 +91,7 @@ The API subset exposes convenience reads for one registered example brief, run a
 
 ## Work surfaces
 
-Navigation: Dashboard, Jobs, Review, Search Briefs, Runs, History, Diagnostics, Settings. Secondary routes are deliberately small read-only evidence views. Settings persist only theme, density and character-shortcut preferences.
+Navigation: Dashboard, Operations, Jobs, Review, Search Briefs, Runs, History, Diagnostics, Settings. Secondary routes are deliberately small read-only evidence views. Settings persist only theme, density and character-shortcut preferences.
 
 Desktop uses a 48px top bar, 200px navigation and a 400px contextual detail pane where room permits. At narrower widths detail becomes the full work surface with a URL-addressable selection. Mobile rows retain the primary facts; all evidence is available in detail. No bulk-selection checkboxes or unsupported mutation controls are rendered.
 

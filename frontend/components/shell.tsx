@@ -6,6 +6,7 @@ import type { Client, Session } from "@/lib/contracts/service";
 import { liveMode } from "@/lib/api/client";
 const navigation = [
   ["Dashboard", "/dashboard"],
+  ["Operations", "/operations"],
   ["Jobs", "/jobs"],
   ["Review", "/review"],
   ["Search Briefs", "/briefs"],
@@ -34,7 +35,7 @@ export function Shell({
     <nav
       aria-label={mobile ? "Mobile primary navigation" : "Primary navigation"}
     >
-      {(liveMode ? navigation.filter(([, path]) => ["/jobs", "/settings"].includes(path)) : navigation).map(([name, path]) => (
+      {(liveMode ? navigation.filter(([, path]) => ["/jobs", "/operations", "/settings"].includes(path)) : navigation).map(([name, path]) => (
         <Link
           key={path}
           href={path}
@@ -72,15 +73,15 @@ export function Shell({
         <aside className="sidebar">
           {links()}
           <p className="sidebar-note metadata">
-            Read-only workbench
+            Evidence views are read-only
             <br />
-            {liveMode ? "Registered service evidence" : "Fictional evidence"}
+            Operations uses explicit production commands
           </p>
         </aside>
         <main id="main" tabIndex={-1}>
           <div className="evidence-label">
             <span className="fixture-tag">{liveMode ? "Local service" : "Development fixtures"}</span>
-            <span>{liveMode ? "Registered evidence · no sourcing or writes" : "Fictional records · no live sourcing or writes"}</span>
+            <span>{liveMode ? "Registered evidence · production commands only in Operations" : "Fictional evidence · production commands only in Operations"}</span>
           </div>
           {children}
         </main>

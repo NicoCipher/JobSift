@@ -87,6 +87,46 @@ test("read-only capabilities expose no mutation controls and URLs keep their kin
     ).toHaveCount(0);
   }
 });
+test("operations control fails closed without server command credentials", async ({ page }) => {
+  await page.goto("/operations");
+  await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Production control plane" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pause schedule" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Resume schedule" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Run refresh" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Apply control" })).toBeDisabled();
+});
+
+test("control API rejects unconfigured, invalid, and cross-origin mutations", async ({ request }) => {
+  const unconfigured = await request.post("/api/control/dispatch", {
+    data: {
+      command: "inventory-refresh",
+      workday_targets: "1",
+      workday_detail_concurrency: "4",
+    },
+  });
+  expect(unconfigured.status()).toBe(503);
+
+  const invalidProfile = await request.post("/api/control/dispatch", {
+    data: {
+      command: "client-control",
+      operation: "pause",
+      profile_id: "not-a-control-id",
+    },
+  });
+  expect(invalidProfile.status()).toBe(400);
+
+  const crossOrigin = await request.post("/api/control/dispatch", {
+    headers: { Origin: "https://example.invalid" },
+    data: {
+      command: "inventory-refresh",
+      workday_targets: "1",
+      workday_detail_concurrency: "4",
+    },
+  });
+  expect(crossOrigin.status()).toBe(403);
+});
+
 test("partial run is data, not a service failure; missing and zero are explicit", async ({
   page,
 }) => {
@@ -128,6 +168,7 @@ test("all routes render one main heading and no browser errors", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   for (const route of [
     "/dashboard",
+    "/operations",
     "/jobs",
     "/review",
     "/briefs",
