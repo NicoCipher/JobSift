@@ -35,6 +35,48 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
     assert manifest1.registry_id == subset1.registry_id
 
 
+def test_smartrecruiters_budget_does_not_make_small_greenhouse_limit_nonpositive():
+    from job_scout.production_registry import ProductionSourceRegistry, ProductionTarget
+
+    targets = [
+        *[
+            ProductionTarget(
+                source="greenhouse",
+                target_identity=f"greenhouse:green-{index}",
+                coordinates={"board": f"green-{index}"},
+                company_hint=f"Green {index}",
+            )
+            for index in range(5)
+        ],
+        *[
+            ProductionTarget(
+                source="smartrecruiters",
+                target_identity=f"smartrecruiters:smart-{index}",
+                coordinates={"board": f"smart-{index}"},
+                company_hint=f"Smart {index}",
+            )
+            for index in range(7)
+        ],
+    ]
+    registry = ProductionSourceRegistry(
+        registry_id="small-greenhouse-smartrecruiters",
+        targets=sorted(targets, key=lambda target: target.target_identity),
+        target_counts_by_source={"greenhouse": 5, "smartrecruiters": 7},
+        health_evidence_sha256="a" * 64,
+    )
+
+    limits = inventory_refresh.default_refresh_limits(registry)
+
+    assert limits == {"greenhouse": 5, "smartrecruiters": 7}
+    plan, subset, _manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=0,
+        limits=limits,
+    )
+    assert plan.total_targets == 12
+    assert subset.target_counts_by_source == limits
+
+
 def test_dynamic_smartrecruiters_rotation_stays_inside_24_hour_window():
     from job_scout.production_registry import ProductionTarget
 
