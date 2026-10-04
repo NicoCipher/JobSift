@@ -87,6 +87,14 @@ test("read-only capabilities expose no mutation controls and URLs keep their kin
     ).toHaveCount(0);
   }
 });
+test("operations control fails closed without server command credentials", async ({ page }) => {
+  await page.goto("/operations");
+  await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Production control plane" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run refresh" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Apply control" })).toBeDisabled();
+});
+
 test("partial run is data, not a service failure; missing and zero are explicit", async ({
   page,
 }) => {
@@ -128,6 +136,7 @@ test("all routes render one main heading and no browser errors", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   for (const route of [
     "/dashboard",
+    "/operations",
     "/jobs",
     "/review",
     "/briefs",
