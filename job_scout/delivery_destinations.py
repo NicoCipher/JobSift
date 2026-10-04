@@ -421,6 +421,42 @@ class ClientSheetDestinationStore:
             ) from error
         return value
 
+    def enable_verified(
+        self,
+        client_id: str,
+        destination_id: str,
+        *,
+        gateway: SheetMetadataGateway,
+    ) -> ClientSheetDestination:
+        """Re-enable only the exact registered worksheet after verifying stable identity/schema."""
+        current = self.get(client_id, destination_id, require_ready=False)
+        metadata = gateway.sheet_metadata(current.spreadsheet_id)
+        matches = [
+            item
+            for item in metadata
+            if item.get("sheet_id") == current.sheet_id
+        ]
+        if len(matches) != 1:
+            raise BatchConflict("registered Google Sheet tab no longer exists")
+        if matches[0].get("title") != current.tab_name:
+            raise BatchConflict(
+                "Google Sheet tab was renamed; refresh the destination registration"
+            )
+        rows = gateway.read_rows(current.spreadsheet_id, current.tab_name)
+        if not rows or tuple(str(value) for value in rows[0]) != current.header:
+            raise BatchConflict(
+                "Google Sheets header differs from the registered client schema"
+            )
+        now = datetime.now(UTC)
+        with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "UPDATE client_sheet_destinations SET status='ready',updated_at=? "
+                "WHERE client_id=? AND destination_id=?",
+                (now.isoformat(), client_id, destination_id),
+            )
+        return current.model_copy(update={"status": "ready", "updated_at": now})
+
     def disable(self, client_id: str, destination_id: str) -> ClientSheetDestination:
         current = self.get(client_id, destination_id, require_ready=False)
         now = datetime.now(UTC)
