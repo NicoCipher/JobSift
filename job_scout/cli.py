@@ -490,6 +490,8 @@ def main() -> None:
                 )
             elif command == "sheet-enable":
                 profile = _profile_for_control_id()
+                if profile.status != "paused":
+                    profile = store.update_controls(profile, status="paused")
                 destination = ClientSheetDestinationStore(repository).enable_verified(
                     profile.client_id,
                     profile.destination_id,
