@@ -112,7 +112,7 @@ class SourceDiscoveryStore:
             connection.executescript(SOURCE_DISCOVERY_SCHEMA)
 
     def get_cursor(self, *, discovery_source: str, query_id: str) -> dict[str, Any] | None:
-        with self.repository.connect(push=False) as connection:
+        with self.repository.connect() as connection:
             row = connection.execute(
                 "SELECT crawl_id,page,pages,updated_at FROM source_discovery_cursors "
                 "WHERE discovery_source=? AND query_id=?",
@@ -298,7 +298,7 @@ class SourceDiscoveryStore:
         if limit < 1:
             raise ValueError("health candidate limit must be positive")
         current = _aware(now).isoformat()
-        with self.repository.connect(push=False) as connection:
+        with self.repository.connect() as connection:
             rows = connection.execute(
                 "SELECT target_identity,source,coordinates_json,company_hint,"
                 "latest_health_classification,latest_health_checked_at "
@@ -435,7 +435,7 @@ class SourceDiscoveryStore:
         if max_health_age_hours < 1:
             raise ValueError("admission health age must be positive")
         cutoff = (_aware(now) - timedelta(hours=max_health_age_hours)).isoformat()
-        with self.repository.connect(push=False) as connection:
+        with self.repository.connect() as connection:
             rows = connection.execute(
                 "SELECT target_identity,source,coordinates_json,company_hint,"
                 "health_current_postings,health_inventory_exact,"
@@ -492,7 +492,7 @@ class SourceDiscoveryStore:
             now=now,
             max_health_age_hours=max_health_age_hours,
         )
-        with self.repository.connect(push=False) as connection:
+        with self.repository.connect() as connection:
             total = connection.execute(
                 "SELECT COUNT(*) FROM source_discovery_targets"
             ).fetchone()[0]
