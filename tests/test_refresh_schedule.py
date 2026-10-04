@@ -50,3 +50,17 @@ def test_schedule_rejects_completion_gaps(tmp_path):
 
     with pytest.raises(ValueError, match="must be contiguous"):
         store.mark_completed(cohort=cohort + 2, completed_at=start + timedelta(hours=2))
+
+
+def test_first_failed_cohort_is_not_skipped_when_clock_advances(tmp_path):
+    repository = SQLiteRepository(tmp_path / "first-failure.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    first_at = datetime(2026, 10, 4, 4, 17, tzinfo=UTC)
+
+    first = store.next_due(now=first_at)
+    next_hour = store.next_due(now=first_at + timedelta(hours=1, minutes=5))
+
+    assert first.should_run is True
+    assert next_hour.should_run is True
+    assert next_hour.cohort == first.cohort
+    assert next_hour.current_cohort == first.current_cohort + 1
