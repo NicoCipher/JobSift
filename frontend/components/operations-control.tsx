@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
 type Run = {
   id: number;
@@ -194,6 +195,35 @@ export function OperationsControl() {
         )}
         {statusError ? <div className="error">{statusError}</div> : null}
         {message ? <p className="control-message">{message}</p> : null}
+      </section>
+
+      <section className="section-block">
+        <h2>Scheduled inventory</h2>
+        <p>
+          Pausing disables future GitHub schedule triggers without changing the durable
+          logical-cohort cursor. Resuming lets the scheduler catch up oldest-first.
+          A run already in progress is not cancelled.
+        </p>
+        <div className="control-actions">
+          <button
+            type="button"
+            disabled={busy || !status?.control_ready || status?.inventory.state !== "active"}
+            onClick={() => {
+              if (window.confirm("Pause scheduled inventory refreshes?")) {
+                void send({ command: "inventory-schedule-pause" });
+              }
+            }}
+          >
+            Pause schedule
+          </button>
+          <button
+            type="button"
+            disabled={busy || !status?.control_ready || status?.inventory.state === "active"}
+            onClick={() => void send({ command: "inventory-schedule-resume" })}
+          >
+            Resume schedule
+          </button>
+        </div>
       </section>
 
       <section className="section-block">
