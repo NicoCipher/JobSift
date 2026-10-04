@@ -13,7 +13,7 @@ from job_scout.delivery_profiles import (
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.live_runner import LiveRunnerConfig, run_once
 from job_scout.sourcing_plan import load_sourcing_plan
-from job_scout.storage.factory import create_repository
+from job_scout.storage.factory import create_repository as SQLiteRepository
 
 
 def resolve_plan(plan_dir: Path, plan_id: str) -> Path:
@@ -79,7 +79,7 @@ def run_active_profiles(
     retention_hours: int = 72,
     control_id: str | None = None,
 ) -> list[dict[str, object]]:
-    repository = create_repository(database_path)
+    repository = SQLiteRepository(database_path)
     profile_store = ClientDeliveryProfileStore(repository)
     if control_id is None:
         profiles = profile_store.active()
