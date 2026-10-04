@@ -39,19 +39,60 @@ function invalid(message: string) {
   );
 }
 
-async function dispatch(workflow: string, inputs: Record<string, string>) {
-  const token = process.env.JOBSIFT_GITHUB_TOKEN?.trim();
-  if (!token) {
+function githubToken() {
+  return process.env.JOBSIFT_GITHUB_TOKEN?.trim() ?? "";
+}
+
+function controlUnavailable() {
+  return NextResponse.json(
+    {
+      error: {
+        code: "CONTROL_NOT_CONFIGURED",
+        message: "Production controls are not configured on this deployment.",
+      },
+    },
+    { status: 503, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+async function setWorkflowState(enabled: boolean) {
+  const token = githubToken();
+  if (!token) return controlUnavailable();
+  const action = enabled ? "enable" : "disable";
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(inventoryWorkflow)}/${action}`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "JobSift-operator-control",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    },
+  );
+  if (response.status !== 204) {
     return NextResponse.json(
       {
         error: {
-          code: "CONTROL_NOT_CONFIGURED",
-          message: "Production controls are not configured on this deployment.",
+          code: "CONTROL_DISPATCH_FAILED",
+          message: `GitHub did not ${action} the inventory workflow.`,
         },
       },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     );
   }
+  return NextResponse.json(
+    { data: { accepted: true, action } },
+    { status: 202, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+async function dispatch(workflow: string, inputs: Record<string, string>) {
+  const token = githubToken();
+  if (!token) return controlUnavailable();
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,
     {
@@ -80,7 +121,7 @@ async function dispatch(workflow: string, inputs: Record<string, string>) {
     );
   }
   return NextResponse.json(
-    { data: { accepted: true, workflow, inputs } },
+    { data: { accepted: true, workflow } },
     { status: 202, headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -104,6 +145,9 @@ export async function POST(request: NextRequest) {
   }
 
   const command = clean(body.command, 40);
+  if (command === "inventory-schedule-pause") return setWorkflowState(false);
+  if (command === "inventory-schedule-resume") return setWorkflowState(true);
+
   if (command === "inventory-refresh") {
     const targets = clean(body.workday_targets, 4);
     const concurrency = clean(body.workday_detail_concurrency, 2);
@@ -126,8 +170,8 @@ export async function POST(request: NextRequest) {
     const mode = clean(body.delivery_mode, 16);
     const timezone = clean(body.timezone, 80);
 
-    if (!["list"].includes(operation) && !profileId) {
-      return invalid("A delivery profile ID is required.");
+    if (!["list"].includes(operation) && !/^[0-9a-f]{16}$/.test(profileId)) {
+      return invalid("A valid opaque delivery profile ID is required.");
     }
     if (operation === "set-quota") {
       const parsed = Number(quota);
