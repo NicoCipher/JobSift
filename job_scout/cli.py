@@ -451,7 +451,9 @@ def main() -> None:
             elif command == "sheet-check":
                 profile = _profile_for_control_id()
                 reconciliation = store.reconcile_destination_sheet(
-                    profile, gateway=GoogleSheetsGateway()
+                    profile,
+                    gateway=GoogleSheetsGateway(),
+                    require_ready=False,
                 )
                 destination = ClientSheetDestinationStore(repository).get(
                     profile.client_id, profile.destination_id, require_ready=False
