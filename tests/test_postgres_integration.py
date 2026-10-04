@@ -7,6 +7,7 @@ import pytest
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.migrate_to_postgres import migrate
@@ -259,3 +260,63 @@ def test_verified_sqlite_to_postgres_migration_preserves_rows_and_identity_seque
             ),
         ).fetchone()[0]
         assert next_id > 1
+
+
+def test_batch_review_reads_from_explicit_postgres_backend(repository, monkeypatch):
+    request = DailyBatchRequest(
+        client_id="postgres-review-client",
+        destination="postgres-review-destination",
+        idempotency_key="postgres-review-key",
+        requested_quota=1,
+        evidence_scope_id="postgres-review-scope",
+        evaluation_id="postgres-review-eval",
+        candidate_job_ids=(),
+        evidence_sha256="0" * 64,
+    )
+    counts = DailyBatchCounts(
+        candidate_postings=0,
+        match_eligible_postings=0,
+        needs_review_postings=0,
+        rejected_postings=0,
+        match_eligible_groups=0,
+        historically_suppressed_groups=0,
+        previously_delivered_groups=0,
+        duplicate_postings_collapsed=0,
+        fresh_eligible_groups=0,
+        selected_groups=0,
+    )
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,generation_id,client_id,destination,idempotency_key,"
+            "requested_quota,selected_count,shortfall,status,assembled_at,"
+            "request_json,counts_json,dedupe_version) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "postgres-review-batch",
+                "postgres-review-generation",
+                request.client_id,
+                request.destination,
+                request.idempotency_key,
+                1,
+                0,
+                1,
+                "prepared",
+                "2026-10-04T09:00:00+00:00",
+                request.model_dump_json(),
+                counts.model_dump_json(),
+                "test-dedupe",
+            ),
+        )
+
+    monkeypatch.setenv("JOBSIFT_PERSISTENCE_BACKEND", "postgres")
+    monkeypatch.setenv("NEON_DATABASE_URL", POSTGRES_URL)
+    result, rows = DailyBatchStore.review_readonly(
+        "/tmp/should-not-be-opened.sqlite3",
+        "postgres-review-batch",
+    )
+
+    assert result.batch_id == "postgres-review-batch"
+    assert result.status == "prepared"
+    assert result.selected_count == 0
+    assert rows == []
