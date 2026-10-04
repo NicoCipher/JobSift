@@ -215,7 +215,7 @@ class SQLiteRepository:
             )
 
     @contextmanager
-    def connect(self, *, push: bool = True) -> Iterator[sqlite3.Connection]:
+    def connect(self) -> Iterator[sqlite3.Connection]:
         connection = None
         try:
             if self.remote_url:
@@ -223,11 +223,6 @@ class SQLiteRepository:
                     self.path,
                     remote_url=self.remote_url,
                     auth_token=self.auth_token,
-                    partial_sync_experimental=self._turso_sync.PartialSyncOpts(
-                        bootstrap_strategy=self._turso_sync.PartialSyncPrefixBootstrap(
-                            length=128 * 1024
-                        ),
-                    ),
                 )
             else:
                 connection = sqlite3.connect(self.path)
@@ -235,7 +230,7 @@ class SQLiteRepository:
             connection.execute("PRAGMA foreign_keys = ON")
             yield connection
             connection.commit()
-            if self.remote_url and push:
+            if self.remote_url:
                 connection.push()
         except self._turso_error as error:
             raise sqlite3.DatabaseError(str(error)) from error
@@ -713,7 +708,7 @@ class SQLiteRepository:
         )
 
     def delivery_group_id(self, job_id: str) -> str:
-        with self.connect(push=False) as connection:
+        with self.connect() as connection:
             row = connection.execute(
                 "SELECT group_id FROM posting_delivery_groups WHERE job_id=?", (job_id,)
             ).fetchone()
@@ -723,7 +718,7 @@ class SQLiteRepository:
 
     def select_deliveries(self, jobs: list[Job], client_id: str, destination: str) -> list[Job]:
         representatives: dict[str, Job] = {}
-        with self.connect(push=False) as connection:
+        with self.connect() as connection:
             for job in sorted(jobs, key=representative_key):
                 group = connection.execute(
                     "SELECT group_id FROM posting_delivery_groups WHERE job_id=?", (job.id,)
@@ -748,7 +743,7 @@ class SQLiteRepository:
         client_id: str,
         destination: str | None = None,
     ) -> bool:
-        with self.connect(push=False) as connection:
+        with self.connect() as connection:
             return self._is_historically_surfaced(
                 connection, job, client_id, destination
             )
@@ -971,7 +966,7 @@ class SQLiteRepository:
         return len(values)
 
     def is_exported(self, job_id: str, client_id: str, destination: str) -> bool:
-        with self.connect(push=False) as connection:
+        with self.connect() as connection:
             return (
                 connection.execute(
                     "SELECT 1 FROM group_deliveries d JOIN posting_delivery_groups g "
