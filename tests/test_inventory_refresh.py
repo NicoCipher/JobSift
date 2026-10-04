@@ -421,10 +421,43 @@ def test_live_refresh_delivers_before_retention_cleanup():
 
     fan_in = workflow.index("python -m job_scout.inventory_refresh fan-in")
     deliver = workflow.index("Deliver to active client profiles")
+    complete = workflow.index("Mark scheduled cohort complete")
+    prune_step = workflow.index("Prune stale inventory")
     prune = workflow.index("python -m job_scout.inventory_refresh prune")
 
     assert "--skip-retention" in workflow[fan_in:deliver]
-    assert fan_in < deliver < prune
+    assert fan_in < deliver < complete < prune
+    assert "if: ${{ always() }}" in workflow[prune_step:prune]
+
+
+def test_live_refresh_workflow_enforces_logical_scheduler_contract():
+    workflow = Path(".github/workflows/refresh-live-inventory.yml").read_text(
+        encoding="utf-8"
+    )
+
+    resolver = workflow.index("Resolve logical refresh cohort")
+    build = workflow.index("Build rotating refresh cohort")
+    collect = workflow.index("  collect:")
+    persist = workflow.index("  persist-and-deliver:")
+    complete = workflow.index("Mark scheduled cohort complete")
+    prune = workflow.index("Prune stale inventory")
+
+    scheduler_block = workflow[resolver:build]
+    completion_block = workflow[complete:prune]
+
+    assert '- cron: "2,17,32,47 * * * *"' in workflow
+    assert workflow.count("group: jobsift-live-inventory-refresh") == 1
+    assert "python -m job_scout.inventory_refresh schedule-next" in scheduler_block
+    assert "--output refresh-plan/schedule.json" in scheduler_block
+    assert 'trigger": "workflow_dispatch"' in scheduler_block
+    assert "cohort=$(( $(date -u +%s) / 3600 ))" in scheduler_block
+    assert "matrix='{\"include\":[]}'" in workflow
+    assert "if: ${{ needs.plan.outputs.should_run == 'true' }}" in workflow[collect:persist]
+    assert "needs.plan.outputs.should_run == 'true'" in workflow[persist:complete]
+    assert "if: ${{ github.event_name == 'schedule' }}" in completion_block
+    assert '--cohort "${{ needs.plan.outputs.cohort }}"' in completion_block
+    assert "--fan-in-report refresh-result/report.json" in completion_block
+    assert "schedule-complete" not in scheduler_block
 
 
 def test_profile_mutation_workflows_queue_all_pending_changes():
