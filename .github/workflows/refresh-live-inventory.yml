@@ -23,11 +23,6 @@ on:
           - "4"
           - "6"
           - "8"
-  schedule:
-    # GitHub scheduled workflows are best-effort. Four staggered trigger
-    # opportunities per hour let the persistent logical scheduler recover
-    # delayed/dropped events without processing an hour twice.
-    - cron: "2,17,32,47 * * * *"
 
 permissions:
   contents: read
