@@ -385,14 +385,12 @@ def test_retryable_previously_admitted_target_precedes_unchecked_backlog(
         (
             retryable,
             "20261003120000",
-            "https://jobs.smartrecruiters.com/ServiceNow/"
-            "744000148862459-software-engineer",
+            "https://jobs.smartrecruiters.com/ServiceNow/744000148862459-software-engineer",
         ),
         (
             unchecked,
             "20261003120100",
-            "https://jobs.smartrecruiters.com/Visa/"
-            "744000112644773-senior-software-engineer",
+            "https://jobs.smartrecruiters.com/Visa/744000112644773-senior-software-engineer",
         ),
     ):
         store.observe_candidate(
