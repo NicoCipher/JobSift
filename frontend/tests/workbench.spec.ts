@@ -185,8 +185,8 @@ test("client Sheet selectors hide raw control IDs and dispatch the opaque profil
   });
 
   await page.goto("/operations");
-  const deliveryProfile = page.getByLabel("Delivery profile");
-  const clientSheet = page.getByLabel("Client Sheet");
+  const deliveryProfile = page.getByRole("combobox", { name: "Delivery profile", exact: true });
+  const clientSheet = page.getByRole("combobox", { name: "Client Sheet", exact: true });
   await expect(deliveryProfile).toHaveValue("ad763a0336d92204");
   await expect(clientSheet).toHaveValue("ad763a0336d92204");
   await expect(deliveryProfile.locator("option").first()).toHaveText(
