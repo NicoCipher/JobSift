@@ -31,6 +31,7 @@ from job_scout.shard_collection import (
 )
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.inventory_runs import InventoryRunStore
+from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
@@ -819,8 +820,45 @@ def main() -> None:
     prune.add_argument("--output", type=Path, required=True)
     prune.add_argument("--retention-hours", type=int, default=72)
 
+    schedule_next = commands.add_parser("schedule-next")
+    schedule_next.add_argument("--database", type=Path, required=True)
+    schedule_next.add_argument("--output", type=Path, required=True)
+
+    schedule_complete = commands.add_parser("schedule-complete")
+    schedule_complete.add_argument("--database", type=Path, required=True)
+    schedule_complete.add_argument("--cohort", type=int, required=True)
+    schedule_complete.add_argument("--output", type=Path, required=True)
+
     args = parser.parse_args()
     try:
+        if args.command == "schedule-next":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            decision = InventoryRefreshScheduleStore(repository).next_due()
+            payload = {
+                "should_run": decision.should_run,
+                "cohort": decision.cohort,
+                "current_cohort": decision.current_cohort,
+                "last_completed_cohort": decision.last_completed_cohort,
+            }
+            _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
+            return
+
+        if args.command == "schedule-complete":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            store = InventoryRefreshScheduleStore(repository)
+            changed = store.mark_completed(cohort=args.cohort)
+            payload = {
+                "cohort": args.cohort,
+                "marked_completed": changed,
+                "last_completed_cohort": store.next_due().last_completed_cohort,
+            }
+            _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
+            return
+
         if args.command == "plan":
             registry = load_production_registry(args.registry)
             limits = default_refresh_limits(
