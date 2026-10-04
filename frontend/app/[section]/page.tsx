@@ -1,10 +1,18 @@
 import Link from "next/link";
+import { createHash } from "node:crypto";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api/client";
 import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
 import { PresentationSettings } from "@/components/preferences";
 import { OperationsControl } from "@/components/operations-control";
+function deliveryProfileControlId(clientId: string, destinationId: string) {
+  return createHash("sha256")
+    .update(`jobsift-delivery-profile-v1\0${clientId}\0${destinationId}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
 const titles: Record<string, string> = {
   dashboard: "Dashboard",
   operations: "Operations",
@@ -39,9 +47,38 @@ export default async function SectionPage({
   const session = await api.getSession();
   const clientId = session.data.client_scopes[0].client_id;
   let content: React.ReactNode;
-  if (section === "operations")
-    content = <OperationsControl />;
-  else if (section === "settings")
+  if (section === "operations") {
+    const clients = await Promise.all(
+      session.data.client_scopes.map(async (scope) => {
+        try {
+          return await api.getClient(scope.client_id);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const catalogueIncomplete = clients.some((client) => client === null);
+    const profiles = clients.flatMap((response) =>
+      response
+        ? response.data.destinations.map((destination) => ({
+            profile_id: deliveryProfileControlId(
+              response.data.client_id,
+              destination.destination_id,
+            ),
+            client_id: response.data.client_id,
+            client_name: response.data.display_name,
+            destination_id: destination.destination_id,
+            destination_name: destination.display_name,
+          }))
+        : [],
+    );
+    content = (
+      <OperationsControl
+        profiles={profiles}
+        catalogueIncomplete={catalogueIncomplete}
+      />
+    );
+  } else if (section === "settings")
     content = (
       <section className="section-block reading">
         <h2>Presentation</h2>

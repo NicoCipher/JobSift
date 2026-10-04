@@ -159,7 +159,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
   expect(crossOrigin.status()).toBe(403);
 });
 
-test("destructive controls name their exact profile, batch, and consequence", async ({ page }) => {
+test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -173,7 +173,10 @@ test("destructive controls name their exact profile, batch, and consequence", as
       }),
     });
   });
+
+  const dispatched: Record<string, unknown>[] = [];
   await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
     await route.fulfill({
       status: 202,
       contentType: "application/json",
@@ -182,24 +185,60 @@ test("destructive controls name their exact profile, batch, and consequence", as
   });
 
   await page.goto("/operations");
+  const deliveryProfile = page.getByRole("combobox", { name: "Delivery profile", exact: true });
+  const clientSheet = page.getByRole("combobox", { name: "Client Sheet", exact: true });
+  await expect(deliveryProfile).toHaveValue("ad763a0336d92204");
+  await expect(clientSheet).toHaveValue("ad763a0336d92204");
+  await expect(deliveryProfile.locator("option").first()).toHaveText(
+    "Example client — Example delivery destination",
+  );
+
   const dialogs: string[] = [];
   page.on("dialog", async (dialog) => {
     dialogs.push(dialog.message());
-    await dialog.dismiss();
+    await dialog.accept();
   });
 
-  await page.getByLabel("Delivery profile ID").fill("0123456789abcdef");
   await page.getByRole("combobox", { name: "Operation" }).selectOption("pause");
   await page.getByRole("button", { name: "Apply control" }).click();
   await expect.poll(() => dialogs.length).toBe(1);
-  expect(dialogs[0]).toContain("0123456789abcdef");
-  expect(dialogs[0]).toContain("New deliveries");
+  expect(dialogs[0]).toContain("Example client — Example delivery destination");
+  expect(dialogs[0]).toContain("ad763a0336d92204");
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
+  expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
+  expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
 
-  await page.getByLabel("Sheet profile ID").fill("fedcba9876543210");
-  await page.getByRole("button", { name: "Disable Sheet" }).click();
-  await expect.poll(() => dialogs.length).toBe(2);
-  expect(dialogs[1]).toContain("fedcba9876543210");
-  expect(dialogs[1]).toContain("blocks new deliveries");
+  const sheetSection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Client Sheets" }) });
+  await sheetSection.getByRole("combobox", { name: "Sheet target" }).selectOption("manual");
+  await sheetSection.getByLabel("Sheet profile ID").fill("0123456789abcdef");
+  await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
+  await expect.poll(() => dispatched.length).toBe(2);
+  expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
+
+  await sheetSection.getByRole("combobox", { name: "Sheet target" }).selectOption("listed");
+  await expect(sheetSection.getByLabel("Sheet profile ID")).toHaveCount(0);
+  await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
+  await expect.poll(() => dispatched.length).toBe(3);
+  expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
+
+  const deliverySection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Client delivery control" }) });
+  await deliverySection.getByRole("combobox", { name: "Delivery target" }).selectOption("manual");
+  await deliverySection.getByLabel("Delivery profile ID").fill("fedcba9876543210");
+  await deliverySection.getByRole("combobox", { name: "Operation" }).selectOption("set-quota");
+  await deliverySection.getByRole("button", { name: "Apply control" }).click();
+  await expect.poll(() => dispatched.length).toBe(4);
+  expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
+
+  await deliverySection.getByRole("combobox", { name: "Delivery target" }).selectOption("listed");
+  await expect(deliverySection.getByLabel("Delivery profile ID")).toHaveCount(0);
+  await deliverySection.getByRole("button", { name: "Apply control" }).click();
+  await expect.poll(() => dispatched.length).toBe(5);
+  expect(dispatched[4]?.profile_id).toBe("ad763a0336d92204");
 });
 
 test("partial run is data, not a service failure; missing and zero are explicit", async ({

@@ -30,6 +30,20 @@ type ControlStatus = {
 
 type ApiError = { error?: { message?: string } };
 
+export type ManagedProfile = {
+  profile_id: string;
+  client_id: string;
+  client_name: string;
+  destination_id: string;
+  destination_name: string;
+};
+
+type TargetMode = "listed" | "manual";
+
+function validProfileId(value: string) {
+  return /^[0-9a-f]{16}$/.test(value);
+}
+
 async function readJson(response: Response) {
   const body = (await response.json()) as ApiError & { data?: unknown };
   if (!response.ok) throw new Error(body.error?.message ?? "JobSift control request failed.");
@@ -45,15 +59,21 @@ function shortSha(value: string) {
   return value.slice(0, 8);
 }
 
-function deliveryConfirmation(operation: string, profileId: string, batchId: string) {
+function deliveryConfirmation(
+  operation: string,
+  profileId: string,
+  profileLabel: string,
+  batchId: string,
+) {
+  const target = `${profileLabel} (${profileId})`;
   if (operation === "pause") {
-    return `Pause delivery profile ${profileId}? New deliveries for this profile will stop until you resume it.`;
+    return `Pause ${target}? New deliveries for this profile will stop until you resume it.`;
   }
   if (operation === "release-batch") {
-    return `Release batch ${batchId} for profile ${profileId}? This publishes the reviewed batch to the client's registered Sheet and counts it toward today's quota.`;
+    return `Release batch ${batchId} for ${target}? This publishes the reviewed batch to the client's registered Sheet and counts it toward today's quota.`;
   }
   if (operation === "discard-batch") {
-    return `Discard batch ${batchId} for profile ${profileId}? This permanently removes the unpublished prepared batch.`;
+    return `Discard batch ${batchId} for ${target}? This permanently removes the unpublished prepared batch.`;
   }
   return null;
 }
@@ -118,11 +138,26 @@ function WorkflowRuns({
   );
 }
 
-export function OperationsControl() {
+export function OperationsControl({
+  profiles,
+  catalogueIncomplete = false,
+}: {
+  profiles: ManagedProfile[];
+  catalogueIncomplete?: boolean;
+}) {
   const [status, setStatus] = useState<ControlStatus | null>(null);
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
+    profiles.length ? "listed" : "manual",
+  );
+  const [deliveryTargetMode, setDeliveryTargetMode] = useState<TargetMode>(
+    profiles.length ? "listed" : "manual",
+  );
+  const [deliveryOperation, setDeliveryOperation] = useState("status");
+  const [sheetProfileOverride, setSheetProfileOverride] = useState("");
+  const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
 
   const loadStatus = useCallback(async () => {
     try {
@@ -186,9 +221,40 @@ export function OperationsControl() {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const operation = String(data.get("operation") ?? "status");
-    const profileId = String(data.get("profile_id") ?? "").trim();
+    const selectedProfileId = String(data.get("profile_id") ?? "").trim();
+    const overrideProfileId = String(
+      data.get("profile_id_override") ?? "",
+    ).trim();
+    if (
+      operation !== "list" &&
+      deliveryTargetMode === "manual" &&
+      !validProfileId(overrideProfileId)
+    ) {
+      setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
+      return;
+    }
+    const profileId =
+      operation === "list"
+        ? ""
+        : deliveryTargetMode === "manual"
+          ? overrideProfileId
+          : selectedProfileId;
+    if (operation !== "list" && !validProfileId(profileId)) {
+      setMessage("Choose a listed delivery profile or enter a valid profile ID.");
+      return;
+    }
     const batchId = String(data.get("batch_id") ?? "").trim();
-    const confirmation = deliveryConfirmation(operation, profileId, batchId);
+    const profileSelect = event.currentTarget.elements.namedItem("profile_id") as HTMLSelectElement | null;
+    const profileLabel =
+      deliveryTargetMode === "manual"
+        ? "Manual delivery profile"
+        : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
+    const confirmation = deliveryConfirmation(
+      operation,
+      profileId,
+      profileLabel,
+      batchId,
+    );
     if (confirmation && !window.confirm(confirmation)) return;
     await send({
       command: "client-control",
@@ -206,11 +272,33 @@ export function OperationsControl() {
     const data = new FormData(event.currentTarget);
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const operation = submitter?.value ?? "sheet-check";
-    const profileId = String(data.get("sheet_profile_id") ?? "").trim();
+    const selectedProfileId = String(
+      data.get("sheet_profile_id") ?? "",
+    ).trim();
+    const overrideProfileId = String(
+      data.get("sheet_profile_id_override") ?? "",
+    ).trim();
+    if (sheetTargetMode === "manual" && !validProfileId(overrideProfileId)) {
+      setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
+      return;
+    }
+    const profileId =
+      sheetTargetMode === "manual" ? overrideProfileId : selectedProfileId;
+    if (!validProfileId(profileId)) {
+      setMessage("Choose a listed client Sheet or enter a valid profile ID.");
+      return;
+    }
+    const profileSelect = event.currentTarget.elements.namedItem(
+      "sheet_profile_id",
+    ) as HTMLSelectElement | null;
+    const profileLabel =
+      sheetTargetMode === "manual"
+        ? "Manual delivery profile"
+        : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     if (
       operation === "sheet-disable" &&
       !window.confirm(
-        `Disable the client Sheet for profile ${profileId}? This pauses the profile and blocks new deliveries until the Sheet is verified, re-enabled, and the profile is resumed.`,
+        `Disable ${profileLabel} (${profileId})? This pauses the profile and blocks new deliveries until the Sheet is verified, re-enabled, and the profile is resumed.`,
       )
     ) {
       return;
@@ -321,34 +409,103 @@ export function OperationsControl() {
           the exact stored worksheet identity and header first; the profile remains paused
           until you explicitly resume it.
         </p>
+        {profiles.length === 0 ? (
+          <div className="notice">
+            No listed client Sheets are available. Use the profile-ID target mode for an existing production profile.
+          </div>
+        ) : catalogueIncomplete ? (
+          <div className="notice">
+            Some client catalogue data could not be loaded. Listed targets may be incomplete; the profile-ID target mode remains available.
+          </div>
+        ) : null}
         <form className="control-form" onSubmit={submitSheetControl}>
           <label>
-            Sheet profile ID
-            <input
-              name="sheet_profile_id"
-              autoComplete="off"
-              placeholder="Opaque profile ID"
+            Sheet target
+            <select
+              value={sheetTargetMode}
+              onChange={(event) => {
+                const mode = event.target.value as TargetMode;
+                setSheetTargetMode(mode);
+                if (mode === "listed") setSheetProfileOverride("");
+              }}
               disabled={busy || !status?.control_ready}
-            />
+            >
+              <option value="listed" disabled={profiles.length === 0}>
+                Listed client Sheet
+              </option>
+              <option value="manual">Profile ID</option>
+            </select>
           </label>
+          {sheetTargetMode === "listed" ? (
+            <label>
+              Client Sheet
+              <select
+                name="sheet_profile_id"
+                defaultValue={profiles[0]?.profile_id ?? ""}
+                disabled={busy || !status?.control_ready || profiles.length === 0}
+              >
+                {profiles.length === 0 ? (
+                  <option value="">No listed client Sheets</option>
+                ) : (
+                  profiles.map((profile) => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.client_name} — {profile.destination_name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          ) : (
+            <label>
+              Sheet profile ID
+              <input
+                name="sheet_profile_id_override"
+                value={sheetProfileOverride}
+                onChange={(event) => setSheetProfileOverride(event.target.value)}
+                autoComplete="off"
+                inputMode="text"
+                pattern="[0-9a-f]{16}"
+                placeholder="16-character profile ID"
+                disabled={busy || !status?.control_ready}
+              />
+            </label>
+          )}
           <button
             type="submit"
             value="sheet-check"
-            disabled={busy || !status?.control_ready}
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (sheetTargetMode === "listed"
+                ? profiles.length === 0
+                : !validProfileId(sheetProfileOverride.trim()))
+            }
           >
             Check Sheet
           </button>
           <button
             type="submit"
             value="sheet-disable"
-            disabled={busy || !status?.control_ready}
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (sheetTargetMode === "listed"
+                ? profiles.length === 0
+                : !validProfileId(sheetProfileOverride.trim()))
+            }
           >
             Disable Sheet
           </button>
           <button
             type="submit"
             value="sheet-enable"
-            disabled={busy || !status?.control_ready}
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (sheetTargetMode === "listed"
+                ? profiles.length === 0
+                : !validProfileId(sheetProfileOverride.trim()))
+            }
           >
             Re-enable Sheet
           </button>
@@ -364,7 +521,12 @@ export function OperationsControl() {
         <form className="control-form control-form-wide" onSubmit={submitDelivery}>
           <label>
             Operation
-            <select name="operation" defaultValue="status" disabled={busy || !status?.control_ready}>
+            <select
+              name="operation"
+              value={deliveryOperation}
+              onChange={(event) => setDeliveryOperation(event.target.value)}
+              disabled={busy || !status?.control_ready}
+            >
               <option value="list">List profiles</option>
               <option value="status">Profile status</option>
               <option value="pause">Pause profile</option>
@@ -378,14 +540,61 @@ export function OperationsControl() {
             </select>
           </label>
           <label>
-            Delivery profile ID
-            <input
-              name="profile_id"
-              autoComplete="off"
-              placeholder="Opaque profile ID"
-              disabled={busy || !status?.control_ready}
-            />
+            Delivery target
+            <select
+              value={deliveryTargetMode}
+              onChange={(event) => {
+                const mode = event.target.value as TargetMode;
+                setDeliveryTargetMode(mode);
+                if (mode === "listed") setDeliveryProfileOverride("");
+              }}
+              disabled={busy || !status?.control_ready || deliveryOperation === "list"}
+            >
+              <option value="listed" disabled={profiles.length === 0}>
+                Listed delivery profile
+              </option>
+              <option value="manual">Profile ID</option>
+            </select>
           </label>
+          {deliveryTargetMode === "listed" ? (
+            <label>
+              Delivery profile
+              <select
+                name="profile_id"
+                defaultValue={profiles[0]?.profile_id ?? ""}
+                disabled={
+                  busy ||
+                  !status?.control_ready ||
+                  profiles.length === 0 ||
+                  deliveryOperation === "list"
+                }
+              >
+                {profiles.length === 0 ? (
+                  <option value="">No listed delivery profiles</option>
+                ) : (
+                  profiles.map((profile) => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.client_name} — {profile.destination_name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          ) : (
+            <label>
+              Delivery profile ID
+              <input
+                name="profile_id_override"
+                value={deliveryProfileOverride}
+                onChange={(event) => setDeliveryProfileOverride(event.target.value)}
+                autoComplete="off"
+                inputMode="text"
+                pattern="[0-9a-f]{16}"
+                placeholder="16-character profile ID"
+                disabled={busy || !status?.control_ready || deliveryOperation === "list"}
+              />
+            </label>
+          )}
           <label>
             Daily quota
             <input
@@ -422,7 +631,17 @@ export function OperationsControl() {
               disabled={busy || !status?.control_ready}
             />
           </label>
-          <button type="submit" disabled={busy || !status?.control_ready}>
+          <button
+            type="submit"
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (deliveryOperation !== "list" &&
+                (deliveryTargetMode === "listed"
+                  ? profiles.length === 0
+                  : !validProfileId(deliveryProfileOverride.trim())))
+            }
+          >
             {busy ? "Sending…" : "Apply control"}
           </button>
         </form>
