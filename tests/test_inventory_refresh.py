@@ -132,6 +132,127 @@ def test_fast_provider_rotation_covers_every_target_within_six_cohorts():
         )
 
 
+def test_oldest_due_selection_does_not_reset_when_registry_grows():
+    from job_scout.production_registry import ProductionTarget
+
+    base = inventory_refresh.load_production_registry(REGISTRY)
+    targets = [
+        ProductionTarget(
+            source="greenhouse",
+            target_identity=f"greenhouse:board-{index}",
+            coordinates={"board": f"board-{index}"},
+            company_hint=f"Board {index}",
+        )
+        for index in range(12)
+    ]
+    registry = base.model_copy(
+        update={
+            "registry_id": "history-aware-small",
+            "targets": sorted(targets, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"greenhouse": 12},
+        }
+    )
+    epoch = datetime(2026, 10, 1, tzinfo=UTC)
+    state = {
+        target.target_identity: {
+            "last_observed_at": None,
+            "first_discovered_at": epoch.isoformat(),
+        }
+        for target in registry.targets
+    }
+
+    first = inventory_refresh.history_aware_registry(
+        registry,
+        cohort=1,
+        limits={"greenhouse": 2},
+        selection_state=state,
+    )
+    first_ids = {target.target_identity for target in first.targets}
+    for target_identity in first_ids:
+        state[target_identity]["last_observed_at"] = datetime(
+            2026, 10, 4, 10, tzinfo=UTC
+        ).isoformat()
+
+    # Admit two newer boards. Their discovery time is later than every existing
+    # unobserved board, so registry growth must not reset the fairness window.
+    grown_targets = [
+        *registry.targets,
+        *[
+            ProductionTarget(
+                source="greenhouse",
+                target_identity=f"greenhouse:new-{index}",
+                coordinates={"board": f"new-{index}"},
+                company_hint=f"New {index}",
+            )
+            for index in range(2)
+        ],
+    ]
+    grown = registry.model_copy(
+        update={
+            "registry_id": "history-aware-grown",
+            "targets": sorted(grown_targets, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"greenhouse": 14},
+        }
+    )
+    for index in range(2):
+        state[f"greenhouse:new-{index}"] = {
+            "last_observed_at": None,
+            "first_discovered_at": datetime(
+                2026, 10, 4, 11, tzinfo=UTC
+            ).isoformat(),
+        }
+
+    second = inventory_refresh.history_aware_registry(
+        grown,
+        cohort=2,
+        limits={"greenhouse": 2},
+        selection_state=state,
+    )
+    second_ids = {target.target_identity for target in second.targets}
+
+    assert first_ids.isdisjoint(second_ids)
+    assert not any(target_identity.startswith("greenhouse:new-") for target_identity in second_ids)
+
+
+def test_scaled_shards_bound_serial_targets_per_worker():
+    from job_scout.production_registry import ProductionTarget
+
+    base = inventory_refresh.load_production_registry(REGISTRY)
+    smart = [
+        ProductionTarget(
+            source="smartrecruiters",
+            target_identity=f"smartrecruiters:smart{index}",
+            coordinates={"board": f"smart{index}"},
+            company_hint=f"Smart {index}",
+        )
+        for index in range(445)
+    ]
+    registry = base.model_copy(
+        update={
+            "registry_id": "smartrecruiters-shard-scale",
+            "targets": sorted(smart, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"smartrecruiters": 445},
+        }
+    )
+    limits = inventory_refresh.default_refresh_limits(registry)
+    plan, _subset, manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=3,
+        limits=limits,
+    )
+
+    assert limits["smartrecruiters"] == 75
+    assert plan.shard_counts_by_source["smartrecruiters"] == 8
+    smart_shards = [
+        shard for shard in manifest.shards if shard.source == "smartrecruiters"
+    ]
+    assert len(smart_shards) == 8
+    assert max(len(shard.target_identities) for shard in smart_shards) <= 10
+    assert max(len(shard.target_identities) for shard in smart_shards) <= (
+        inventory_refresh.MAX_TARGETS_PER_SHARD["smartrecruiters"]
+    )
+
+
 def test_default_rotation_proves_full_registry_coverage():
     registry = inventory_refresh.load_production_registry(REGISTRY)
     limits = inventory_refresh.default_refresh_limits(registry)
