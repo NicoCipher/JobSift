@@ -1,0 +1,56 @@
+name: Discover and Admit Live Sources
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 */3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-live-source-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover-and-admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift-source-discovery.sqlite3
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[cloud]'
+
+      - name: Validate persistent runtime
+        run: |
+          test -n "$TURSO_DATABASE_URL" || { echo "Missing TURSO_DATABASE_URL secret"; exit 1; }
+          test -n "$TURSO_AUTH_TOKEN" || { echo "Missing TURSO_AUTH_TOKEN secret"; exit 1; }
+
+      - name: Discover and health-gate ATS targets
+        run: |
+          mkdir -p source-discovery-result
+          python -m job_scout.source_discovery run \
+            --database "$JOBSIFT_DATABASE" \
+            --base-registry config/source_registries/production_active_v1.json \
+            --max-health-checks 300 \
+            --admission-max-age-hours 48 \
+            --output source-discovery-result/report.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jobsift-source-discovery-${{ github.run_id }}
+          path: source-discovery-result/
+          if-no-files-found: warn
+          retention-days: 14
