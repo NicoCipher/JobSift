@@ -1,0 +1,52 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
+from job_scout.storage.sqlite import SQLiteRepository
+
+
+def test_schedule_retries_unfinished_hour_and_noops_after_completion(tmp_path):
+    repository = SQLiteRepository(tmp_path / "schedule.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    now = datetime(2026, 10, 4, 4, 17, tzinfo=UTC)
+
+    first = store.next_due(now=now)
+    retry = store.next_due(now=now + timedelta(minutes=20))
+
+    assert first.should_run is True
+    assert first.cohort == store.cohort_for(now)
+    assert retry.cohort == first.cohort
+
+    assert store.mark_completed(cohort=first.cohort, completed_at=now) is True
+    assert store.mark_completed(cohort=first.cohort, completed_at=now) is False
+
+    done = store.next_due(now=now + timedelta(minutes=40))
+    assert done.should_run is False
+    assert done.cohort is None
+
+
+def test_schedule_catches_up_oldest_missed_hour_first(tmp_path):
+    repository = SQLiteRepository(tmp_path / "catchup.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    cohort = store.cohort_for(start)
+    store.mark_completed(cohort=cohort, completed_at=start)
+
+    later = start + timedelta(hours=4)
+    due = store.next_due(now=later)
+
+    assert due.current_cohort == cohort + 4
+    assert due.cohort == cohort + 1
+    assert due.should_run is True
+
+
+def test_schedule_rejects_completion_gaps(tmp_path):
+    repository = SQLiteRepository(tmp_path / "gap.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    cohort = store.cohort_for(start)
+    store.mark_completed(cohort=cohort, completed_at=start)
+
+    with pytest.raises(ValueError, match="must be contiguous"):
+        store.mark_completed(cohort=cohort + 2, completed_at=start + timedelta(hours=2))
