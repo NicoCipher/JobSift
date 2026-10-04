@@ -38,6 +38,12 @@ export type ManagedProfile = {
   destination_name: string;
 };
 
+type TargetMode = "listed" | "manual";
+
+function validProfileId(value: string) {
+  return /^[0-9a-f]{16}$/.test(value);
+}
+
 async function readJson(response: Response) {
   const body = (await response.json()) as ApiError & { data?: unknown };
   if (!response.ok) throw new Error(body.error?.message ?? "JobSift control request failed.");
@@ -132,11 +138,24 @@ function WorkflowRuns({
   );
 }
 
-export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) {
+export function OperationsControl({
+  profiles,
+  catalogueIncomplete = false,
+}: {
+  profiles: ManagedProfile[];
+  catalogueIncomplete?: boolean;
+}) {
   const [status, setStatus] = useState<ControlStatus | null>(null);
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
+    profiles.length ? "listed" : "manual",
+  );
+  const [deliveryTargetMode, setDeliveryTargetMode] = useState<TargetMode>(
+    profiles.length ? "listed" : "manual",
+  );
+  const [deliveryOperation, setDeliveryOperation] = useState("status");
   const [sheetProfileOverride, setSheetProfileOverride] = useState("");
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
 
@@ -206,16 +225,30 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
     const overrideProfileId = String(
       data.get("profile_id_override") ?? "",
     ).trim();
-    if (overrideProfileId && !/^[0-9a-f]{16}$/.test(overrideProfileId)) {
+    if (
+      operation !== "list" &&
+      deliveryTargetMode === "manual" &&
+      !validProfileId(overrideProfileId)
+    ) {
       setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
       return;
     }
-    const profileId = overrideProfileId || selectedProfileId;
+    const profileId =
+      operation === "list"
+        ? ""
+        : deliveryTargetMode === "manual"
+          ? overrideProfileId
+          : selectedProfileId;
+    if (operation !== "list" && !validProfileId(profileId)) {
+      setMessage("Choose a listed delivery profile or enter a valid profile ID.");
+      return;
+    }
     const batchId = String(data.get("batch_id") ?? "").trim();
     const profileSelect = event.currentTarget.elements.namedItem("profile_id") as HTMLSelectElement | null;
-    const profileLabel = overrideProfileId
-      ? "Manual delivery profile"
-      : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
+    const profileLabel =
+      deliveryTargetMode === "manual"
+        ? "Manual delivery profile"
+        : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     const confirmation = deliveryConfirmation(
       operation,
       profileId,
@@ -245,17 +278,23 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
     const overrideProfileId = String(
       data.get("sheet_profile_id_override") ?? "",
     ).trim();
-    if (overrideProfileId && !/^[0-9a-f]{16}$/.test(overrideProfileId)) {
+    if (sheetTargetMode === "manual" && !validProfileId(overrideProfileId)) {
       setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
       return;
     }
-    const profileId = overrideProfileId || selectedProfileId;
+    const profileId =
+      sheetTargetMode === "manual" ? overrideProfileId : selectedProfileId;
+    if (!validProfileId(profileId)) {
+      setMessage("Choose a listed client Sheet or enter a valid profile ID.");
+      return;
+    }
     const profileSelect = event.currentTarget.elements.namedItem(
       "sheet_profile_id",
     ) as HTMLSelectElement | null;
-    const profileLabel = overrideProfileId
-      ? "Manual delivery profile"
-      : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
+    const profileLabel =
+      sheetTargetMode === "manual"
+        ? "Manual delivery profile"
+        : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     if (
       operation === "sheet-disable" &&
       !window.confirm(
@@ -372,30 +411,51 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
         </p>
         {profiles.length === 0 ? (
           <div className="notice">
-            No registered client Sheets are visible in the authorized operator scope.
+            No listed client Sheets are available. Use the profile-ID target mode for an existing production profile.
+          </div>
+        ) : catalogueIncomplete ? (
+          <div className="notice">
+            Some client catalogue data could not be loaded. Listed targets may be incomplete; the profile-ID target mode remains available.
           </div>
         ) : null}
         <form className="control-form" onSubmit={submitSheetControl}>
           <label>
-            Client Sheet
+            Sheet target
             <select
-              name="sheet_profile_id"
-              defaultValue={profiles[0]?.profile_id ?? ""}
-              disabled={busy || !status?.control_ready || profiles.length === 0}
+              value={sheetTargetMode}
+              onChange={(event) => {
+                const mode = event.target.value as TargetMode;
+                setSheetTargetMode(mode);
+                if (mode === "listed") setSheetProfileOverride("");
+              }}
+              disabled={busy || !status?.control_ready}
             >
-              {profiles.length === 0 ? (
-                <option value="">No registered client Sheets</option>
-              ) : (
-                profiles.map((profile) => (
-                  <option key={profile.profile_id} value={profile.profile_id}>
-                    {profile.client_name} — {profile.destination_name}
-                  </option>
-                ))
-              )}
+              <option value="listed" disabled={profiles.length === 0}>
+                Listed client Sheet
+              </option>
+              <option value="manual">Profile ID</option>
             </select>
           </label>
-          <details>
-            <summary>Use a profile ID instead</summary>
+          {sheetTargetMode === "listed" ? (
+            <label>
+              Client Sheet
+              <select
+                name="sheet_profile_id"
+                defaultValue={profiles[0]?.profile_id ?? ""}
+                disabled={busy || !status?.control_ready || profiles.length === 0}
+              >
+                {profiles.length === 0 ? (
+                  <option value="">No listed client Sheets</option>
+                ) : (
+                  profiles.map((profile) => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.client_name} — {profile.destination_name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          ) : (
             <label>
               Sheet profile ID
               <input
@@ -409,17 +469,16 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
                 disabled={busy || !status?.control_ready}
               />
             </label>
-            <p className="metadata">
-              Use this only when the real delivery profile is not listed above.
-            </p>
-          </details>
+          )}
           <button
             type="submit"
             value="sheet-check"
             disabled={
               busy ||
               !status?.control_ready ||
-              (profiles.length === 0 && !/^[0-9a-f]{16}$/.test(sheetProfileOverride.trim()))
+              (sheetTargetMode === "listed"
+                ? profiles.length === 0
+                : !validProfileId(sheetProfileOverride.trim()))
             }
           >
             Check Sheet
@@ -430,7 +489,9 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
             disabled={
               busy ||
               !status?.control_ready ||
-              (profiles.length === 0 && !/^[0-9a-f]{16}$/.test(sheetProfileOverride.trim()))
+              (sheetTargetMode === "listed"
+                ? profiles.length === 0
+                : !validProfileId(sheetProfileOverride.trim()))
             }
           >
             Disable Sheet
@@ -441,7 +502,9 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
             disabled={
               busy ||
               !status?.control_ready ||
-              (profiles.length === 0 && !/^[0-9a-f]{16}$/.test(sheetProfileOverride.trim()))
+              (sheetTargetMode === "listed"
+                ? profiles.length === 0
+                : !validProfileId(sheetProfileOverride.trim()))
             }
           >
             Re-enable Sheet
@@ -458,7 +521,12 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
         <form className="control-form control-form-wide" onSubmit={submitDelivery}>
           <label>
             Operation
-            <select name="operation" defaultValue="status" disabled={busy || !status?.control_ready}>
+            <select
+              name="operation"
+              value={deliveryOperation}
+              onChange={(event) => setDeliveryOperation(event.target.value)}
+              disabled={busy || !status?.control_ready}
+            >
               <option value="list">List profiles</option>
               <option value="status">Profile status</option>
               <option value="pause">Pause profile</option>
@@ -472,25 +540,47 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
             </select>
           </label>
           <label>
-            Delivery profile
+            Delivery target
             <select
-              name="profile_id"
-              defaultValue={profiles[0]?.profile_id ?? ""}
-              disabled={busy || !status?.control_ready || profiles.length === 0}
+              value={deliveryTargetMode}
+              onChange={(event) => {
+                const mode = event.target.value as TargetMode;
+                setDeliveryTargetMode(mode);
+                if (mode === "listed") setDeliveryProfileOverride("");
+              }}
+              disabled={busy || !status?.control_ready || deliveryOperation === "list"}
             >
-              {profiles.length === 0 ? (
-                <option value="">No registered client Sheets</option>
-              ) : (
-                profiles.map((profile) => (
-                  <option key={profile.profile_id} value={profile.profile_id}>
-                    {profile.client_name} — {profile.destination_name}
-                  </option>
-                ))
-              )}
+              <option value="listed" disabled={profiles.length === 0}>
+                Listed delivery profile
+              </option>
+              <option value="manual">Profile ID</option>
             </select>
           </label>
-          <details>
-            <summary>Use a profile ID instead</summary>
+          {deliveryTargetMode === "listed" ? (
+            <label>
+              Delivery profile
+              <select
+                name="profile_id"
+                defaultValue={profiles[0]?.profile_id ?? ""}
+                disabled={
+                  busy ||
+                  !status?.control_ready ||
+                  profiles.length === 0 ||
+                  deliveryOperation === "list"
+                }
+              >
+                {profiles.length === 0 ? (
+                  <option value="">No listed delivery profiles</option>
+                ) : (
+                  profiles.map((profile) => (
+                    <option key={profile.profile_id} value={profile.profile_id}>
+                      {profile.client_name} — {profile.destination_name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          ) : (
             <label>
               Delivery profile ID
               <input
@@ -501,13 +591,10 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
                 inputMode="text"
                 pattern="[0-9a-f]{16}"
                 placeholder="16-character profile ID"
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || deliveryOperation === "list"}
               />
             </label>
-            <p className="metadata">
-              Use this only when the real delivery profile is not listed above.
-            </p>
-          </details>
+          )}
           <label>
             Daily quota
             <input
@@ -544,7 +631,17 @@ export function OperationsControl({ profiles }: { profiles: ManagedProfile[] }) 
               disabled={busy || !status?.control_ready}
             />
           </label>
-          <button type="submit" disabled={busy || !status?.control_ready}>
+          <button
+            type="submit"
+            disabled={
+              busy ||
+              !status?.control_ready ||
+              (deliveryOperation !== "list" &&
+                (deliveryTargetMode === "listed"
+                  ? profiles.length === 0
+                  : !validProfileId(deliveryProfileOverride.trim())))
+            }
+          >
             {busy ? "Sending…" : "Apply control"}
           </button>
         </form>
