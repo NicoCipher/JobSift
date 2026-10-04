@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
 }) => {
@@ -98,6 +99,14 @@ test("operations control fails closed without server command credentials", async
   await expect(page.getByRole("button", { name: "Disable Sheet" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Re-enable Sheet" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Apply control" })).toBeDisabled();
+});
+
+test("control validation canonicalizes timezones and generated batch IDs", () => {
+  expect(canonicalTimeZone("america/new_york")).toBe("America/New_York");
+  expect(canonicalTimeZone(" Africa/Lagos ")).toBe("Africa/Lagos");
+  expect(canonicalTimeZone("\"; echo pwned; #")).toBeNull();
+  expect(validBatchId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(true);
+  expect(validBatchId("\"; echo pwned; #")).toBe(false);
 });
 
 test("control API rejects unconfigured, invalid, and cross-origin mutations", async ({ request }) => {
