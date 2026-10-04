@@ -1,8 +1,7 @@
 """Persistent logical-hour scheduler for production inventory refreshes."""
 
-from datetime import UTC, datetime
 from dataclasses import dataclass
-
+from datetime import UTC, datetime
 
 REFRESH_SCHEDULE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS inventory_refresh_schedule_state (
