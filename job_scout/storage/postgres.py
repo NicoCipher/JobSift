@@ -218,7 +218,10 @@ class PostgresConnection:
             else tuple(parameters)
         )
         cursor = self._connection.cursor()
-        cursor.execute(sql, values)
+        if values:
+            cursor.execute(sql, values)
+        else:
+            cursor.execute(sql)
         return PostgresCursor(cursor)
 
     def executemany(
