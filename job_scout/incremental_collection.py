@@ -20,7 +20,7 @@ class IncrementalTargetState(BaseModel):
     active_posted_at_by_source_job_id: dict[str, datetime] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_state(self) -> "IncrementalTargetState":
+    def validate_state(self) -> IncrementalTargetState:
         known = self.known_source_job_ids
         if known != sorted(set(known)):
             raise ValueError("known provider ids must be unique and sorted")
