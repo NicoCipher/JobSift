@@ -207,6 +207,21 @@ class GreenhouseCollector:
                         )
                         terminal_status = CollectionStatus.PROVIDER_ERROR
                         break
+                    if 400 <= detail_response.status_code < 500:
+                        # Permanent per-row client errors are terminal for this
+                        # posting, not for the whole board. Persist its valid index
+                        # identity with unknown age so freshness still fails closed
+                        # and the next incremental retry advances past it.
+                        placeholder = self._normalize(item, target)
+                        placeholder.raw_metadata["incremental_detail_quarantined"] = (
+                            f"HTTP {detail_response.status_code}"
+                        )
+                        jobs.append(placeholder)
+                        errors.append(
+                            f"detail[{item.id}] HTTP {detail_response.status_code}"
+                        )
+                        self.last_counts["quarantined"] += 1
+                        continue
                     detail_response.raise_for_status()
                     try:
                         detail = _GreenhouseJob.model_validate(detail_response.json())
