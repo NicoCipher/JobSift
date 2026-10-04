@@ -27,7 +27,7 @@ from job_scout.sourcing_plan import (
 )
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.inventory_runs import InventoryRunStore
-from job_scout.storage.factory import create_repository as SQLiteRepository
+from job_scout.storage.factory import create_repository
 
 
 def _boolean(name: str, default: bool = False) -> bool:
@@ -301,7 +301,7 @@ def run_once(config: LiveRunnerConfig) -> dict[str, object]:
 
     plan, brief_path = _runtime_plan(config)
     brief = load_search_brief(brief_path)
-    repository = SQLiteRepository(config.database_path)
+    repository = create_repository(config.database_path)
     if config.validation_only and repository.remote_url:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
