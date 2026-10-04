@@ -151,6 +151,16 @@ def translate_sql(statement: str) -> tuple[str, tuple[Any, ...] | None]:
             "WHERE table_schema='public' AND table_name=%s",
             (table,),
         )
+    if re.fullmatch(
+        r"SELECT 1 FROM sqlite_master WHERE type='table' AND name=\?",
+        normalized,
+        flags=re.IGNORECASE,
+    ):
+        return (
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=%s",
+            None,
+        )
 
     ignore = re.match(
         r"^INSERT\s+OR\s+IGNORE\s+INTO\s+",
