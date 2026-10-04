@@ -23,6 +23,9 @@ on:
           - "4"
           - "6"
           - "8"
+  schedule:
+    # Temporarily retained but gated off during Neon cutover.
+    - cron: "2,17,32,47 * * * *"
 
 permissions:
   contents: read
@@ -34,6 +37,7 @@ concurrency:
 
 jobs:
   plan:
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     env:
       JOBSIFT_DATABASE: /tmp/jobsift-plan.sqlite3
