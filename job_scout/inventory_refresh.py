@@ -70,7 +70,12 @@ DEFAULT_SHARDS = {
     "smartrecruiters": 2,
 }
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
-MAX_REFRESH_TARGETS = 125
+# GitHub's scheduled triggers have been materially less frequent than the logical
+# hourly cadence in production. Keep fast ATS providers on a six-cohort coverage
+# horizon so the live registry can still be swept within roughly one day even
+# when only a handful of scheduled runs actually start.
+FAST_PROVIDER_COVERAGE_COHORTS = 6
+MAX_REFRESH_TARGETS = 600
 WORKDAY_RAMP_LEVELS = (1, 5, 10, 20, 25)
 
 
@@ -192,32 +197,43 @@ def default_refresh_limits(
     *,
     workday_limit: int | None = None,
 ) -> dict[str, int]:
-    limits = {
-        source: min(DEFAULT_LIMITS[source], registry.target_counts_by_source[source])
-        for source in PROVIDERS
-        if source in registry.target_counts_by_source
-    }
-    if "workday" in limits and workday_limit is not None:
-        if workday_limit not in WORKDAY_RAMP_LEVELS:
-            raise ValueError(
-                f"Workday refresh limit must be one of {WORKDAY_RAMP_LEVELS}"
-            )
-        limits["workday"] = min(
-            workday_limit,
-            registry.target_counts_by_source["workday"],
+    """Size fast-provider cohorts for broad freshness coverage, not old fixed caps.
+
+    Greenhouse, Ashby, Lever, and SmartRecruiters are cheap enough to sweep much
+    more aggressively than Workday. Their per-run limits therefore scale with the
+    live approved registry so every target is selected within at most
+    FAST_PROVIDER_COVERAGE_COHORTS logical cohorts. Existing historical limits
+    remain floors for small registries.
+
+    Workday stays on the explicit guarded ramp because large Workday boards can
+    still dominate runtime even with index-first hydration.
+    """
+
+    limits: dict[str, int] = {}
+    for source in PROVIDERS:
+        count = registry.target_counts_by_source.get(source)
+        if count is None:
+            continue
+        if source == "workday":
+            requested = DEFAULT_LIMITS[source] if workday_limit is None else workday_limit
+            if requested not in WORKDAY_RAMP_LEVELS:
+                raise ValueError(
+                    f"Workday refresh limit must be one of {WORKDAY_RAMP_LEVELS}"
+                )
+            limits[source] = min(requested, count)
+            continue
+
+        coverage_floor = math.ceil(count / FAST_PROVIDER_COVERAGE_COHORTS)
+        limits[source] = min(
+            count,
+            max(DEFAULT_LIMITS[source], coverage_floor),
         )
-    # Greenhouse and SmartRecruiters share the historical 40-target non-Workday
-    # budget. Only trim Greenhouse when their combined selection would exceed it;
-    # a small valid registry must never be driven to a zero/negative provider limit.
-    if "smartrecruiters" in limits and "greenhouse" in limits:
-        combined_budget = DEFAULT_LIMITS["greenhouse"]
-        overflow = max(
-            0,
-            limits["greenhouse"] + limits["smartrecruiters"] - combined_budget,
-        )
-        limits["greenhouse"] -= overflow
+
     if sum(limits.values()) > MAX_REFRESH_TARGETS:
-        raise ValueError("default refresh cohort exceeds safety ceiling")
+        raise ValueError(
+            "freshness coverage cohort exceeds production safety ceiling; "
+            "raise capacity deliberately or shorten the admitted registry"
+        )
     return limits
 
 
