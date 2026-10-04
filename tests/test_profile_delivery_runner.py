@@ -23,7 +23,7 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
     )
 
     monkeypatch.setattr(
-        profile_delivery_runner, "SQLiteRepository", lambda _path: object()
+        profile_delivery_runner, "create_repository", lambda _path: object()
     )
     monkeypatch.setattr(
         profile_delivery_runner, "ClientDeliveryProfileStore", lambda _repo: store
