@@ -7,8 +7,13 @@ import pytest
 
 from job_scout.collectors.greenhouse import GreenhouseCollector
 from job_scout.collectors.smartrecruiters import SmartRecruitersCollector
-from job_scout.domain.models import CollectionStatus, SourceTarget
-from job_scout.incremental_collection import IncrementalTargetState
+from job_scout.domain.models import CollectionStatus, Job, SourceTarget
+from job_scout.incremental_collection import (
+    IncrementalTargetState,
+    snapshot_incremental_target_state,
+)
+from job_scout.production_registry import ProductionSourceRegistry, ProductionTarget
+from job_scout.storage.sqlite import SQLiteRepository
 
 
 def target() -> SourceTarget:
@@ -178,3 +183,62 @@ def test_incremental_state_rejects_active_timestamp_for_unknown_identity() -> No
             board_id="acme",
             active_posted_at_by_source_job_id={"1": datetime.now(UTC)},
         )
+
+
+def test_snapshot_includes_live_job_identity_and_posted_at_without_retention_evidence(
+    tmp_path,
+) -> None:
+    repository = SQLiteRepository(tmp_path / "inventory.db")
+    posted_at = datetime.now(UTC)
+    repository.upsert_job(
+        Job(
+            id="job-1",
+            source="greenhouse",
+            source_job_id="1",
+            source_board_id="acme",
+            title="Software Engineer",
+            company="Acme Inc",
+            job_url="https://boards.greenhouse.io/acme/jobs/1",
+            canonical_url="https://boards.greenhouse.io/acme/jobs/1",
+            posted_at=posted_at,
+            content_fingerprint="fingerprint-1",
+        )
+    )
+    with repository.connect() as connection:
+        assert (
+            connection.execute(
+                "SELECT 1 FROM job_retention_evidence WHERE job_id=?",
+                ("job-1",),
+            ).fetchone()
+            is None
+        )
+        assert (
+            connection.execute(
+                "SELECT 1 FROM job_identity_ledger "
+                "WHERE source=? AND source_board_id=? AND source_job_id=?",
+                ("greenhouse", "acme", "1"),
+            ).fetchone()
+            is None
+        )
+
+    registry = ProductionSourceRegistry(
+        registry_id="incremental-test",
+        target_universe_git_blob_sha="0" * 40,
+        health_manifest_sha256="1" * 64,
+        health_evidence_updated_at="2026-10-04T00:00:00Z",
+        target_counts_by_source={"greenhouse": 1},
+        targets=[
+            ProductionTarget(
+                target_identity="greenhouse:acme",
+                source="greenhouse",
+                coordinates={"board": "acme"},
+                company_hint="Acme Inc",
+            )
+        ],
+    )
+
+    states = snapshot_incremental_target_state(repository, registry)
+
+    assert len(states) == 1
+    assert states[0].known_source_job_ids == ["1"]
+    assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
