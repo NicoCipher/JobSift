@@ -130,9 +130,24 @@ class ReadStore:
                 c.close()
 
     def bounded(self, c, sql, params=()):
-        rows = c.execute(
-            sql + " LIMIT ?", (*params, self.config.max_projection_rows + 1)
-        ).fetchall()
+        limited_sql = sql + " LIMIT ?"
+        limited_params = (*params, self.config.max_projection_rows + 1)
+
+        if getattr(c, "is_postgres", False):
+            preflight = c.execute(
+                "SELECT COUNT(*) AS row_count, "
+                "COALESCE(SUM(pg_column_size(q)), 0) AS total_bytes "
+                f"FROM ({limited_sql}) AS q",
+                limited_params,
+            ).fetchone()
+            if (
+                preflight is None
+                or int(preflight["row_count"]) > self.config.max_projection_rows
+                or int(preflight["total_bytes"]) > self.config.max_projection_bytes
+            ):
+                raise ServiceError("EVIDENCE_SCOPE_UNAVAILABLE")
+
+        rows = c.execute(limited_sql, limited_params).fetchall()
         if len(rows) > self.config.max_projection_rows:
             raise ServiceError("EVIDENCE_SCOPE_UNAVAILABLE")
         return rows
