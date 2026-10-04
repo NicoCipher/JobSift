@@ -15,7 +15,14 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from job_scout.collectors.greenhouse import GreenhouseCollector
+from job_scout.collectors.smartrecruiters import SmartRecruitersCollector
 from job_scout.collectors.workday import WorkdayCollector
+from job_scout.incremental_collection import (
+    INCREMENTAL_SOURCES,
+    IncrementalTargetState,
+    snapshot_incremental_target_state,
+)
 from job_scout.production_registry import (
     CollectionShardManifest,
     ProductionSourceRegistry,
@@ -173,6 +180,10 @@ class RefreshPlan(BaseModel):
     # None means the plan predates retained-candidate protection and must use
     # legacy full Workday collection rather than unsafe negative title pruning.
     workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None
+    # None preserves legacy full-provider behavior. New production plans freeze
+    # provider identity/freshness memory so workers can crawl incrementally
+    # without direct production-database access.
+    incremental_target_state: list[IncrementalTargetState] | None = None
     matrix: dict[str, list[dict[str, str]]]
 
 
@@ -669,6 +680,7 @@ def build_refresh_plan(
     workday_detail_concurrency: int = DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
     workday_briefs: list[WorkdayBriefBinding] | None = None,
     workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None,
+    incremental_target_state: list[IncrementalTargetState] | None = None,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
@@ -722,6 +734,33 @@ def build_refresh_plan(
             if binding.board_id in selected_workday_boards:
                 planned_retained_candidates.append(binding)
 
+    planned_incremental_state = None
+    if incremental_target_state is not None:
+        registry_keys = {
+            (target.source, target.source_target().board_id.strip())
+            for target in registry.targets
+            if target.source in INCREMENTAL_SOURCES
+        }
+        selected_keys = {
+            (target.source, target.source_target().board_id.strip())
+            for target in subset.targets
+            if target.source in INCREMENTAL_SOURCES
+        }
+        states_by_key: dict[tuple[str, str], IncrementalTargetState] = {}
+        for state in incremental_target_state:
+            key = (state.source, state.board_id)
+            if key not in registry_keys:
+                raise ValueError("incremental target state is outside production registry")
+            if key in states_by_key:
+                raise ValueError("duplicate incremental target state")
+            states_by_key[key] = state
+        missing = selected_keys.difference(states_by_key)
+        if missing:
+            raise ValueError("incremental target state is missing a selected target")
+        planned_incremental_state = [
+            states_by_key[key] for key in sorted(selected_keys)
+        ]
+
     matrix = {
         "include": [
             {"shard_id": shard.shard_id, "source": shard.source}
@@ -742,6 +781,7 @@ def build_refresh_plan(
         workday_detail_concurrency=workday_detail_concurrency,
         workday_briefs=(None if workday_briefs is None else list(workday_briefs)),
         workday_retained_candidates=planned_retained_candidates,
+        incremental_target_state=planned_incremental_state,
         matrix=matrix,
     )
     return plan, subset, manifest
@@ -754,6 +794,7 @@ def _refresh_collector_factory(
     registry: ProductionSourceRegistry,
     workday_briefs,
     workday_retained_candidates,
+    incremental_target_state,
 ):
     if source == "workday":
         if workday_briefs is None or workday_retained_candidates is None:
@@ -763,6 +804,10 @@ def _refresh_collector_factory(
             briefs=workday_briefs,
             detail_concurrency=workday_detail_concurrency,
         )
+    if incremental_target_state is not None and source == "greenhouse":
+        return GreenhouseCollector(incremental_states=incremental_target_state)
+    if incremental_target_state is not None and source == "smartrecruiters":
+        return SmartRecruitersCollector(incremental_states=incremental_target_state)
     return default_collector_factory(source)
 
 
@@ -800,6 +845,7 @@ def collect_refresh_shard(
             registry=registry,
             workday_briefs=workday_briefs,
             workday_retained_candidates=plan.workday_retained_candidates,
+            incremental_target_state=plan.incremental_target_state,
         ),
     )
 
@@ -950,6 +996,10 @@ def main() -> None:
                 repository=planning_repository,
                 briefs=loaded_workday_briefs,
             )
+            incremental_target_state = snapshot_incremental_target_state(
+                planning_repository,
+                registry,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
@@ -957,6 +1007,7 @@ def main() -> None:
                 workday_detail_concurrency=args.workday_detail_concurrency,
                 workday_briefs=workday_briefs,
                 workday_retained_candidates=workday_retained_candidates,
+                incremental_target_state=incremental_target_state,
             )
             _write_json(args.output_dir / "parent-registry.json", registry)
             _write_json(args.output_dir / "registry.json", subset)
@@ -983,6 +1034,13 @@ def main() -> None:
                     "retained_workday_candidate_ids": sum(
                         len(binding.source_job_ids)
                         for binding in (refresh.workday_retained_candidates or [])
+                    ),
+                    "incremental_state_targets": len(
+                        refresh.incremental_target_state or []
+                    ),
+                    "incremental_known_provider_ids": sum(
+                        len(state.known_source_job_ids)
+                        for state in (refresh.incremental_target_state or [])
                     ),
                     "dynamic_admitted_targets": admission_overlay[
                         "dynamic_admitted_targets"

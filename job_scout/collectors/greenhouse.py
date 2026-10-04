@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -15,6 +15,7 @@ from job_scout.domain.models import (
     Job,
     SourceTarget,
 )
+from job_scout.incremental_collection import IncrementalTargetState
 from job_scout.normalization.core import (
     canonicalize_url,
     classify_remote,
@@ -60,16 +61,53 @@ class _Payload(BaseModel):
 class GreenhouseCollector:
     source = "greenhouse"
     base_url = "https://boards-api.greenhouse.io/v1/boards"
+    incremental_overlap = timedelta(hours=26)
 
-    def __init__(self, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        client: httpx.Client | None = None,
+        *,
+        incremental_states: list[IncrementalTargetState] | None = None,
+        incremental_detail_limit: int = 200,
+    ) -> None:
+        if incremental_detail_limit < 1:
+            raise ValueError("incremental_detail_limit must be at least 1")
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(15.0),
             headers={"User-Agent": "JobSift/0.1 (+https://github.com/NicoCipher/JobSift)"},
             transport=httpx.HTTPTransport(retries=2),
         )
+        self.incremental_detail_limit = incremental_detail_limit
+        self.incremental_states = {
+            state.board_id.casefold(): state
+            for state in (incremental_states or [])
+            if state.source == self.source
+        }
+        self.incremental_enabled = incremental_states is not None
+        self.last_counts: dict[str, int] = {}
 
     def collect(self, target: SourceTarget) -> CollectionResult:
-        url = f"{self.base_url}/{target.board_id}/jobs"
+        board = target.board_id.strip()
+        url = f"{self.base_url}/{board}/jobs"
+        state = self.incremental_states.get(board.casefold()) if self.incremental_enabled else None
+        known_ids = set(state.known_source_job_ids) if state is not None else set()
+        active_posted = (
+            state.active_posted_at_by_source_job_id if state is not None else {}
+        )
+        self.last_counts = {
+            "raw_received": 0,
+            "normalized": 0,
+            "detail_requests": 0,
+            "detail_budget_used": 0,
+            "incremental_known_ids": len(known_ids),
+            "incremental_new_ids": 0,
+            "reused_posted_at": 0,
+            "suppressed_known_stale": 0,
+            "suppressed_known_unknown_age": 0,
+            "detail_deferred": 0,
+            "vanished": 0,
+            "quarantined": 0,
+        }
         try:
             response = self.client.get(url, params={"content": "true"})
             if response.status_code == 404:
@@ -94,17 +132,144 @@ class GreenhouseCollector:
                 )
             response.raise_for_status()
             payload = _Payload.model_validate(response.json())
+            self.last_counts["raw_received"] = len(payload.jobs)
             jobs: list[Job] = []
             errors: list[str] = []
+            terminal_status: CollectionStatus | None = None
             for index, raw_job in enumerate(payload.jobs):
                 try:
-                    jobs.append(self._normalize(_GreenhouseJob.model_validate(raw_job), target))
+                    item = _GreenhouseJob.model_validate(raw_job)
+                    source_job_id = str(item.id)
+                    if state is None:
+                        jobs.append(self._normalize(item, target))
+                        continue
+
+                    previous_posted_at = active_posted.get(source_job_id)
+                    if item.first_published is None and previous_posted_at is not None:
+                        item = item.model_copy(update={"first_published": previous_posted_at})
+                        self.last_counts["reused_posted_at"] += 1
+
+                    if item.first_published is not None:
+                        if (
+                            source_job_id in known_ids
+                            and self._outside_incremental_overlap(item.first_published)
+                        ):
+                            self.last_counts["suppressed_known_stale"] += 1
+                            continue
+                        jobs.append(self._normalize(item, target))
+                        continue
+
+                    if source_job_id in known_ids:
+                        self.last_counts["suppressed_known_unknown_age"] += 1
+                        continue
+
+                    self.last_counts["incremental_new_ids"] += 1
+                    if self.last_counts["detail_budget_used"] >= self.incremental_detail_limit:
+                        self.last_counts["detail_deferred"] += 1
+                        continue
+
+                    self.last_counts["detail_requests"] += 1
+                    detail_response = self.client.get(f"{url}/{item.id}")
+                    if detail_response.status_code in {404, 410}:
+                        # Vanished postings are terminal evidence for this index row.
+                        # They must not consume the hydration cap, otherwise a run can
+                        # retry the same leading 404/410 rows forever and never reach
+                        # later unseen postings.
+                        self.last_counts["vanished"] += 1
+                        continue
+
+                    self.last_counts["detail_budget_used"] += 1
+                    if detail_response.status_code == 429:
+                        errors.append(f"detail[{item.id}] HTTP 429")
+                        terminal_status = CollectionStatus.RATE_LIMITED
+                        break
+                    if detail_response.status_code == 401:
+                        errors.append(f"detail[{item.id}] HTTP 401")
+                        terminal_status = CollectionStatus.AUTHENTICATION_FAILURE
+                        break
+                    if detail_response.status_code == 403:
+                        throttled = "retry-after" in {
+                            key.casefold() for key in detail_response.headers
+                        } or any(
+                            marker in detail_response.text.casefold()
+                            for marker in ("rate limit", "throttle")
+                        )
+                        errors.append(f"detail[{item.id}] HTTP 403")
+                        terminal_status = (
+                            CollectionStatus.RATE_LIMITED
+                            if throttled
+                            else CollectionStatus.FORBIDDEN
+                        )
+                        break
+                    if detail_response.status_code >= 500:
+                        errors.append(
+                            f"detail[{item.id}] HTTP {detail_response.status_code}"
+                        )
+                        terminal_status = CollectionStatus.PROVIDER_ERROR
+                        break
+                    if 400 <= detail_response.status_code < 500:
+                        # Permanent per-row client errors are terminal for this
+                        # posting, not for the whole board. Persist its valid index
+                        # identity with unknown age so freshness still fails closed
+                        # and the next incremental retry advances past it.
+                        placeholder = self._normalize(item, target)
+                        placeholder.raw_metadata["incremental_detail_quarantined"] = (
+                            f"HTTP {detail_response.status_code}"
+                        )
+                        jobs.append(placeholder)
+                        errors.append(
+                            f"detail[{item.id}] HTTP {detail_response.status_code}"
+                        )
+                        self.last_counts["quarantined"] += 1
+                        continue
+                    detail_response.raise_for_status()
+                    try:
+                        detail = _GreenhouseJob.model_validate(detail_response.json())
+                        if detail.id != item.id:
+                            raise ValueError(
+                                "hydrated posting id does not match indexed posting"
+                            )
+                    except (ValueError, ValidationError) as exc:
+                        # A provider row that consistently returns HTTP 200 but an
+                        # unusable detail payload is terminal for freshness
+                        # hydration. Persist the valid index identity with unknown
+                        # age so downstream freshness still fails closed and the
+                        # next incremental retry can advance past this row.
+                        placeholder = self._normalize(item, target)
+                        placeholder.raw_metadata["incremental_detail_quarantined"] = (
+                            type(exc).__name__
+                        )
+                        jobs.append(placeholder)
+                        errors.append(f"detail[{item.id}] rejected: {exc}")
+                        self.last_counts["quarantined"] += 1
+                        continue
+                    jobs.append(self._normalize(detail, target))
+                except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                    errors.append(f"detail job[{index}] failed: {type(exc).__name__}")
+                    terminal_status = CollectionStatus.NETWORK_FAILURE
+                    break
                 except (ValueError, ValidationError) as exc:
                     errors.append(f"job[{index}] rejected: {exc}")
+                    self.last_counts["quarantined"] += 1
+                except httpx.HTTPStatusError as exc:
+                    errors.append(f"detail job[{index}] HTTP {exc.response.status_code}")
+                    terminal_status = CollectionStatus.PROVIDER_ERROR
+                    break
+            if self.last_counts["detail_deferred"]:
+                errors.append(
+                    "incremental detail hydration cap reached; deferred unseen postings"
+                )
+            self.last_counts["normalized"] = len(jobs)
             return CollectionResult(
                 source=self.source,
                 target=target,
-                status=CollectionStatus.PARTIAL if errors else CollectionStatus.SUCCESS,
+                status=(
+                    terminal_status
+                    if terminal_status is not None and not jobs
+                    else CollectionStatus.PARTIAL
+                    if errors
+                    else CollectionStatus.SUCCESS
+                ),
                 jobs=jobs,
                 errors=errors,
                 raw_postings_received=len(payload.jobs),
@@ -117,6 +282,12 @@ class GreenhouseCollector:
             return self._failure(
                 target, CollectionStatus.PROVIDER_ERROR, f"HTTP {exc.response.status_code}"
             )
+
+    @classmethod
+    def _outside_incremental_overlap(cls, posted_at: datetime) -> bool:
+        if posted_at.tzinfo is None:
+            return False
+        return datetime.now(UTC) - posted_at.astimezone(UTC) > cls.incremental_overlap
 
     def _failure(
         self, target: SourceTarget, status: CollectionStatus, message: str
