@@ -11,10 +11,19 @@ import { LiveJobSiftApi } from "../lib/api/live-api";
 import { GET as proxyRead } from "../app/api/operator/[...path]/route";
 import { NextRequest } from "next/server";
 import type { ApiError } from "../lib/contracts/service";
+import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
 const query = {
   client_id: "example-client",
   destination_id: "example-destination",
 };
+test("control validation canonicalizes timezone aliases and rejects malformed IDs", () => {
+  expect(canonicalTimeZone("america/new_york")).toBe("America/New_York");
+  expect(canonicalTimeZone(" Africa/Lagos ")).toBe("Africa/Lagos");
+  expect(canonicalTimeZone("\"; echo pwned; #")).toBeNull();
+  expect(validBatchId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(true);
+  expect(validBatchId("\"; echo pwned; #")).toBe(false);
+});
+
 test("exact decision display labels", () => {
   expect(decisionLabel).toEqual({
     strong_match: "Strong match",

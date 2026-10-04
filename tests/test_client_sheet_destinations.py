@@ -255,6 +255,36 @@ def test_client_sheet_prejournal_batch_marker_is_retryable(tmp_path):
     assert delivered.status == "delivered"
     assert gateway.append_calls == 1
 
+def test_disabled_sheet_reenables_only_after_exact_identity_and_header_verification(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    gateway = FakeClientSheet()
+    store = ClientSheetDestinationStore(repo)
+    registered = register(repo, gateway)
+
+    disabled = store.disable(CLIENT, registered.destination_id)
+    assert disabled.status == "disabled"
+
+    reenabled = store.enable_verified(
+        CLIENT,
+        registered.destination_id,
+        gateway=gateway,
+    )
+    assert reenabled.status == "ready"
+    assert store.get(CLIENT, registered.destination_id).status == "ready"
+
+    store.disable(CLIENT, registered.destination_id)
+    gateway.title = "Renamed Jobs"
+    with pytest.raises(BatchConflict, match="renamed"):
+        store.enable_verified(CLIENT, registered.destination_id, gateway=gateway)
+    assert store.get(CLIENT, registered.destination_id, require_ready=False).status == "disabled"
+
+    gateway.title = "Jobs"
+    gateway.values[0][0] = "Changed Role"
+    with pytest.raises(BatchConflict, match="header"):
+        store.enable_verified(CLIENT, registered.destination_id, gateway=gateway)
+    assert store.get(CLIENT, registered.destination_id, require_ready=False).status == "disabled"
+
+
 def test_header_or_tab_identity_drift_fails_closed(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     gateway = FakeClientSheet()

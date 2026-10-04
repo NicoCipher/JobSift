@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canonicalTimeZone, validBatchId } from "../../../../lib/control-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,9 @@ const deliveryOperations = new Set([
   "status",
   "pause",
   "resume",
+  "sheet-check",
+  "sheet-disable",
+  "sheet-enable",
   "set-quota",
   "set-mode",
   "set-timezone",
@@ -182,11 +186,13 @@ export async function POST(request: NextRequest) {
     if (operation === "set-mode" && !["review", "auto"].includes(mode)) {
       return invalid("Delivery mode must be review or auto.");
     }
-    if (operation === "set-timezone" && !timezone) {
-      return invalid("Timezone is required.");
+    const canonicalTimezone =
+      operation === "set-timezone" ? canonicalTimeZone(timezone) : "Africa/Lagos";
+    if (operation === "set-timezone" && !canonicalTimezone) {
+      return invalid("Timezone must be a valid IANA timezone.");
     }
-    if (["release-batch", "discard-batch"].includes(operation) && !batchId) {
-      return invalid("Batch ID is required.");
+    if (["release-batch", "discard-batch"].includes(operation) && !validBatchId(batchId)) {
+      return invalid("Batch ID must be a valid JobSift batch UUID.");
     }
 
     return dispatch(deliveryWorkflow, {
@@ -194,7 +200,7 @@ export async function POST(request: NextRequest) {
       profile_id: profileId,
       daily_quota: quota || "100",
       delivery_mode: mode || "review",
-      timezone: timezone || "Africa/Lagos",
+      timezone: canonicalTimezone ?? "Africa/Lagos",
       batch_id: batchId,
     });
   }

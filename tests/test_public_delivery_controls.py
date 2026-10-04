@@ -67,3 +67,34 @@ def test_public_control_workflow_has_no_client_or_sheet_identifiers_as_inputs():
     assert "destination_id" not in inputs
     assert "spreadsheet" not in inputs
     assert "profile_id" in inputs
+
+
+def test_public_control_workflow_passes_untrusted_inputs_through_environment():
+    workflow = Path(".github/workflows/client-delivery-control.yml").read_text(
+        encoding="utf-8"
+    )
+    apply = workflow.split("- name: Apply control", 1)[1]
+
+    assert "CONTROL_PROFILE_ID: ${{ inputs.profile_id }}" in apply
+    assert "CONTROL_DAILY_QUOTA: ${{ inputs.daily_quota }}" in apply
+    assert "CONTROL_DELIVERY_MODE: ${{ inputs.delivery_mode }}" in apply
+    assert "CONTROL_TIMEZONE: ${{ inputs.timezone }}" in apply
+    assert "CONTROL_BATCH_ID: ${{ inputs.batch_id }}" in apply
+    assert '--profile-id "$profile_id"' in apply
+    assert '--timezone "$CONTROL_TIMEZONE"' in apply
+    assert '--batch-id "$CONTROL_BATCH_ID"' in apply
+    assert '--confirm-batch-id "$CONTROL_BATCH_ID"' in apply
+    script = apply.split("run: |", 1)[1]
+    assert "${{ inputs." not in script
+
+
+def test_profile_configuration_workflow_keeps_dispatch_values_out_of_shell_script():
+    workflow = Path(".github/workflows/configure-client-delivery-profile.yml").read_text(
+        encoding="utf-8"
+    )
+    configure = workflow.split("- name: Configure delivery profile", 1)[1]
+    script = configure.split("run: |", 1)[1]
+
+    assert "CONTROL_PLAN: ${{ inputs.plan }}" in configure
+    assert "CONTROL_TIMEZONE: ${{ inputs.timezone }}" in configure
+    assert "${{ inputs." not in script

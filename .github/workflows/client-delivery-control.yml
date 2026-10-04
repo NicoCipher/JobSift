@@ -13,6 +13,9 @@ on:
           - list
           - pause
           - resume
+          - sheet-check
+          - sheet-disable
+          - sheet-enable
           - set-quota
           - set-mode
           - set-timezone
@@ -91,9 +94,16 @@ jobs:
 
       - name: Apply control
         shell: bash
+        env:
+          CONTROL_OPERATION: ${{ inputs.operation }}
+          CONTROL_PROFILE_ID: ${{ inputs.profile_id }}
+          CONTROL_DAILY_QUOTA: ${{ inputs.daily_quota }}
+          CONTROL_DELIVERY_MODE: ${{ inputs.delivery_mode }}
+          CONTROL_TIMEZONE: ${{ inputs.timezone }}
+          CONTROL_BATCH_ID: ${{ inputs.batch_id }}
         run: |
-          operation="${{ inputs.operation }}"
-          profile_id="${{ inputs.profile_id }}"
+          operation="$CONTROL_OPERATION"
+          profile_id="$CONTROL_PROFILE_ID"
           case "$operation" in
             list)
               python -m job_scout.cli delivery-profile list \
@@ -112,26 +122,32 @@ jobs:
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id"
               ;;
+            sheet-check|sheet-disable|sheet-enable)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile "$operation" \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id"
+              ;;
             set-quota)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile set-quota \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --daily-quota "${{ inputs.daily_quota }}"
+                --daily-quota "$CONTROL_DAILY_QUOTA"
               ;;
             set-mode)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile set-mode \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --delivery-mode "${{ inputs.delivery_mode }}"
+                --delivery-mode "$CONTROL_DELIVERY_MODE"
               ;;
             set-timezone)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile set-timezone \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --timezone "${{ inputs.timezone }}"
+                --timezone "$CONTROL_TIMEZONE"
               ;;
             run-now)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
@@ -140,19 +156,19 @@ jobs:
               ;;
             release-batch)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
-              test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
+              test -n "$CONTROL_BATCH_ID" || { echo "batch_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile release-batch \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --batch-id "${{ inputs.batch_id }}" \
-                --confirm-batch-id "${{ inputs.batch_id }}"
+                --batch-id "$CONTROL_BATCH_ID" \
+                --confirm-batch-id "$CONTROL_BATCH_ID"
               ;;
             discard-batch)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
-              test -n "${{ inputs.batch_id }}" || { echo "batch_id is required"; exit 1; }
+              test -n "$CONTROL_BATCH_ID" || { echo "batch_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile discard-batch \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --batch-id "${{ inputs.batch_id }}"
+                --batch-id "$CONTROL_BATCH_ID"
               ;;
           esac

@@ -7,7 +7,7 @@ read-only evidence API into a mutation API. Instead, same-origin server routes
 dispatch a strict allowlist of existing GitHub Actions workflows:
 
 - `refresh-live-inventory.yml` for guarded manual refreshes;
-- `client-delivery-control.yml` for existing serialized delivery controls.
+- `client-delivery-control.yml` for serialized delivery and registered client-Sheet controls.
 
 The browser never receives GitHub, Turso, Google or provider credentials. Set a
 server-only `JOBSIFT_GITHUB_TOKEN` with Actions write access to
@@ -21,9 +21,14 @@ link as an operator session. POST controls also reject cross-origin requests.
 Manual inventory refreshes preserve the existing workflow contract: choices are
 limited to Workday targets 1/5/10/20/25 and detail concurrency 4/6/8, and manual
 runs do not advance the scheduled logical-cohort cursor. Scheduled production
-remains 25 Workday targets/hour. Delivery commands go through the existing
+remains 25 Workday targets/hour. Delivery and Sheet commands go through the existing
 `jobsift-client-delivery-mutation` queue; the frontend does not write Turso
-directly.
+directly. Client-Sheet controls intentionally use only an opaque delivery-profile
+ID: operators can check, disable, or verified-re-enable an already registered
+Sheet without exposing spreadsheet IDs, tab names, client IDs, or Google
+credentials through public workflow inputs. Registering a brand-new physical
+Sheet remains a private provisioning operation until a private registration
+transport is added.
 
 
 ## Local service connection

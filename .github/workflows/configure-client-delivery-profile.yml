@@ -92,13 +92,19 @@ jobs:
           echo "Client Sheet destination verified."
 
       - name: Configure delivery profile
+        env:
+          CONTROL_PLAN: ${{ inputs.plan }}
+          CONTROL_DAILY_QUOTA: ${{ inputs.daily_quota }}
+          CONTROL_STATUS: ${{ inputs.status }}
+          CONTROL_DELIVERY_MODE: ${{ inputs.delivery_mode }}
+          CONTROL_TIMEZONE: ${{ inputs.timezone }}
         run: |
           python -m job_scout.cli delivery-profile set-from-registration \
             --database "$JOBSIFT_DATABASE" \
             --registration-file "$RUNNER_TEMP/client-sheet-registration.json" \
-            --plan "${{ inputs.plan }}" \
-            --daily-quota "${{ inputs.daily_quota }}" \
-            --status "${{ inputs.status }}" \
-            --delivery-mode "${{ inputs.delivery_mode }}" \
-            --timezone "${{ inputs.timezone }}" \
+            --plan "$CONTROL_PLAN" \
+            --daily-quota "$CONTROL_DAILY_QUOTA" \
+            --status "$CONTROL_STATUS" \
+            --delivery-mode "$CONTROL_DELIVERY_MODE" \
+            --timezone "$CONTROL_TIMEZONE" \
             --reconcile
