@@ -49,21 +49,35 @@ export default async function SectionPage({
   let content: React.ReactNode;
   if (section === "operations") {
     const clients = await Promise.all(
-      session.data.client_scopes.map((scope) => api.getClient(scope.client_id)),
+      session.data.client_scopes.map(async (scope) => {
+        try {
+          return await api.getClient(scope.client_id);
+        } catch {
+          return null;
+        }
+      }),
     );
-    const profiles = clients.flatMap(({ data: client }) =>
-      client.destinations.map((destination) => ({
-        profile_id: deliveryProfileControlId(
-          client.client_id,
-          destination.destination_id,
-        ),
-        client_id: client.client_id,
-        client_name: client.display_name,
-        destination_id: destination.destination_id,
-        destination_name: destination.display_name,
-      })),
+    const catalogueIncomplete = clients.some((client) => client === null);
+    const profiles = clients.flatMap((response) =>
+      response
+        ? response.data.destinations.map((destination) => ({
+            profile_id: deliveryProfileControlId(
+              response.data.client_id,
+              destination.destination_id,
+            ),
+            client_id: response.data.client_id,
+            client_name: response.data.display_name,
+            destination_id: destination.destination_id,
+            destination_name: destination.display_name,
+          }))
+        : [],
     );
-    content = <OperationsControl profiles={profiles} />;
+    content = (
+      <OperationsControl
+        profiles={profiles}
+        catalogueIncomplete={catalogueIncomplete}
+      />
+    );
   } else if (section === "settings")
     content = (
       <section className="section-block reading">
