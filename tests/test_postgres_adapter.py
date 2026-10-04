@@ -59,3 +59,14 @@ def test_identity_ledger_scalar_max_maps_to_greatest():
 
 def test_postgres_schema_version_is_explicit():
     assert POSTGRES_SCHEMA_VERSION == "postgres-v1"
+
+
+def test_qmark_translation_escapes_literal_percent_for_psycopg():
+    sql, params = translate_sql(
+        "SELECT 1 FROM daily_batches WHERE client_id=? "
+        "AND error LIKE 'prepared posting is no longer fresh at delivery:%'"
+    )
+
+    assert "client_id=%s" in sql
+    assert "delivery:%%'" in sql
+    assert params is None
