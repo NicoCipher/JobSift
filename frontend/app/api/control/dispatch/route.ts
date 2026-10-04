@@ -14,6 +14,9 @@ const deliveryOperations = new Set([
   "status",
   "pause",
   "resume",
+  "sheet-check",
+  "sheet-disable",
+  "sheet-enable",
   "set-quota",
   "set-mode",
   "set-timezone",
@@ -24,6 +27,20 @@ const deliveryOperations = new Set([
 
 function clean(value: unknown, max = 160): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function validTimeZone(value: string): boolean {
+  if (!value || /[\r\n\0]/.test(value)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validBatchId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function sameOrigin(request: NextRequest): boolean {
@@ -182,11 +199,11 @@ export async function POST(request: NextRequest) {
     if (operation === "set-mode" && !["review", "auto"].includes(mode)) {
       return invalid("Delivery mode must be review or auto.");
     }
-    if (operation === "set-timezone" && !timezone) {
-      return invalid("Timezone is required.");
+    if (operation === "set-timezone" && !validTimeZone(timezone)) {
+      return invalid("Timezone must be a valid IANA timezone.");
     }
-    if (["release-batch", "discard-batch"].includes(operation) && !batchId) {
-      return invalid("Batch ID is required.");
+    if (["release-batch", "discard-batch"].includes(operation) && !validBatchId(batchId)) {
+      return invalid("Batch ID must be a valid JobSift batch UUID.");
     }
 
     return dispatch(deliveryWorkflow, {
