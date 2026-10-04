@@ -209,6 +209,8 @@ def translate_sql(statement: str) -> tuple[str, tuple[Any, ...] | None]:
 class PostgresConnection:
     """Small DB-API compatibility surface used by existing JobSift stores."""
 
+    is_postgres = True
+
     def __init__(self, connection) -> None:
         self._connection = connection
 
