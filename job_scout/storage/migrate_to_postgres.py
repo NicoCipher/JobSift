@@ -133,10 +133,14 @@ def source_connection(path: Path) -> Iterator[Any]:
             )
         connection.row_factory = compatible_row_factory
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("BEGIN")
         yield connection
     finally:
         if connection is not None:
-            connection.close()
+            try:
+                connection.rollback()
+            finally:
+                connection.close()
 
 
 def _assert_destination_empty(connection: PostgresConnection) -> None:
@@ -200,13 +204,18 @@ def migrate(
                 selected = ",".join(source_columns)
                 placeholders = ",".join("?" for _ in source_columns)
                 rows = source.execute(f"SELECT {selected} FROM {table}")
+                statement = f"INSERT INTO {table} ({selected}) VALUES ({placeholders})"
                 inserted = 0
+                batch: list[tuple[Any, ...]] = []
                 for row in rows:
-                    target.execute(
-                        f"INSERT INTO {table} ({selected}) VALUES ({placeholders})",
-                        tuple(row[column] for column in source_columns),
-                    )
-                    inserted += 1
+                    batch.append(tuple(row[column] for column in source_columns))
+                    if len(batch) >= 100:
+                        target.executemany(statement, batch)
+                        inserted += len(batch)
+                        batch.clear()
+                if batch:
+                    target.executemany(statement, batch)
+                    inserted += len(batch)
 
                 source_count, source_digest = _table_digest(
                     source,
