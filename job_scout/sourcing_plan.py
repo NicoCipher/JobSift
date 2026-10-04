@@ -33,8 +33,8 @@ from job_scout.matching.matcher import match_job
 from job_scout.orchestration.pipeline import PipelineSummary, run_pipeline
 from job_scout.retention import retention_basis
 from job_scout.search_brief import load_search_brief
-from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.factory import create_repository
+from job_scout.storage.inventory_runs import InventoryRunStore
 
 # Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
 SQLiteRepository = create_repository
