@@ -192,9 +192,16 @@ def default_refresh_limits(
             workday_limit,
             registry.target_counts_by_source["workday"],
         )
-    # SmartRecruiters is additive only after explicit registry admission.
+    # Greenhouse and SmartRecruiters share the historical 40-target non-Workday
+    # budget. Only trim Greenhouse when their combined selection would exceed it;
+    # a small valid registry must never be driven to a zero/negative provider limit.
     if "smartrecruiters" in limits and "greenhouse" in limits:
-        limits["greenhouse"] -= limits["smartrecruiters"]
+        combined_budget = DEFAULT_LIMITS["greenhouse"]
+        overflow = max(
+            0,
+            limits["greenhouse"] + limits["smartrecruiters"] - combined_budget,
+        )
+        limits["greenhouse"] -= overflow
     if sum(limits.values()) > MAX_REFRESH_TARGETS:
         raise ValueError("default refresh cohort exceeds safety ceiling")
     return limits
