@@ -145,6 +145,47 @@ def test_greenhouse_incremental_does_not_rehydrate_known_unknown_age_posting() -
     assert collector.last_counts["suppressed_known_unknown_age"] == 1
 
 
+def test_greenhouse_vanished_rows_do_not_exhaust_detail_budget() -> None:
+    vanished = [greenhouse_job(job_id) for job_id in range(1, 201)]
+    fresh = greenhouse_job(201)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/boards/acme/jobs":
+            return httpx.Response(
+                200,
+                json={"jobs": [*vanished, fresh]},
+                request=request,
+            )
+        job_id = int(request.url.path.rsplit("/", 1)[-1])
+        if job_id <= 200:
+            return httpx.Response(404, request=request)
+        assert job_id == 201
+        return httpx.Response(
+            200,
+            json={
+                **greenhouse_job(201),
+                "first_published": datetime.now(UTC).isoformat(),
+            },
+            request=request,
+        )
+
+    state = IncrementalTargetState(source="greenhouse", board_id="acme")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = GreenhouseCollector(
+            client,
+            incremental_states=[state],
+            incremental_detail_limit=200,
+        )
+        result = collector.collect(target())
+
+    assert result.status is CollectionStatus.SUCCESS
+    assert [job.source_job_id for job in result.jobs] == ["201"]
+    assert collector.last_counts["vanished"] == 200
+    assert collector.last_counts["detail_requests"] == 201
+    assert collector.last_counts["detail_budget_used"] == 1
+    assert collector.last_counts["detail_deferred"] == 0
+
+
 def test_smartrecruiters_incremental_skips_stale_detail_hydration() -> None:
     state = IncrementalTargetState(source="smartrecruiters", board_id="acme")
 
