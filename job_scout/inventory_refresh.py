@@ -179,7 +179,7 @@ def default_refresh_limits(
     workday_limit: int | None = None,
 ) -> dict[str, int]:
     limits = {
-        source: DEFAULT_LIMITS[source]
+        source: min(DEFAULT_LIMITS[source], registry.target_counts_by_source[source])
         for source in PROVIDERS
         if source in registry.target_counts_by_source
     }
@@ -663,7 +663,10 @@ def build_refresh_plan(
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
     limits = _refresh_limits(registry, limits, cohort=cohort)
     if shards is None:
-        shards = {source: DEFAULT_SHARDS[source] for source in providers}
+        shards = {
+            source: min(DEFAULT_SHARDS[source], limits[source])
+            for source in providers
+        }
         if "workday" in shards:
             # Workday target runtimes have a very long tail. Isolate every selected
             # Workday company so one slow board cannot serialize four healthy boards
