@@ -1,7 +1,7 @@
 """Persistent logical-hour scheduler for production inventory refreshes."""
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
+from dataclasses import dataclass
 
 
 REFRESH_SCHEDULE_SCHEMA = """
