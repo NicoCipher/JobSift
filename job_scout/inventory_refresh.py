@@ -31,6 +31,7 @@ from job_scout.shard_collection import (
 )
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.storage.inventory_runs import InventoryRunStore
+from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
@@ -606,6 +607,32 @@ def _write_json(path: Path, value) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def complete_scheduled_cohort(
+    *,
+    repository: SQLiteRepository,
+    cohort: int,
+    fan_in_report: Path,
+) -> dict[str, object]:
+    fan_in_payload = json.loads(fan_in_report.read_text(encoding="utf-8"))
+    fan_in = fan_in_payload.get("fan_in")
+    fan_in_status = fan_in.get("status") if isinstance(fan_in, dict) else None
+    if fan_in_status != "success":
+        return {
+            "cohort": cohort,
+            "marked_completed": False,
+            "fan_in_status": fan_in_status,
+            "reason": "fan-in is not complete; logical cohort remains due for retry",
+        }
+    store = InventoryRefreshScheduleStore(repository)
+    changed = store.mark_completed(cohort=cohort)
+    return {
+        "cohort": cohort,
+        "marked_completed": changed,
+        "fan_in_status": fan_in_status,
+        "last_completed_cohort": store.next_due().last_completed_cohort,
+    }
+
+
 def build_refresh_plan(
     *,
     registry: ProductionSourceRegistry,
@@ -819,8 +846,44 @@ def main() -> None:
     prune.add_argument("--output", type=Path, required=True)
     prune.add_argument("--retention-hours", type=int, default=72)
 
+    schedule_next = commands.add_parser("schedule-next")
+    schedule_next.add_argument("--database", type=Path, required=True)
+    schedule_next.add_argument("--output", type=Path, required=True)
+
+    schedule_complete = commands.add_parser("schedule-complete")
+    schedule_complete.add_argument("--database", type=Path, required=True)
+    schedule_complete.add_argument("--cohort", type=int, required=True)
+    schedule_complete.add_argument("--fan-in-report", type=Path, required=True)
+    schedule_complete.add_argument("--output", type=Path, required=True)
+
     args = parser.parse_args()
     try:
+        if args.command == "schedule-next":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            decision = InventoryRefreshScheduleStore(repository).next_due()
+            payload = {
+                "should_run": decision.should_run,
+                "cohort": decision.cohort,
+                "current_cohort": decision.current_cohort,
+                "last_completed_cohort": decision.last_completed_cohort,
+            }
+            _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
+            return
+
+        if args.command == "schedule-complete":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = SQLiteRepository(args.database)
+            payload = complete_scheduled_cohort(
+                repository=repository,
+                cohort=args.cohort,
+                fan_in_report=args.fan_in_report,
+            )
+            _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
+            return
+
         if args.command == "plan":
             registry = load_production_registry(args.registry)
             limits = default_refresh_limits(
