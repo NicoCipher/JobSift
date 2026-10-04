@@ -50,14 +50,14 @@ DEFAULT_LIMITS = {
     "ashby": 40,
     "workday": 1,
     "lever": 19,
-    "smartrecruiters": 1,
+    "smartrecruiters": 7,
 }
 DEFAULT_SHARDS = {
     "greenhouse": 6,
     "ashby": 6,
     "workday": 1,
     "lever": 4,
-    "smartrecruiters": 1,
+    "smartrecruiters": 2,
 }
 DEFAULT_WORKDAY_DETAIL_CONCURRENCY = 4
 MAX_REFRESH_TARGETS = 125
