@@ -159,7 +159,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
   expect(crossOrigin.status()).toBe(403);
 });
 
-test("destructive controls name their exact profile, batch, and consequence", async ({ page }) => {
+test("client Sheet selectors hide raw control IDs and dispatch the opaque profile handle", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -173,7 +173,10 @@ test("destructive controls name their exact profile, batch, and consequence", as
       }),
     });
   });
+
+  const dispatched: Record<string, unknown>[] = [];
   await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
     await route.fulfill({
       status: 202,
       contentType: "application/json",
@@ -182,24 +185,39 @@ test("destructive controls name their exact profile, batch, and consequence", as
   });
 
   await page.goto("/operations");
+  const deliveryProfile = page.getByLabel("Delivery profile");
+  const clientSheet = page.getByLabel("Client Sheet");
+  await expect(deliveryProfile).toHaveValue("ad763a0336d92204");
+  await expect(clientSheet).toHaveValue("ad763a0336d92204");
+  await expect(deliveryProfile.locator("option").first()).toHaveText(
+    "Example client — Example delivery destination",
+  );
+  await expect(page.getByPlaceholder("Opaque profile ID")).toHaveCount(0);
+
   const dialogs: string[] = [];
   page.on("dialog", async (dialog) => {
     dialogs.push(dialog.message());
-    await dialog.dismiss();
+    await dialog.accept();
   });
 
-  await page.getByLabel("Delivery profile ID").fill("0123456789abcdef");
   await page.getByRole("combobox", { name: "Operation" }).selectOption("pause");
   await page.getByRole("button", { name: "Apply control" }).click();
   await expect.poll(() => dialogs.length).toBe(1);
-  expect(dialogs[0]).toContain("0123456789abcdef");
+  expect(dialogs[0]).toContain("Example client — Example delivery destination");
+  expect(dialogs[0]).toContain("ad763a0336d92204");
   expect(dialogs[0]).toContain("New deliveries");
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
+  expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
+  expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
 
-  await page.getByLabel("Sheet profile ID").fill("fedcba9876543210");
   await page.getByRole("button", { name: "Disable Sheet" }).click();
   await expect.poll(() => dialogs.length).toBe(2);
-  expect(dialogs[1]).toContain("fedcba9876543210");
+  expect(dialogs[1]).toContain("Example client — Example delivery destination");
+  expect(dialogs[1]).toContain("ad763a0336d92204");
   expect(dialogs[1]).toContain("blocks new deliveries");
+  await expect.poll(() => dispatched.length).toBe(2);
+  expect(dispatched[1]?.profile_id).toBe("ad763a0336d92204");
 });
 
 test("partial run is data, not a service failure; missing and zero are explicit", async ({
