@@ -31,13 +31,10 @@ from job_scout.shard_collection import (
 )
 from job_scout.shard_fanin import persist_shard_artifacts
 from job_scout.source_discovery import overlay_admitted_targets
+from job_scout.storage.factory import create_repository
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.source_discovery import SourceDiscoveryStore
-from job_scout.storage.factory import create_repository
-
-# Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
-SQLiteRepository = create_repository
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
     WorkdayBriefBinding,
@@ -47,6 +44,9 @@ from job_scout.workday_production import (
     resolve_retained_workday_candidate_bindings,
     verify_active_workday_brief_bindings,
 )
+
+# Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
+SQLiteRepository = create_repository
 
 DEFAULT_LIMITS = {
     "greenhouse": 40,
