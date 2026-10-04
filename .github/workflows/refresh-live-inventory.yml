@@ -244,6 +244,7 @@ jobs:
           python -m job_scout.inventory_refresh schedule-complete \
             --database "$JOBSIFT_DATABASE" \
             --cohort "${{ needs.plan.outputs.cohort }}" \
+            --fan-in-report refresh-result/report.json \
             --output refresh-result/schedule-complete.json
 
       - name: Prune stale inventory
