@@ -422,11 +422,9 @@ CREATE TABLE IF NOT EXISTS operator_outcome_imports (
 CREATE OR REPLACE FUNCTION jobsift_reject_operator_state_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
-BEGIN
-  RAISE EXCEPTION 'operator outcome state is immutable';
-END;
-$$;
+AS 'BEGIN
+  RAISE EXCEPTION ''operator outcome state is immutable'';
+END';
 
 DROP TRIGGER IF EXISTS outcome_events_no_update ON operator_outcome_events;
 CREATE TRIGGER outcome_events_no_update
