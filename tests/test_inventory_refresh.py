@@ -58,11 +58,13 @@ def test_smartrecruiters_budget_does_not_make_small_greenhouse_limit_nonpositive
             for index in range(7)
         ],
     ]
-    registry = ProductionSourceRegistry(
-        registry_id="small-greenhouse-smartrecruiters",
-        targets=sorted(targets, key=lambda target: target.target_identity),
-        target_counts_by_source={"greenhouse": 5, "smartrecruiters": 7},
-        health_evidence_sha256="a" * 64,
+    base = inventory_refresh.load_production_registry(REGISTRY)
+    registry = base.model_copy(
+        update={
+            "registry_id": "small-greenhouse-smartrecruiters",
+            "targets": sorted(targets, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"greenhouse": 5, "smartrecruiters": 7},
+        }
     )
 
     limits = inventory_refresh.default_refresh_limits(registry)
