@@ -30,3 +30,14 @@ DROP TRIGGER IF EXISTS outcome_imports_no_delete ON operator_outcome_imports;
 CREATE TRIGGER outcome_imports_no_delete
 BEFORE DELETE ON operator_outcome_imports
 FOR EACH ROW EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
+
+
+DROP TRIGGER IF EXISTS outcome_events_no_truncate ON operator_outcome_events;
+CREATE TRIGGER outcome_events_no_truncate
+BEFORE TRUNCATE ON operator_outcome_events
+FOR EACH STATEMENT EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
+
+DROP TRIGGER IF EXISTS outcome_imports_no_truncate ON operator_outcome_imports;
+CREATE TRIGGER outcome_imports_no_truncate
+BEFORE TRUNCATE ON operator_outcome_imports
+FOR EACH STATEMENT EXECUTE FUNCTION jobsift_reject_operator_state_mutation();
