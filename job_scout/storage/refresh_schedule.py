@@ -1,7 +1,5 @@
 """Persistent logical-hour scheduler for production inventory refreshes."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
