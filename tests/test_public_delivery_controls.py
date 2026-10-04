@@ -86,3 +86,15 @@ def test_public_control_workflow_passes_untrusted_inputs_through_environment():
     assert '--confirm-batch-id "$CONTROL_BATCH_ID"' in apply
     script = apply.split("run: |", 1)[1]
     assert "${{ inputs." not in script
+
+
+def test_profile_configuration_workflow_keeps_dispatch_values_out_of_shell_script():
+    workflow = Path(".github/workflows/configure-client-delivery-profile.yml").read_text(
+        encoding="utf-8"
+    )
+    configure = workflow.split("- name: Configure delivery profile", 1)[1]
+    script = configure.split("run: |", 1)[1]
+
+    assert "CONTROL_PLAN: ${{ inputs.plan }}" in configure
+    assert "CONTROL_TIMEZONE: ${{ inputs.timezone }}" in configure
+    assert "${{ inputs." not in script
