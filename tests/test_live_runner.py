@@ -288,7 +288,7 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
     monkeypatch.setattr(
         live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
     )
-    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: object())
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: object())
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     monkeypatch.setattr(
         live_runner,
@@ -338,7 +338,7 @@ def test_sole_ready_client_destination_is_auto_selected(tmp_path, monkeypatch):
         live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
     )
     monkeypatch.setattr(
-        live_runner, "SQLiteRepository", lambda _: SimpleNamespace(remote_url="")
+        live_runner, "create_repository", lambda _: SimpleNamespace(remote_url="")
     )
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
     monkeypatch.setattr(
@@ -393,7 +393,7 @@ def test_multiple_ready_client_destinations_require_explicit_selection(tmp_path,
         live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
     )
     monkeypatch.setattr(
-        live_runner, "SQLiteRepository", lambda _: SimpleNamespace(remote_url="")
+        live_runner, "create_repository", lambda _: SimpleNamespace(remote_url="")
     )
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
     monkeypatch.setattr(
@@ -436,7 +436,7 @@ def test_registered_client_destination_replaces_global_sheet_coordinates(tmp_pat
         live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
     )
     monkeypatch.setattr(
-        live_runner, "SQLiteRepository", lambda _: SimpleNamespace(remote_url="")
+        live_runner, "create_repository", lambda _: SimpleNamespace(remote_url="")
     )
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: SimpleNamespace())
     monkeypatch.setattr(
@@ -488,7 +488,7 @@ def test_release_mode_never_sources_without_prepared_batch(tmp_path, monkeypatch
     monkeypatch.setattr(
         live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
     )
-    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: object())
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: object())
     monkeypatch.setattr(
         live_runner, "DailyBatchStore", lambda _: SimpleNamespace()
     )
@@ -544,7 +544,7 @@ def test_discard_mode_removes_unreleased_batch_without_sourcing(tmp_path, monkey
     monkeypatch.setattr(
         live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
     )
-    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: object())
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: object())
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     monkeypatch.setattr(
         live_runner,
@@ -592,7 +592,7 @@ def test_validation_mode_refuses_cloud_repository(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         live_runner,
-        "SQLiteRepository",
+        "create_repository",
         lambda _: SimpleNamespace(remote_url="libsql://production"),
     )
 
@@ -651,7 +651,7 @@ def test_retention_runs_before_client_evaluation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
     monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
-    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: repository)
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
     monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
@@ -736,7 +736,7 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
 
     monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
     monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
-    monkeypatch.setattr(live_runner, "SQLiteRepository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: repository)
     monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
     monkeypatch.setattr(live_runner, "sheet_destination", lambda *_: "gsheet://sheet123/Sheet1")
     monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
