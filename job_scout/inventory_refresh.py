@@ -51,6 +51,12 @@ from job_scout.workday_production import (
     resolve_retained_workday_candidate_bindings,
     verify_active_workday_brief_bindings,
 )
+from job_scout.yield_scheduling import (
+    YIELD_PRIORITY_EXTRA_BUDGET,
+    TargetYieldSignal,
+    load_target_yield_state,
+    yield_priority_targets,
+)
 
 # Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
 SQLiteRepository = create_repository
@@ -187,6 +193,9 @@ class RefreshPlan(BaseModel):
     total_targets: int = Field(ge=1, le=MAX_REFRESH_TARGETS)
     total_shards: int = Field(ge=1, le=MAX_REFRESH_SHARDS)
     selection_strategy: str = "cohort-rotation-v1"
+    fairness_floor_by_source: dict[str, int] | None = None
+    yield_priority_targets_by_source: dict[str, int] = Field(default_factory=dict)
+    yield_signal_sha256: str | None = None
     workday_detail_concurrency: int = Field(ge=1, le=8)
     # None is reserved for pre-index-first/legacy plans that did not freeze a brief snapshot.
     # New production plans always store a list, including [] when no profiles are active.
@@ -693,10 +702,77 @@ def history_aware_registry(
     )
 
 
+def yield_aware_registry(
+    registry: ProductionSourceRegistry,
+    *,
+    cohort: int,
+    fairness_limits: dict[str, int],
+    selection_state: dict[str, dict[str, str | None]],
+    yield_state: dict[str, TargetYieldSignal],
+    extra_budget: int = YIELD_PRIORITY_EXTRA_BUDGET,
+) -> tuple[ProductionSourceRegistry, dict[str, int]]:
+    """Preserve the oldest-due fairness floor and spend only spare capacity on yield.
+
+    The fairness selection is identical to oldest-due-v1. High-yield targets are
+    added on top, never substituted for due targets, so the stable-registry
+    coverage horizon is not weakened by exploitation.
+    """
+
+    fairness = history_aware_registry(
+        registry,
+        cohort=cohort,
+        limits=fairness_limits,
+        selection_state=selection_state,
+    )
+    selected_ids = {target.target_identity for target in fairness.targets}
+    spare_capacity = max(0, MAX_REFRESH_TARGETS - len(fairness.targets))
+    bonus_budget = min(extra_budget, spare_capacity)
+    extras = yield_priority_targets(
+        registry,
+        already_selected=selected_ids,
+        yield_state=yield_state,
+        budget=bonus_budget,
+    )
+
+    selected = [*fairness.targets, *extras]
+    selected.sort(key=lambda target: target.target_identity)
+    bonus_counts = dict(sorted(Counter(target.source for target in extras).items()))
+    parent_sha = sha256_json(registry.model_dump(mode="json"))
+    identity = sha256_json(
+        {
+            "parent_registry_sha256": parent_sha,
+            "cohort": cohort,
+            "fairness_limits": fairness_limits,
+            "extra_budget": bonus_budget,
+            "selection_strategy": "yield-aware-oldest-due-v1",
+            "yield_priority_targets": [
+                target.target_identity for target in extras
+            ],
+            "targets": [target.target_identity for target in selected],
+        }
+    )[:16]
+    return (
+        ProductionSourceRegistry(
+            registry_id=f"{registry.registry_id}-refresh-{cohort}-{identity}",
+            target_universe_git_blob_sha=registry.target_universe_git_blob_sha,
+            health_manifest_sha256=registry.health_manifest_sha256,
+            health_evidence_updated_at=registry.health_evidence_updated_at,
+            approval_policy=registry.approval_policy,
+            target_counts_by_source=dict(
+                sorted(Counter(target.source for target in selected).items())
+            ),
+            targets=selected,
+        ),
+        bonus_counts,
+    )
+
+
 def build_history_coverage_capacity(
     registry: ProductionSourceRegistry,
     *,
     limits: dict[str, int],
+    selection_strategy: str = "oldest-due-v1",
+    selected_counts: dict[str, int] | None = None,
 ) -> dict[str, object]:
     providers = []
     for source in PROVIDERS:
@@ -709,7 +785,10 @@ def build_history_coverage_capacity(
             {
                 "source": source,
                 "registry_targets": count,
-                "targets_per_cohort": limit,
+                "fairness_targets_per_cohort": limit,
+                "selected_targets_per_cohort": (
+                    (selected_counts or limits).get(source, limit)
+                ),
                 "stable_registry_full_coverage_cohorts": stable_full_coverage,
                 "fast_provider_horizon_met": (
                     None
@@ -719,12 +798,18 @@ def build_history_coverage_capacity(
             }
         )
     return {
-        "selection_strategy": "oldest-due-v1",
+        "selection_strategy": selection_strategy,
         "registry_id": registry.registry_id,
         "registry_sha256": sha256_json(registry.model_dump(mode="json")),
         "growth_semantics": (
-            "targets are ordered by durable due timestamp; new admissions do not "
-            "recompute or reset existing targets' progress"
+            "oldest-due fairness slots are preserved exactly; yield-priority targets "
+            "may be added only from spare production capacity, so new admissions "
+            "and exploitation cannot reset or displace due targets"
+            if selection_strategy == "yield-aware-oldest-due-v1"
+            else (
+                "targets are ordered by durable due timestamp; new admissions do not "
+                "recompute or reset existing targets' progress"
+            )
         ),
         "providers": providers,
     }
@@ -737,18 +822,16 @@ def build_fan_in_coverage_payload(
     parent_registry: ProductionSourceRegistry,
     selected_registry: ProductionSourceRegistry,
     generated_at: datetime,
+    fairness_limits: dict[str, int] | None = None,
+    selection_strategy: str = "oldest-due-v1",
 ) -> dict[str, object]:
-    """Build the JSON-ready coverage payload after a successful fan-in.
-
-    The theoretical history-aware capacity report is already a plain dictionary,
-    while observed coverage is a Pydantic model. Normalize that boundary here so
-    the production fan-in path cannot accidentally call model-only methods on a
-    dictionary after persistence has already succeeded.
-    """
+    """Build the JSON-ready coverage payload after a successful fan-in."""
 
     theoretical = build_history_coverage_capacity(
         parent_registry,
-        limits=selected_registry.target_counts_by_source,
+        limits=fairness_limits or selected_registry.target_counts_by_source,
+        selection_strategy=selection_strategy,
+        selected_counts=selected_registry.target_counts_by_source,
     )
     observed = build_observed_coverage_report(
         repository=repository,
@@ -893,16 +976,49 @@ def build_refresh_plan(
     workday_retained_candidates: list[WorkdayRetainedCandidateBinding] | None = None,
     incremental_target_state: list[IncrementalTargetState] | None = None,
     selection_state: dict[str, dict[str, str | None]] | None = None,
+    yield_state: dict[str, TargetYieldSignal] | None = None,
+    yield_extra_budget: int = YIELD_PRIORITY_EXTRA_BUDGET,
 ):
     providers = tuple(source for source in PROVIDERS if source in registry.target_counts_by_source)
-    limits = _refresh_limits(registry, limits, cohort=cohort)
+    fairness_limits = _refresh_limits(registry, limits, cohort=cohort)
+
+    yield_priority_counts: dict[str, int] = {}
+    if selection_state is None:
+        selection_strategy = "cohort-rotation-v1"
+        subset = rotating_registry(
+            registry,
+            cohort=cohort,
+            limits=fairness_limits,
+        )
+    elif yield_state is None:
+        selection_strategy = "oldest-due-v1"
+        subset = history_aware_registry(
+            registry,
+            cohort=cohort,
+            limits=fairness_limits,
+            selection_state=selection_state,
+        )
+    else:
+        selection_strategy = "yield-aware-oldest-due-v1"
+        subset, yield_priority_counts = yield_aware_registry(
+            registry,
+            cohort=cohort,
+            fairness_limits=fairness_limits,
+            selection_state=selection_state,
+            yield_state=yield_state,
+            extra_budget=yield_extra_budget,
+        )
+
+    effective_limits = dict(subset.target_counts_by_source)
     if shards is None:
         shards = {
             source: min(
-                limits[source],
+                effective_limits[source],
                 max(
                     DEFAULT_SHARDS[source],
-                    math.ceil(limits[source] / MAX_TARGETS_PER_SHARD[source]),
+                    math.ceil(
+                        effective_limits[source] / MAX_TARGETS_PER_SHARD[source]
+                    ),
                 ),
             )
             for source in providers
@@ -917,20 +1033,6 @@ def build_refresh_plan(
         raise ValueError("Workday detail concurrency must be an integer from 1 to 8")
     if set(shards) != set(providers) or any(value < 1 for value in shards.values()):
         raise ValueError("refresh shards must contain positive counts for every provider")
-
-    selection_strategy = (
-        "cohort-rotation-v1" if selection_state is None else "oldest-due-v1"
-    )
-    subset = (
-        rotating_registry(registry, cohort=cohort, limits=limits)
-        if selection_state is None
-        else history_aware_registry(
-            registry,
-            cohort=cohort,
-            limits=limits,
-            selection_state=selection_state,
-        )
-    )
     for source in providers:
         if shards[source] > subset.target_counts_by_source[source]:
             raise ValueError(f"shard count exceeds selected {source} targets")
@@ -1004,12 +1106,26 @@ def build_refresh_plan(
         refresh_registry_id=subset.registry_id,
         refresh_registry_sha256=sha256_json(subset.model_dump(mode="json")),
         shard_manifest_sha256=manifest.manifest_sha256,
-        target_limits_by_source=limits,
+        target_limits_by_source=effective_limits,
         shard_counts_by_source=shards,
         target_counts_by_source=subset.target_counts_by_source,
         total_targets=len(subset.targets),
         total_shards=len(manifest.shards),
         selection_strategy=selection_strategy,
+        fairness_floor_by_source=(
+            fairness_limits if selection_state is not None else None
+        ),
+        yield_priority_targets_by_source=yield_priority_counts,
+        yield_signal_sha256=(
+            sha256_json(
+                {
+                    target_identity: signal.model_dump(mode="json")
+                    for target_identity, signal in sorted(yield_state.items())
+                }
+            )
+            if yield_state is not None
+            else None
+        ),
         workday_detail_concurrency=workday_detail_concurrency,
         workday_briefs=(None if workday_briefs is None else list(workday_briefs)),
         workday_retained_candidates=planned_retained_candidates,
@@ -1236,6 +1352,11 @@ def main() -> None:
                 planning_repository,
                 registry,
             )
+            yield_state = load_target_yield_state(
+                planning_repository,
+                registry,
+                loaded_workday_briefs,
+            )
             refresh, subset, manifest = build_refresh_plan(
                 registry=registry,
                 cohort=args.cohort,
@@ -1245,6 +1366,7 @@ def main() -> None:
                 workday_retained_candidates=workday_retained_candidates,
                 incremental_target_state=incremental_target_state,
                 selection_state=selection_state,
+                yield_state=yield_state,
             )
             _write_json(args.output_dir / "parent-registry.json", registry)
             _write_json(args.output_dir / "registry.json", subset)
@@ -1254,7 +1376,12 @@ def main() -> None:
             _write_json(args.output_dir / "plan.json", refresh)
             _write_json(
                 args.output_dir / "coverage.json",
-                build_history_coverage_capacity(registry, limits=limits),
+                build_history_coverage_capacity(
+                    registry,
+                    limits=refresh.fairness_floor_by_source or limits,
+                    selection_strategy=refresh.selection_strategy,
+                    selected_counts=refresh.target_counts_by_source,
+                ),
             )
             _write_json(
                 args.output_dir / "refresh.json",
@@ -1267,6 +1394,15 @@ def main() -> None:
                     "selected_registry_id": subset.registry_id,
                     "selected_targets": len(subset.targets),
                     "selection_strategy": refresh.selection_strategy,
+                    "fairness_floor_by_source": refresh.fairness_floor_by_source,
+                    "yield_priority_targets_by_source": (
+                        refresh.yield_priority_targets_by_source
+                    ),
+                    "yield_signal_sha256": refresh.yield_signal_sha256,
+                    "yield_positive_targets": sum(
+                        signal.eligible_fresh_jobs > 0
+                        for signal in yield_state.values()
+                    ),
                     "target_counts_by_source": subset.target_counts_by_source,
                     "shard_counts_by_source": refresh.shard_counts_by_source,
                     "active_workday_briefs": len(refresh.workday_briefs),
@@ -1450,6 +1586,16 @@ def main() -> None:
             parent_registry=parent_registry,
             selected_registry=registry,
             generated_at=report.persisted_at,
+            fairness_limits=(
+                refresh_plan.fairness_floor_by_source
+                if refresh_plan is not None
+                else None
+            ),
+            selection_strategy=(
+                refresh_plan.selection_strategy
+                if refresh_plan is not None
+                else "oldest-due-v1"
+            ),
         )
         _write_json(args.output.parent / "coverage.json", coverage_payload)
         retention = {}
