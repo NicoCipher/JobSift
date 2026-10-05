@@ -294,24 +294,101 @@ class SourceDiscoveryStore:
             )
         )
 
-    def health_candidates(self, *, now: datetime, limit: int) -> list[dict[str, Any]]:
+    def health_candidates(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+        admission_max_age_hours: int = 48,
+        expiry_guard_hours: int = 6,
+    ) -> list[dict[str, Any]]:
+        """Select due health work without starving either admission or rechecks.
+
+        Previously admitted active targets that are close to aging out of the
+        admission window always win. Outside that guard window, half of a
+        multi-target batch is reserved for never-checked discovery candidates;
+        routine rechecks and retries consume the other half, then either side
+        may use spare capacity.
+        """
         if limit < 1:
             raise ValueError("health candidate limit must be positive")
-        current = _aware(now).isoformat()
+        if admission_max_age_hours < 2:
+            raise ValueError("admission health age must be at least two hours")
+        if expiry_guard_hours < 1 or expiry_guard_hours >= admission_max_age_hours:
+            raise ValueError("health expiry guard must fit inside admission age")
+
+        current_dt = _aware(now)
+        current = current_dt.isoformat()
+        urgent_cutoff = (
+            current_dt
+            - timedelta(hours=admission_max_age_hours - expiry_guard_hours)
+        ).isoformat()
         with self.repository.connect() as connection:
             rows = connection.execute(
                 "SELECT target_identity,source,coordinates_json,company_hint,"
-                "latest_health_classification,latest_health_checked_at "
+                "latest_health_classification,latest_health_checked_at,"
+                "admitted,admitted_at,first_discovered_at,next_health_check_at "
                 "FROM source_discovery_targets "
                 "WHERE next_health_check_at IS NULL OR next_health_check_at<=? "
-                "ORDER BY "
-                "CASE "
-                "WHEN admitted=1 OR admitted_at IS NOT NULL THEN 0 "
-                "WHEN latest_health_checked_at IS NULL THEN 1 "
-                "ELSE 2 END,"
-                "COALESCE(next_health_check_at,''),target_identity LIMIT ?",
-                (current, limit),
+                "ORDER BY COALESCE(next_health_check_at,''),target_identity",
+                (current,),
             ).fetchall()
+
+        urgent = []
+        unchecked = []
+        routine = []
+        for row in rows:
+            previously_admitted = bool(row["admitted"] or row["admitted_at"])
+            checked_at = row["latest_health_checked_at"]
+            if (
+                previously_admitted
+                and row["latest_health_classification"] == "active"
+                and checked_at is not None
+                and checked_at <= urgent_cutoff
+            ):
+                urgent.append(row)
+            elif checked_at is None:
+                unchecked.append(row)
+            else:
+                routine.append(row)
+
+        urgent.sort(
+            key=lambda row: (
+                row["latest_health_checked_at"] or "",
+                row["target_identity"],
+            )
+        )
+        unchecked.sort(
+            key=lambda row: (
+                row["first_discovered_at"],
+                row["target_identity"],
+            )
+        )
+        routine.sort(
+            key=lambda row: (
+                0 if row["admitted"] or row["admitted_at"] else 1,
+                row["next_health_check_at"] or "",
+                row["target_identity"],
+            )
+        )
+
+        selected: list[tuple[Any, str]] = [
+            (row, "expiry_guard") for row in urgent[:limit]
+        ]
+        remaining = limit - len(selected)
+        reserve = min(remaining, limit // 2, len(unchecked))
+        selected.extend((row, "new_candidate") for row in unchecked[:reserve])
+        remaining = limit - len(selected)
+
+        if remaining:
+            selected.extend((row, "routine") for row in routine[:remaining])
+            remaining = limit - len(selected)
+        if remaining:
+            selected.extend(
+                (row, "new_candidate")
+                for row in unchecked[reserve : reserve + remaining]
+            )
+
         return [
             {
                 "target_identity": row["target_identity"],
@@ -320,8 +397,9 @@ class SourceDiscoveryStore:
                 "company_hint": row["company_hint"],
                 "latest_health_classification": row["latest_health_classification"],
                 "latest_health_checked_at": row["latest_health_checked_at"],
+                "health_selection_reason": reason,
             }
-            for row in rows
+            for row, reason in selected
         ]
 
     @staticmethod
@@ -492,6 +570,7 @@ class SourceDiscoveryStore:
             now=now,
             max_health_age_hours=max_health_age_hours,
         )
+        current = _aware(now).isoformat()
         with self.repository.connect() as connection:
             total = connection.execute(
                 "SELECT COUNT(*) FROM source_discovery_targets"
@@ -511,10 +590,30 @@ class SourceDiscoveryStore:
                     "GROUP BY latest_health_classification"
                 ).fetchall()
             }
+            unchecked = connection.execute(
+                "SELECT COUNT(*) FROM source_discovery_targets "
+                "WHERE latest_health_checked_at IS NULL"
+            ).fetchone()[0]
+            due = connection.execute(
+                "SELECT COUNT(*) AS total,"
+                "SUM(CASE WHEN latest_health_checked_at IS NULL THEN 1 ELSE 0 END) "
+                "AS unchecked,"
+                "SUM(CASE WHEN admitted=1 OR admitted_at IS NOT NULL THEN 1 ELSE 0 END) "
+                "AS previously_admitted "
+                "FROM source_discovery_targets "
+                "WHERE next_health_check_at IS NULL OR next_health_check_at<=?",
+                (current,),
+            ).fetchone()
         return {
             "discovered_targets": total,
             "discovery_evidence_rows": evidence,
             "health_evidence_rows": health,
             "latest_health_classifications": classifications,
+            "health_unchecked_targets": unchecked,
+            "health_due_targets": int(due["total"] or 0),
+            "health_due_unchecked_targets": int(due["unchecked"] or 0),
+            "health_due_previously_admitted_targets": int(
+                due["previously_admitted"] or 0
+            ),
             "runtime_admitted_targets": len(admitted),
         }
