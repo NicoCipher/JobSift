@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from job_scout import inventory_refresh
 from job_scout.domain.models import CollectionResult, CollectionStatus, Job, SourceTarget
 from job_scout.production_registry import build_production_registry, build_shard_manifest
 from job_scout.shard_collection import ShardCollectionArtifact, collect_shard
@@ -141,6 +143,44 @@ def _inventory_table_exists(repository: SQLiteRepository) -> bool:
             ).fetchone()
             is not None
         )
+
+
+def test_successful_fan_in_can_write_history_coverage_report(tmp_path: Path) -> None:
+    registry = _registry()
+    manifest = build_shard_manifest(
+        registry,
+        shard_counts_by_source={"greenhouse": 2},
+    )
+    artifacts = [
+        _artifact(registry, manifest, "greenhouse-000"),
+        _artifact(registry, manifest, "greenhouse-001"),
+    ]
+    repository = SQLiteRepository(tmp_path / "coverage-after-fanin.sqlite3")
+
+    report = persist_shard_artifacts(
+        repository=repository,
+        registry=registry,
+        manifest=manifest,
+        artifacts=artifacts,
+        now=lambda: PERSISTED,
+    )
+    assert report.status == "success"
+
+    coverage_payload = inventory_refresh.build_fan_in_coverage_payload(
+        repository=repository,
+        run_id=report.run_id,
+        parent_registry=registry,
+        selected_registry=registry,
+        generated_at=report.persisted_at,
+    )
+    coverage_path = tmp_path / "coverage.json"
+    inventory_refresh._write_json(coverage_path, coverage_payload)
+
+    written = json.loads(coverage_path.read_text(encoding="utf-8"))
+    assert written["theoretical"]["selection_strategy"] == "oldest-due-v1"
+    assert written["theoretical"]["providers"][0]["source"] == "greenhouse"
+    assert written["observed"]["run_id"] == report.run_id
+    assert written["observed"]["providers"][0]["current_targets_attempted"] == 2
 
 
 def test_fan_in_persists_once_and_replays_without_mutating_artifacts(tmp_path: Path) -> None:
