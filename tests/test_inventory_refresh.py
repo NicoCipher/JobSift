@@ -132,6 +132,76 @@ def test_fast_provider_rotation_covers_every_target_within_six_cohorts():
         )
 
 
+def test_failed_target_does_not_advance_oldest_due_fairness(tmp_path):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    target = next(target for target in registry.targets if target.source == "greenhouse")
+    scoped = registry.model_copy(
+        update={
+            "registry_id": "failed-target-fairness",
+            "targets": [target],
+            "target_counts_by_source": {"greenhouse": 1},
+        }
+    )
+    repo = SQLiteRepository(tmp_path / "failed-fairness.sqlite3")
+    store = InventoryRunStore(repo)
+    attempted_at = datetime(2026, 10, 5, 8, 0, tzinfo=UTC)
+
+    store.create(run_id="failed-run", plan_id="plan", started_at=attempted_at)
+    store.persist_jobs_and_finish(
+        run_id="failed-run",
+        jobs=[],
+        memberships=[],
+        target_observations=[
+            (
+                target.target_identity,
+                target.source,
+                "network_failure",
+                attempted_at,
+                attempted_at,
+                100,
+                0,
+                0,
+                0,
+                0,
+            )
+        ],
+        status="partial",
+        completed_at=attempted_at,
+    )
+
+    failed_state = inventory_refresh.load_target_selection_state(repo, scoped)
+    assert failed_state[target.target_identity]["last_observed_at"] is None
+
+    succeeded_at = attempted_at + timedelta(minutes=5)
+    store.create(run_id="success-run", plan_id="plan", started_at=succeeded_at)
+    store.persist_jobs_and_finish(
+        run_id="success-run",
+        jobs=[],
+        memberships=[],
+        target_observations=[
+            (
+                target.target_identity,
+                target.source,
+                "success",
+                succeeded_at,
+                succeeded_at,
+                100,
+                0,
+                0,
+                0,
+                0,
+            )
+        ],
+        status="success",
+        completed_at=succeeded_at,
+    )
+
+    success_state = inventory_refresh.load_target_selection_state(repo, scoped)
+    assert success_state[target.target_identity]["last_observed_at"] == (
+        succeeded_at.isoformat()
+    )
+
+
 def test_oldest_due_selection_does_not_reset_when_registry_grows():
     from job_scout.production_registry import ProductionTarget
 
