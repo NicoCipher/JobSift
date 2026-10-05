@@ -12,7 +12,6 @@ from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 from job_scout.yield_scheduling import TargetYieldSignal, load_target_yield_state
 
-
 REGISTRY = Path("config/source_registries/production_active_v1.json")
 BRIEF = Path("config/search_briefs/taiwo_software_remote_us_v1.json")
 
