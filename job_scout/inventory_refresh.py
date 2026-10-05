@@ -730,6 +730,39 @@ def build_history_coverage_capacity(
     }
 
 
+def build_fan_in_coverage_payload(
+    *,
+    repository,
+    run_id: str,
+    parent_registry: ProductionSourceRegistry,
+    selected_registry: ProductionSourceRegistry,
+    generated_at: datetime,
+) -> dict[str, object]:
+    """Build the JSON-ready coverage payload after a successful fan-in.
+
+    The theoretical history-aware capacity report is already a plain dictionary,
+    while observed coverage is a Pydantic model. Normalize that boundary here so
+    the production fan-in path cannot accidentally call model-only methods on a
+    dictionary after persistence has already succeeded.
+    """
+
+    theoretical = build_history_coverage_capacity(
+        parent_registry,
+        limits=selected_registry.target_counts_by_source,
+    )
+    observed = build_observed_coverage_report(
+        repository=repository,
+        run_id=run_id,
+        parent_registry=parent_registry,
+        selected_registry=selected_registry,
+        generated_at=generated_at,
+    )
+    return {
+        "theoretical": theoretical,
+        "observed": observed.model_dump(mode="json"),
+    }
+
+
 def _stable(values):
     return sorted(
         values,
@@ -1411,21 +1444,13 @@ def main() -> None:
             ),
             flush=True,
         )
-        coverage_proof = build_history_coverage_capacity(
-            parent_registry,
-            limits=registry.target_counts_by_source,
-        )
-        observed_coverage = build_observed_coverage_report(
+        coverage_payload = build_fan_in_coverage_payload(
             repository=repository,
             run_id=report.run_id,
             parent_registry=parent_registry,
             selected_registry=registry,
             generated_at=report.persisted_at,
         )
-        coverage_payload = {
-            "theoretical": coverage_proof.model_dump(mode="json"),
-            "observed": observed_coverage.model_dump(mode="json"),
-        }
         _write_json(args.output.parent / "coverage.json", coverage_payload)
         retention = {}
         retention_seconds = 0.0
