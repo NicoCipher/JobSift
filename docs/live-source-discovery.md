@@ -13,7 +13,7 @@ The v1 pipeline is:
 1. Read one bounded CDX page per supported ATS query from the latest Common Crawl.
 2. Parse only URLs that match JobSift's existing canonical provider-coordinate
    contracts.
-3. Persist immutable URL-level discovery evidence in Turso.
+3. Persist immutable URL-level discovery evidence in Neon/Postgres.
 4. Health-check candidates directly against the provider's public API.
 5. Admit only targets whose latest direct provider health result is `active`.
 6. Expire runtime admission when active health evidence is older than 48 hours.
@@ -40,11 +40,15 @@ The Common Crawl client discovers the latest crawl dynamically from
 index page each run using a deterministic co-prime stride. This spreads discovery
 across very large provider indexes instead of repeatedly starting at the lexical
 front of every new crawl. Requests are serialized and delayed to avoid hammering
-the public CDX service.
+the public CDX service. Transient connection, 429, and 5xx failures are retried
+with bounded backoff. A CDX data page that returns 404 is treated as an empty
+index page and its cursor advances, preventing one stale/empty block from
+permanently pinning a provider query. Malformed payloads still fail closed for
+that query run.
 
 ## Admission state
 
-Turso stores:
+Neon/Postgres stores:
 
 - canonical discovered target coordinates,
 - first/last discovery timestamps,
@@ -55,15 +59,22 @@ Turso stores:
 - current admission state,
 - next health-check time.
 
-New targets are checked before previously checked targets. Recheck cadence is
-classification-aware:
+Health work is bounded without allowing the admission queue to starve. Targets
+with active health evidence close to the unchanged 48-hour admission expiry are
+checked first. Outside that expiry guard, half of a multi-target health batch is
+reserved for never-checked discovery candidates; routine rechecks and retries use
+the remaining capacity, and either side may consume spare capacity. A candidate
+still enters production only after a direct provider probe returns `active`.
 
-- active / valid empty: 24 hours (due admitted targets are checked before new candidates)
+Recheck cadence remains classification-aware:
+
+- active / valid empty: 24 hours
 - transient / rate limited / malformed: 6 hours
 - restricted: 3 days
 - invalid / unprocessable: 7 days
 
-Only `active` targets are runtime-admitted.
+Only `active` targets are runtime-admitted. The 48-hour active-health admission
+window is unchanged.
 
 ## Scheduling
 
@@ -71,7 +82,7 @@ Only `active` targets are runtime-admitted.
 manually dispatched. It performs bounded discovery and at most 300 provider health
 checks per run.
 
-The hourly inventory refresh reads current admissions from the same Turso
+The hourly inventory refresh reads current admissions from the same Neon/Postgres
 database. If the discovery workflow is unavailable, previously admitted targets
 automatically stop entering runtime after the 48-hour health-evidence window;
 the frozen registry remains available.

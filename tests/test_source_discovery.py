@@ -246,6 +246,161 @@ def test_common_crawl_discovery_advances_persisted_page_cursor(tmp_path: Path) -
     assert any("page=1" in value for value in requests)
 
 
+def test_common_crawl_retries_transient_index_failure(tmp_path: Path) -> None:
+    page_count_attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page_count_attempts
+        if request.url.path == "/collinfo.json":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "CC-MAIN-2026-39",
+                        "cdx-api": (
+                            "https://index.commoncrawl.org/"
+                            "CC-MAIN-2026-39-index"
+                        ),
+                    }
+                ],
+                request=request,
+            )
+        if request.url.params.get("showNumPages") == "true":
+            page_count_attempts += 1
+            if page_count_attempts == 1:
+                return httpx.Response(504, request=request)
+            return httpx.Response(
+                200,
+                json={"blocks": 1, "pages": 1, "pageSize": 1},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "url": (
+                        "https://jobs.smartrecruiters.com/ServiceNow/"
+                        "744000148862459-software-engineer"
+                    ),
+                    "timestamp": "20261003120000",
+                    "status": "200",
+                    "mime": "text/html",
+                }
+            )
+            + "\n",
+            request=request,
+        )
+
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    query = DiscoveryQuery("smartrecruiters", "jobs.smartrecruiters.com/*")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = CommonCrawlDiscovery(
+            client,
+            store,
+            delay_seconds=0,
+            retries=2,
+            queries=(query,),
+        ).discover(base_target_identities=set(), observed_at=NOW)
+
+    assert page_count_attempts == 2
+    assert report["queries_succeeded"] == 1
+    assert report["new_targets"] == 1
+
+
+
+def test_common_crawl_404_page_count_still_fails_closed(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/collinfo.json":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "CC-MAIN-2026-39",
+                        "cdx-api": (
+                            "https://index.commoncrawl.org/"
+                            "CC-MAIN-2026-39-index"
+                        ),
+                    }
+                ],
+                request=request,
+            )
+        return httpx.Response(404, request=request)
+
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    query = DiscoveryQuery("lever-global", "jobs.lever.co/*")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = CommonCrawlDiscovery(
+            client,
+            store,
+            delay_seconds=0,
+            queries=(query,),
+        ).discover(base_target_identities=set(), observed_at=NOW)
+
+    assert report["queries_failed"] == 1
+    assert report.get("queries_succeeded", 0) == 0
+    assert store.get_cursor(
+        discovery_source="commoncrawl-cdx",
+        query_id="lever-global",
+    ) is None
+
+
+def test_common_crawl_404_page_advances_cursor_as_empty_page(
+    tmp_path: Path,
+) -> None:
+    requested_pages: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/collinfo.json":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "CC-MAIN-2026-39",
+                        "cdx-api": (
+                            "https://index.commoncrawl.org/"
+                            "CC-MAIN-2026-39-index"
+                        ),
+                    }
+                ],
+                request=request,
+            )
+        if request.url.params.get("showNumPages") == "true":
+            return httpx.Response(
+                200,
+                json={"blocks": 2, "pages": 2, "pageSize": 1},
+                request=request,
+            )
+        requested_pages.append(int(request.url.params.get("page", "0")))
+        return httpx.Response(404, request=request)
+
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    query = DiscoveryQuery("lever-global", "jobs.lever.co/*")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = CommonCrawlDiscovery(
+            client,
+            store,
+            delay_seconds=0,
+            queries=(query,),
+        ).discover(base_target_identities=set(), observed_at=NOW)
+
+    assert report["queries_succeeded"] == 1
+    assert report.get("queries_failed", 0) == 0
+    assert report.get("index_records", 0) == 0
+    cursor = store.get_cursor(
+        discovery_source="commoncrawl-cdx",
+        query_id="lever-global",
+    )
+    assert cursor is not None
+    assert requested_pages == [
+        CommonCrawlDiscovery._initial_page(
+            crawl_id="CC-MAIN-2026-39",
+            query_id="lever-global",
+            pages=2,
+        )
+    ]
+    assert cursor["page"] != requested_pages[0]
+
+
 def test_provider_health_probe_is_authoritative_for_smartrecruiters() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "api.smartrecruiters.com"
@@ -436,6 +591,171 @@ def test_retryable_previously_admitted_target_precedes_unchecked_backlog(
     assert [value["target_identity"] for value in due] == [
         retryable["target_identity"]
     ]
+
+
+
+def test_health_candidates_reserve_capacity_for_unchecked_backlog(
+    tmp_path: Path,
+) -> None:
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+
+    for index in range(4):
+        url = (
+            "https://jobs.smartrecruiters.com/"
+            f"Active{index}/74400020000000{index}-software-engineer"
+        )
+        candidate = candidate_from_url(url)
+        assert candidate is not None
+        store.observe_candidate(
+            **candidate,
+            discovery_source="commoncrawl-cdx",
+            crawl_id="CC-MAIN-2026-39",
+            query_id="smartrecruiters",
+            captured_at=f"2026100311{index:02d}00",
+            discovered_url=url,
+            observed_at=NOW,
+        )
+        store.record_health(
+            target_identity=candidate["target_identity"],
+            checked_at=NOW,
+            result={
+                "classification": "active",
+                "request_count": 1,
+                "http_status": 200,
+                "current_postings": 10,
+                "inventory_exact": True,
+                "error": None,
+            },
+        )
+
+    for index in range(4):
+        url = (
+            "https://jobs.smartrecruiters.com/"
+            f"Unchecked{index}/74400030000000{index}-software-engineer"
+        )
+        candidate = candidate_from_url(url)
+        assert candidate is not None
+        store.observe_candidate(
+            **candidate,
+            discovery_source="commoncrawl-cdx",
+            crawl_id="CC-MAIN-2026-39",
+            query_id="smartrecruiters",
+            captured_at=f"2026100312{index:02d}00",
+            discovered_url=url,
+            observed_at=NOW,
+        )
+
+    selected = store.health_candidates(
+        now=NOW + timedelta(hours=24),
+        limit=4,
+    )
+
+    reasons = [candidate["health_selection_reason"] for candidate in selected]
+    assert reasons.count("new_candidate") == 2
+    assert reasons.count("routine") == 2
+    assert sum(candidate["ever_admitted"] for candidate in selected) == 2
+
+    summary = store.summary(now=NOW + timedelta(hours=24))
+    assert summary["health_unchecked_targets"] == 4
+    assert summary["health_due_unchecked_targets"] == 4
+    assert summary["health_due_previously_admitted_targets"] == 4
+
+
+
+def test_health_candidates_preserve_one_hour_admission_window(
+    tmp_path: Path,
+) -> None:
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    url = (
+        "https://jobs.smartrecruiters.com/"
+        "ShortWindow/744000600000001-software-engineer"
+    )
+    candidate = candidate_from_url(url)
+    assert candidate is not None
+    store.observe_candidate(
+        **candidate,
+        discovery_source="commoncrawl-cdx",
+        crawl_id="CC-MAIN-2026-39",
+        query_id="smartrecruiters",
+        captured_at="20261003150000",
+        discovered_url=url,
+        observed_at=NOW,
+    )
+
+    selected = store.health_candidates(
+        now=NOW,
+        limit=1,
+        admission_max_age_hours=1,
+    )
+
+    assert [value["target_identity"] for value in selected] == [
+        candidate["target_identity"]
+    ]
+    assert selected[0]["health_selection_reason"] == "new_candidate"
+
+
+def test_expiry_guard_can_use_full_health_budget(
+    tmp_path: Path,
+) -> None:
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+
+    for index in range(3):
+        url = (
+            "https://jobs.smartrecruiters.com/"
+            f"Guarded{index}/74400040000000{index}-software-engineer"
+        )
+        candidate = candidate_from_url(url)
+        assert candidate is not None
+        store.observe_candidate(
+            **candidate,
+            discovery_source="commoncrawl-cdx",
+            crawl_id="CC-MAIN-2026-39",
+            query_id="smartrecruiters",
+            captured_at=f"2026100313{index:02d}00",
+            discovered_url=url,
+            observed_at=NOW,
+        )
+        store.record_health(
+            target_identity=candidate["target_identity"],
+            checked_at=NOW,
+            result={
+                "classification": "active",
+                "request_count": 1,
+                "http_status": 200,
+                "current_postings": 10,
+                "inventory_exact": True,
+                "error": None,
+            },
+        )
+
+    unchecked_url = (
+        "https://jobs.smartrecruiters.com/"
+        "UncheckedGuard/744000500000001-software-engineer"
+    )
+    unchecked = candidate_from_url(unchecked_url)
+    assert unchecked is not None
+    store.observe_candidate(
+        **unchecked,
+        discovery_source="commoncrawl-cdx",
+        crawl_id="CC-MAIN-2026-39",
+        query_id="smartrecruiters",
+        captured_at="20261003140000",
+        discovered_url=unchecked_url,
+        observed_at=NOW,
+    )
+
+    selected = store.health_candidates(
+        now=NOW + timedelta(hours=43),
+        limit=2,
+        admission_max_age_hours=48,
+        expiry_guard_hours=6,
+    )
+
+    assert len(selected) == 2
+    assert all(
+        candidate["health_selection_reason"] == "expiry_guard"
+        for candidate in selected
+    )
 
 
 def test_run_once_persists_completed_health_chunks_before_later_failure(

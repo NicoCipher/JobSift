@@ -151,26 +151,58 @@ class CommonCrawlDiscovery:
         store: SourceDiscoveryStore,
         *,
         delay_seconds: float = 2.0,
+        retries: int = 2,
         queries: tuple[DiscoveryQuery, ...] = DISCOVERY_QUERIES,
     ) -> None:
         self.client = client
         self.store = store
         self.delay_seconds = delay_seconds
+        self.retries = retries
         self.queries = queries
 
-    def _pause(self) -> None:
+    def _pause(self, multiplier: int = 1) -> None:
         if self.delay_seconds:
-            time.sleep(self.delay_seconds)
+            time.sleep(self.delay_seconds * multiplier)
 
-    def _get(self, url: str, *, params: Any = None) -> httpx.Response:
-        response = self.client.get(url, params=params)
-        self._pause()
-        if response.status_code == 429 or response.status_code >= 500:
-            raise RuntimeError(
-                f"Common Crawl index unavailable: HTTP {response.status_code}"
-            )
-        response.raise_for_status()
-        return response
+    def _get(
+        self,
+        url: str,
+        *,
+        params: Any = None,
+        allow_not_found: bool = False,
+    ) -> httpx.Response:
+        last_error: str | None = None
+        response: httpx.Response | None = None
+        for attempt in range(1, self.retries + 2):
+            try:
+                response = self.client.get(url, params=params)
+            except httpx.RequestError as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if attempt <= self.retries:
+                    self._pause(attempt)
+                    continue
+                raise RuntimeError(
+                    f"Common Crawl index unavailable: {last_error}"
+                ) from exc
+
+            if response.status_code == 404 and allow_not_found:
+                self._pause()
+                return response
+            if response.status_code == 429 or response.status_code >= 500:
+                last_error = f"HTTP {response.status_code}"
+                if attempt <= self.retries:
+                    self._pause(attempt)
+                    continue
+                raise RuntimeError(
+                    f"Common Crawl index unavailable: {last_error}"
+                )
+            self._pause()
+            response.raise_for_status()
+            return response
+
+        raise RuntimeError(
+            f"Common Crawl index unavailable: {last_error or 'unknown error'}"
+        )
 
     def latest_collection(self) -> tuple[str, str]:
         response = self._get(COMMON_CRAWL_COLLECTIONS)
@@ -236,7 +268,13 @@ class CommonCrawlDiscovery:
             ("collapse", "urlkey"),
             ("fields", "url,timestamp,status,mime"),
         ]
-        response = self._get(endpoint, params=params)
+        response = self._get(
+            endpoint,
+            params=params,
+            allow_not_found=True,
+        )
+        if response.status_code == 404:
+            return []
         values: list[dict[str, Any]] = []
         for line in response.text.splitlines():
             line = line.strip()
@@ -284,7 +322,7 @@ class CommonCrawlDiscovery:
                     pages = int(cursor["pages"])
                     page = int(cursor["page"])
                 records = self._page(endpoint, query, page)
-            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+            except (httpx.HTTPError, RuntimeError, TypeError, ValueError) as exc:
                 query_reports.append(
                     {
                         "query_id": query.query_id,
@@ -600,9 +638,17 @@ def run_once(
                 # already persisted admission queue or current health evidence.
                 discovery = {"status": "failed", "error": str(exc)}
 
-    candidates = store.health_candidates(now=current, limit=max_health_checks)
+    candidates = store.health_candidates(
+        now=current,
+        limit=max_health_checks,
+        admission_max_age_hours=admission_max_age_hours,
+    )
+    selection_reasons = Counter(
+        candidate["health_selection_reason"] for candidate in candidates
+    )
     classifications = Counter()
     newly_admitted = 0
+    reactivated = 0
     health_results: list[tuple[str, datetime, dict[str, Any]]] = []
     health_batch_size = 10
 
@@ -625,8 +671,11 @@ def run_once(
             result = probe.probe(candidate)
             health_results.append((candidate["target_identity"], current, result))
             classifications[result["classification"]] += 1
-            if before != "active" and result["classification"] == "active":
-                newly_admitted += 1
+            if result["classification"] == "active":
+                if not candidate["ever_admitted"]:
+                    newly_admitted += 1
+                elif before != "active":
+                    reactivated += 1
             if len(health_results) >= health_batch_size:
                 flush_health_results()
     flush_health_results()
@@ -646,8 +695,10 @@ def run_once(
         "discovery": discovery,
         "health": {
             "checked": len(candidates),
+            "selection_reasons": dict(sorted(selection_reasons.items())),
             "classifications": dict(sorted(classifications.items())),
             "newly_admitted": newly_admitted,
+            "reactivated": reactivated,
         },
         "store": store.summary(
             now=current,
