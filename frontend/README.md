@@ -9,7 +9,7 @@ dispatch a strict allowlist of existing GitHub Actions workflows:
 - `refresh-live-inventory.yml` for guarded manual refreshes;
 - `client-delivery-control.yml` for serialized delivery and registered client-Sheet controls.
 
-The browser never receives GitHub, Turso, Google or provider credentials. Set a
+The browser never receives GitHub, Neon, Google or provider credentials. Set a
 server-only `JOBSIFT_GITHUB_TOKEN` with Actions write access to
 `NicoCipher/JobSift` to enable commands. Without it, workflow status remains
 visible and every production command is disabled/fails closed.
@@ -19,9 +19,11 @@ all deployment targets. Do not treat a shareable deployment-protection bypass
 link as an operator session. POST controls also reject cross-origin requests.
 
 Manual inventory refreshes preserve the existing workflow contract: choices are
-limited to Workday targets 1/5/10/20/25 and detail concurrency 4/6/8, and manual
-runs do not advance the scheduled logical-cohort cursor. Scheduled production
-remains 25 Workday targets/hour. Delivery and Sheet commands go through the existing
+limited to Workday targets 1/5/10/20/25, detail concurrency 4/6/8, and a
+yield-aware bonus budget of 0/25/50/75/100 targets. The bonus is applied only
+after the oldest-due fairness floor, so a manual comparison cannot starve due
+sources. Manual runs do not advance the scheduled logical-cohort cursor.
+Scheduled production uses 25 Workday targets and a 100-target yield bonus. Delivery and Sheet commands go through the existing
 `jobsift-client-delivery-mutation` queue; the frontend does not write Turso
 directly. Client-Sheet controls intentionally use only an opaque delivery-profile
 ID: operators can check, disable, or verified-re-enable an already registered
