@@ -118,7 +118,7 @@ def load_target_yield_state(
             in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
             for brief in briefs
         )
-        if not eligible:
+        if not eligible or job.id in eligible_ids[target_identity]:
             continue
         eligible_ids[target_identity].add(job.id)
         eligible_runs[target_identity].add(row["run_id"])
