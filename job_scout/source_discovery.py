@@ -233,10 +233,7 @@ class CommonCrawlDiscovery:
                 "pageSize": 1,
                 "showNumPages": "true",
             },
-            allow_not_found=True,
         )
-        if response.status_code == 404:
-            return 1
         payload = response.json()
         pages = payload.get("pages") if isinstance(payload, dict) else None
         if not isinstance(pages, int) or pages < 1:
@@ -651,6 +648,7 @@ def run_once(
     )
     classifications = Counter()
     newly_admitted = 0
+    reactivated = 0
     health_results: list[tuple[str, datetime, dict[str, Any]]] = []
     health_batch_size = 10
 
@@ -673,8 +671,11 @@ def run_once(
             result = probe.probe(candidate)
             health_results.append((candidate["target_identity"], current, result))
             classifications[result["classification"]] += 1
-            if before != "active" and result["classification"] == "active":
-                newly_admitted += 1
+            if result["classification"] == "active":
+                if not candidate["ever_admitted"]:
+                    newly_admitted += 1
+                elif before != "active":
+                    reactivated += 1
             if len(health_results) >= health_batch_size:
                 flush_health_results()
     flush_health_results()
@@ -697,6 +698,7 @@ def run_once(
             "selection_reasons": dict(sorted(selection_reasons.items())),
             "classifications": dict(sorted(classifications.items())),
             "newly_admitted": newly_admitted,
+            "reactivated": reactivated,
         },
         "store": store.summary(
             now=current,
