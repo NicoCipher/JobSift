@@ -334,7 +334,7 @@ class SourceDiscoveryStore:
             "FROM source_discovery_targets "
         )
         due_clause = (
-            "WHERE next_health_check_at IS NULL OR next_health_check_at<=? "
+            "WHERE (next_health_check_at IS NULL OR next_health_check_at<=?) "
         )
         with self.repository.connect() as connection:
             urgent = connection.execute(
