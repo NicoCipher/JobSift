@@ -686,6 +686,9 @@ def test_live_refresh_workflow_uses_refresh_collector_contract():
     assert "--repo-root ." in workflow
     assert "--workday-detail-concurrency" in workflow
     assert "inputs.workday_detail_concurrency" in workflow
+    assert "--yield-extra-budget" in workflow
+    assert "inputs.yield_extra_budget" in workflow
+    assert "YIELD_EXTRA_BUDGET" in workflow
     assert '--database "$JOBSIFT_DATABASE"' in workflow
     assert "--plan-dir config/sourcing_plans" in workflow
     assert "JOBSIFT_PERSISTENCE_BACKEND: postgres" in workflow
