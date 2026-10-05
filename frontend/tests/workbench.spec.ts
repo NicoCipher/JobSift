@@ -295,13 +295,13 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     .filter({ has: page.getByRole("heading", { name: "Google Sheet" }) });
   await sheetBlock.getByText("Advanced target", { exact: true }).click();
   await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("manual");
-  await sheetBlock.getByLabel("Profile ID").fill("0123456789abcdef");
+  await sheetBlock.getByRole("textbox", { name: "Profile ID" }).fill("0123456789abcdef");
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
 
   await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("listed");
-  await expect(sheetBlock.getByLabel("Profile ID")).toHaveCount(0);
+  await expect(sheetBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
   expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
@@ -311,14 +311,14 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     .filter({ has: page.getByRole("heading", { name: "Delivery" }) });
   await deliveryBlock.getByText("Advanced target", { exact: true }).click();
   await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("manual");
-  await deliveryBlock.getByLabel("Profile ID").fill("fedcba9876543210");
+  await deliveryBlock.getByRole("textbox", { name: "Profile ID" }).fill("fedcba9876543210");
   await deliveryBlock.getByRole("combobox", { name: "What do you want to do?" }).selectOption("set-quota");
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(4);
   expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
 
   await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("listed");
-  await expect(deliveryBlock.getByLabel("Profile ID")).toHaveCount(0);
+  await expect(deliveryBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(5);
   expect(dispatched[4]?.profile_id).toBe("ad763a0336d92204");
