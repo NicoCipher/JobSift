@@ -1240,7 +1240,7 @@ def main() -> None:
     plan.add_argument(
         "--yield-extra-budget",
         type=int,
-        choices=range(0, YIELD_PRIORITY_EXTRA_BUDGET + 1),
+        choices=range(YIELD_PRIORITY_EXTRA_BUDGET + 1),
         default=YIELD_PRIORITY_EXTRA_BUDGET,
         help=(
             "Extra positive-yield target slots added after the oldest-due fairness floor."
