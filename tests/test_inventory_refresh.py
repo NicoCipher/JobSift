@@ -143,6 +143,7 @@ def test_failed_target_does_not_advance_oldest_due_fairness(tmp_path):
         }
     )
     repo = SQLiteRepository(tmp_path / "failed-fairness.sqlite3")
+    inventory_refresh.SourceDiscoveryStore(repo)
     store = InventoryRunStore(repo)
     attempted_at = datetime(2026, 10, 5, 8, 0, tzinfo=UTC)
 
