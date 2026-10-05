@@ -19,10 +19,13 @@ def test_rotating_refresh_plan_is_bounded_and_changes_cohort():
     )
 
     limits = inventory_refresh.default_refresh_limits(registry)
-    assert sum(limits.values()) == 100
-    assert len(subset0.targets) == 100
+    assert limits["greenhouse"] == 111
+    assert limits["ashby"] == 102
+    assert limits["lever"] == 40
+    assert limits["workday"] == 1
+    assert len(subset0.targets) == sum(limits.values())
     assert subset0.target_counts_by_source == limits
-    assert plan0.total_targets == 100
+    assert plan0.total_targets == sum(limits.values())
     assert len(manifest0.shards) == plan0.total_shards
     assert [target.target_identity for target in subset0.targets] == sorted(
         target.target_identity for target in subset0.targets
@@ -98,17 +101,228 @@ def test_dynamic_smartrecruiters_rotation_stays_inside_24_hour_window():
     expanded = type(registry).model_validate(payload)
 
     limits = inventory_refresh.default_refresh_limits(expanded, workday_limit=25)
-    assert limits["greenhouse"] == 33
-    assert limits["smartrecruiters"] == 7
+    assert limits["greenhouse"] == 111
+    assert limits["ashby"] == 102
+    assert limits["lever"] == 40
+    assert limits["smartrecruiters"] == 28
     assert limits["workday"] == 25
-    assert sum(limits.values()) == 124
+    assert sum(limits.values()) == 306
 
     proof = inventory_refresh.build_coverage_proof(expanded, limits=limits)
     smartrecruiters = next(
         item for item in proof.providers if item.source == "smartrecruiters"
     )
-    assert smartrecruiters.targets_per_cohort == 7
-    assert smartrecruiters.worst_case_full_coverage_cohorts <= 24
+    assert smartrecruiters.targets_per_cohort == 28
+    assert (
+        smartrecruiters.worst_case_full_coverage_cohorts
+        <= inventory_refresh.FAST_PROVIDER_COVERAGE_COHORTS
+    )
+
+def test_fast_provider_rotation_covers_every_target_within_six_cohorts():
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    limits = inventory_refresh.default_refresh_limits(registry, workday_limit=25)
+    proof = inventory_refresh.build_coverage_proof(registry, limits=limits)
+
+    for provider in proof.providers:
+        if provider.source == "workday":
+            continue
+        assert (
+            provider.worst_case_full_coverage_cohorts
+            <= inventory_refresh.FAST_PROVIDER_COVERAGE_COHORTS
+        )
+
+
+def test_failed_target_does_not_advance_oldest_due_fairness(tmp_path):
+    registry = inventory_refresh.load_production_registry(REGISTRY)
+    target = next(target for target in registry.targets if target.source == "greenhouse")
+    scoped = registry.model_copy(
+        update={
+            "registry_id": "failed-target-fairness",
+            "targets": [target],
+            "target_counts_by_source": {"greenhouse": 1},
+        }
+    )
+    repo = SQLiteRepository(tmp_path / "failed-fairness.sqlite3")
+    inventory_refresh.SourceDiscoveryStore(repo)
+    store = InventoryRunStore(repo)
+    attempted_at = datetime(2026, 10, 5, 8, 0, tzinfo=UTC)
+
+    store.create(run_id="failed-run", plan_id="plan", started_at=attempted_at)
+    store.persist_jobs_and_finish(
+        run_id="failed-run",
+        jobs=[],
+        memberships=[],
+        target_observations=[
+            (
+                target.target_identity,
+                target.source,
+                "network_failure",
+                attempted_at,
+                attempted_at,
+                100,
+                0,
+                0,
+                0,
+                0,
+            )
+        ],
+        status="partial",
+        completed_at=attempted_at,
+    )
+
+    failed_state = inventory_refresh.load_target_selection_state(repo, scoped)
+    assert failed_state[target.target_identity]["last_observed_at"] is None
+
+    succeeded_at = attempted_at + timedelta(minutes=5)
+    store.create(run_id="success-run", plan_id="plan", started_at=succeeded_at)
+    store.persist_jobs_and_finish(
+        run_id="success-run",
+        jobs=[],
+        memberships=[],
+        target_observations=[
+            (
+                target.target_identity,
+                target.source,
+                "success",
+                succeeded_at,
+                succeeded_at,
+                100,
+                0,
+                0,
+                0,
+                0,
+            )
+        ],
+        status="success",
+        completed_at=succeeded_at,
+    )
+
+    success_state = inventory_refresh.load_target_selection_state(repo, scoped)
+    assert success_state[target.target_identity]["last_observed_at"] == (
+        succeeded_at.isoformat()
+    )
+
+
+def test_oldest_due_selection_does_not_reset_when_registry_grows():
+    from job_scout.production_registry import ProductionTarget
+
+    base = inventory_refresh.load_production_registry(REGISTRY)
+    targets = [
+        ProductionTarget(
+            source="greenhouse",
+            target_identity=f"greenhouse:board-{index}",
+            coordinates={"board": f"board-{index}"},
+            company_hint=f"Board {index}",
+        )
+        for index in range(12)
+    ]
+    registry = base.model_copy(
+        update={
+            "registry_id": "history-aware-small",
+            "targets": sorted(targets, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"greenhouse": 12},
+        }
+    )
+    epoch = datetime(2026, 10, 1, tzinfo=UTC)
+    state = {
+        target.target_identity: {
+            "last_observed_at": None,
+            "first_discovered_at": epoch.isoformat(),
+        }
+        for target in registry.targets
+    }
+
+    first = inventory_refresh.history_aware_registry(
+        registry,
+        cohort=1,
+        limits={"greenhouse": 2},
+        selection_state=state,
+    )
+    first_ids = {target.target_identity for target in first.targets}
+    for target_identity in first_ids:
+        state[target_identity]["last_observed_at"] = datetime(
+            2026, 10, 4, 10, tzinfo=UTC
+        ).isoformat()
+
+    # Admit two newer boards. Their discovery time is later than every existing
+    # unobserved board, so registry growth must not reset the fairness window.
+    grown_targets = [
+        *registry.targets,
+        *[
+            ProductionTarget(
+                source="greenhouse",
+                target_identity=f"greenhouse:new-{index}",
+                coordinates={"board": f"new-{index}"},
+                company_hint=f"New {index}",
+            )
+            for index in range(2)
+        ],
+    ]
+    grown = registry.model_copy(
+        update={
+            "registry_id": "history-aware-grown",
+            "targets": sorted(grown_targets, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"greenhouse": 14},
+        }
+    )
+    for index in range(2):
+        state[f"greenhouse:new-{index}"] = {
+            "last_observed_at": None,
+            "first_discovered_at": datetime(
+                2026, 10, 4, 11, tzinfo=UTC
+            ).isoformat(),
+        }
+
+    second = inventory_refresh.history_aware_registry(
+        grown,
+        cohort=2,
+        limits={"greenhouse": 2},
+        selection_state=state,
+    )
+    second_ids = {target.target_identity for target in second.targets}
+
+    assert first_ids.isdisjoint(second_ids)
+    assert not any(target_identity.startswith("greenhouse:new-") for target_identity in second_ids)
+
+
+def test_scaled_shards_bound_serial_targets_per_worker():
+    from job_scout.production_registry import ProductionTarget
+
+    base = inventory_refresh.load_production_registry(REGISTRY)
+    smart = [
+        ProductionTarget(
+            source="smartrecruiters",
+            target_identity=f"smartrecruiters:smart{index}",
+            coordinates={"board": f"smart{index}"},
+            company_hint=f"Smart {index}",
+        )
+        for index in range(445)
+    ]
+    registry = base.model_copy(
+        update={
+            "registry_id": "smartrecruiters-shard-scale",
+            "targets": sorted(smart, key=lambda target: target.target_identity),
+            "target_counts_by_source": {"smartrecruiters": 445},
+        }
+    )
+    limits = inventory_refresh.default_refresh_limits(registry)
+    plan, _subset, manifest = inventory_refresh.build_refresh_plan(
+        registry=registry,
+        cohort=3,
+        limits=limits,
+    )
+
+    assert limits["smartrecruiters"] == 75
+    assert plan.shard_counts_by_source["smartrecruiters"] == 8
+    smart_shards = [
+        shard for shard in manifest.shards if shard.source == "smartrecruiters"
+    ]
+    assert len(smart_shards) == 8
+    assert max(len(shard.target_identities) for shard in smart_shards) <= 10
+    assert max(len(shard.target_identities) for shard in smart_shards) <= (
+        inventory_refresh.MAX_TARGETS_PER_SHARD["smartrecruiters"]
+    )
+
 
 def test_default_rotation_proves_full_registry_coverage():
     registry = inventory_refresh.load_production_registry(REGISTRY)
@@ -394,8 +608,9 @@ def test_production_refresh_ceiling_is_independent_from_benchmark_ceiling():
     )
 
     assert MAX_BOUNDED_TARGETS == 100
-    assert plan.total_targets == 124
-    assert len(subset.targets) == 124
+    assert plan.total_targets == sum(limits.values())
+    assert plan.total_targets > MAX_BOUNDED_TARGETS
+    assert len(subset.targets) == sum(limits.values())
     try:
         select_registry_subset(registry, target_limits_by_source=limits)
     except ValueError as exc:
