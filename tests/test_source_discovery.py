@@ -661,6 +661,39 @@ def test_health_candidates_reserve_capacity_for_unchecked_backlog(
     assert summary["health_due_previously_admitted_targets"] == 4
 
 
+
+def test_health_candidates_preserve_one_hour_admission_window(
+    tmp_path: Path,
+) -> None:
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    url = (
+        "https://jobs.smartrecruiters.com/"
+        "ShortWindow/744000600000001-software-engineer"
+    )
+    candidate = candidate_from_url(url)
+    assert candidate is not None
+    store.observe_candidate(
+        **candidate,
+        discovery_source="commoncrawl-cdx",
+        crawl_id="CC-MAIN-2026-39",
+        query_id="smartrecruiters",
+        captured_at="20261003150000",
+        discovered_url=url,
+        observed_at=NOW,
+    )
+
+    selected = store.health_candidates(
+        now=NOW,
+        limit=1,
+        admission_max_age_hours=1,
+    )
+
+    assert [value["target_identity"] for value in selected] == [
+        candidate["target_identity"]
+    ]
+    assert selected[0]["health_selection_reason"] == "new_candidate"
+
+
 def test_expiry_guard_can_use_full_health_budget(
     tmp_path: Path,
 ) -> None:
