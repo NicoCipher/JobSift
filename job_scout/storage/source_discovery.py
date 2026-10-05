@@ -327,54 +327,47 @@ class SourceDiscoveryStore:
             current_dt
             - timedelta(hours=admission_max_age_hours - effective_guard_hours)
         ).isoformat()
+        select_columns = (
+            "SELECT target_identity,source,coordinates_json,company_hint,"
+            "latest_health_classification,latest_health_checked_at,"
+            "admitted,admitted_at,first_discovered_at,next_health_check_at "
+            "FROM source_discovery_targets "
+        )
+        due_clause = (
+            "WHERE next_health_check_at IS NULL OR next_health_check_at<=? "
+        )
         with self.repository.connect() as connection:
-            rows = connection.execute(
-                "SELECT target_identity,source,coordinates_json,company_hint,"
-                "latest_health_classification,latest_health_checked_at,"
-                "admitted,admitted_at,first_discovered_at,next_health_check_at "
-                "FROM source_discovery_targets "
-                "WHERE next_health_check_at IS NULL OR next_health_check_at<=? "
-                "ORDER BY COALESCE(next_health_check_at,''),target_identity",
-                (current,),
+            urgent = connection.execute(
+                select_columns
+                + due_clause
+                + "AND (admitted=1 OR admitted_at IS NOT NULL) "
+                "AND latest_health_classification='active' "
+                "AND latest_health_checked_at IS NOT NULL "
+                "AND latest_health_checked_at<=? "
+                "ORDER BY latest_health_checked_at,target_identity LIMIT ?",
+                (current, urgent_cutoff, limit),
             ).fetchall()
-
-        urgent = []
-        unchecked = []
-        routine = []
-        for row in rows:
-            previously_admitted = bool(row["admitted"] or row["admitted_at"])
-            checked_at = row["latest_health_checked_at"]
-            if (
-                previously_admitted
-                and row["latest_health_classification"] == "active"
-                and checked_at is not None
-                and checked_at <= urgent_cutoff
-            ):
-                urgent.append(row)
-            elif checked_at is None:
-                unchecked.append(row)
-            else:
-                routine.append(row)
-
-        urgent.sort(
-            key=lambda row: (
-                row["latest_health_checked_at"] or "",
-                row["target_identity"],
-            )
-        )
-        unchecked.sort(
-            key=lambda row: (
-                row["first_discovered_at"],
-                row["target_identity"],
-            )
-        )
-        routine.sort(
-            key=lambda row: (
-                0 if row["admitted"] or row["admitted_at"] else 1,
-                row["next_health_check_at"] or "",
-                row["target_identity"],
-            )
-        )
+            unchecked = connection.execute(
+                select_columns
+                + due_clause
+                + "AND latest_health_checked_at IS NULL "
+                "ORDER BY first_discovered_at,target_identity LIMIT ?",
+                (current, limit),
+            ).fetchall()
+            routine = connection.execute(
+                select_columns
+                + due_clause
+                + "AND latest_health_checked_at IS NOT NULL "
+                "AND NOT ("
+                "(admitted=1 OR admitted_at IS NOT NULL) "
+                "AND latest_health_classification='active' "
+                "AND latest_health_checked_at<=?"
+                ") "
+                "ORDER BY "
+                "CASE WHEN admitted=1 OR admitted_at IS NOT NULL THEN 0 ELSE 1 END,"
+                "COALESCE(next_health_check_at,''),target_identity LIMIT ?",
+                (current, urgent_cutoff, limit),
+            ).fetchall()
 
         selected: list[tuple[Any, str]] = [
             (row, "expiry_guard") for row in urgent[:limit]
