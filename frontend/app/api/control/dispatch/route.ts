@@ -10,6 +10,7 @@ const deliveryWorkflow = "client-delivery-control.yml";
 
 const workdayTargets = new Set(["1", "5", "10", "20", "25"]);
 const workdayConcurrency = new Set(["4", "6", "8"]);
+const yieldExtraBudgets = new Set(["0", "25", "50", "75", "100"]);
 const deliveryOperations = new Set([
   "list",
   "status",
@@ -155,12 +156,17 @@ export async function POST(request: NextRequest) {
   if (command === "inventory-refresh") {
     const targets = clean(body.workday_targets, 4);
     const concurrency = clean(body.workday_detail_concurrency, 2);
+    const yieldExtraBudget = clean(body.yield_extra_budget, 3) || "100";
     if (!workdayTargets.has(targets) || !workdayConcurrency.has(concurrency)) {
       return invalid("Unsupported guarded Workday settings.");
+    }
+    if (!yieldExtraBudgets.has(yieldExtraBudget)) {
+      return invalid("Yield-aware bonus budget must be 0, 25, 50, 75, or 100.");
     }
     return dispatch(inventoryWorkflow, {
       workday_targets: targets,
       workday_detail_concurrency: concurrency,
+      yield_extra_budget: yieldExtraBudget,
     });
   }
 

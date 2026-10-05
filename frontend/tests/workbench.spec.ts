@@ -92,6 +92,12 @@ test("operations control fails closed without server command credentials", async
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Production control plane" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Yield-aware source scheduling" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Yield-aware bonus targets" }),
+  ).toBeDisabled();
   await expect(page.getByRole("button", { name: "Pause schedule" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Resume schedule" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Run refresh" })).toBeDisabled();
@@ -118,6 +124,16 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
     },
   });
   expect(unconfigured.status()).toBe(503);
+
+  const invalidYieldBudget = await request.post("/api/control/dispatch", {
+    data: {
+      command: "inventory-refresh",
+      workday_targets: "1",
+      workday_detail_concurrency: "4",
+      yield_extra_budget: "999",
+    },
+  });
+  expect(invalidYieldBudget.status()).toBe(400);
 
   const invalidProfile = await request.post("/api/control/dispatch", {
     data: {
@@ -157,6 +173,65 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
     },
   });
   expect(crossOrigin.status()).toBe(403);
+});
+
+test("yield-aware scheduling is visible and dispatches guarded bonus capacity", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+        },
+      }),
+    });
+  });
+
+  const dispatched: Record<string, unknown>[] = [];
+  await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { accepted: true } }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(
+    page.getByRole("heading", { name: "Yield-aware source scheduling" }),
+  ).toBeVisible();
+  await expect(page.getByText("Last 72 hours of persisted source evidence")).toBeVisible();
+  await expect(page.getByText("100 extra targets after the fairness floor")).toBeVisible();
+
+  const refreshSection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Run inventory refresh" }) });
+  await refreshSection
+    .getByRole("combobox", { name: "Yield-aware bonus targets" })
+    .selectOption("50");
+  await refreshSection.getByRole("button", { name: "Run refresh" }).click();
+
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]).toMatchObject({
+    command: "inventory-refresh",
+    workday_targets: "1",
+    workday_detail_concurrency: "4",
+    yield_extra_budget: "50",
+  });
 });
 
 test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {

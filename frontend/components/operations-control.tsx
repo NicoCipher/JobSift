@@ -214,6 +214,7 @@ export function OperationsControl({
       command: "inventory-refresh",
       workday_targets: String(data.get("workday_targets") ?? "1"),
       workday_detail_concurrency: String(data.get("workday_detail_concurrency") ?? "4"),
+      yield_extra_budget: String(data.get("yield_extra_budget") ?? "100"),
     });
   }
 
@@ -320,7 +321,7 @@ export function OperationsControl({
         <h2>Production control plane</h2>
         <p>
           These controls dispatch the same serialized GitHub Actions workflows used by
-          JobSift production. They do not write Turso directly and cannot change matching,
+          JobSift production. They do not write Neon directly and cannot change matching,
           freshness, dedupe, Workday index-first, or Sheet-write safety rules.
         </p>
         {!status?.control_ready ? (
@@ -365,10 +366,37 @@ export function OperationsControl({
       </section>
 
       <section className="section-block">
+        <div className="control-heading">
+          <div>
+            <h2>Yield-aware source scheduling</h2>
+            <p className="metadata">Active · oldest-due fairness floor stays protected</p>
+          </div>
+          <div className="control-ready">Production strategy</div>
+        </div>
+        <p>
+          JobSift learns which employer boards have recently produced fresh jobs that
+          match an active client SearchBrief. Those boards can receive bonus crawl slots,
+          but they never replace sources already due under the fairness schedule.
+        </p>
+        <dl className="facts">
+          <dt>Learning window</dt>
+          <dd>Last 72 hours of persisted source evidence</dd>
+          <dt>Freshness rule</dt>
+          <dd>Only jobs at most 24 hours old can improve source yield</dd>
+          <dt>Scheduled bonus budget</dt>
+          <dd>100 extra targets after the fairness floor</dd>
+          <dt>Workday</dt>
+          <dd>Excluded from bonus targeting; guarded ramp remains separate</dd>
+        </dl>
+      </section>
+
+      <section className="section-block">
         <h2>Run inventory refresh</h2>
         <p>
           Manual runs do not advance the scheduled logical-cohort cursor. Use small target
-          counts for guarded tests; scheduled production remains 25 Workday targets/hour.
+          counts for guarded tests. You can also reduce the yield-aware bonus budget for a
+          controlled comparison; scheduled production uses 100 bonus slots and 25 Workday
+          targets.
         </p>
         <form className="control-form" onSubmit={submitInventory}>
           <label>
@@ -391,6 +419,20 @@ export function OperationsControl({
               {["4", "6", "8"].map((value) => (
                 <option key={value} value={value}>
                   {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Yield-aware bonus targets
+            <select
+              name="yield_extra_budget"
+              defaultValue="100"
+              disabled={busy || !status?.control_ready}
+            >
+              {["0", "25", "50", "75", "100"].map((value) => (
+                <option key={value} value={value}>
+                  {value === "0" ? "0 — fairness only" : value}
                 </option>
               ))}
             </select>
