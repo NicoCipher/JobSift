@@ -91,20 +91,24 @@ test("read-only capabilities expose no mutation controls and URLs keep their kin
 test("operations control fails closed without server command credentials", async ({ page }) => {
   await page.goto("/operations");
   await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Production control plane" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Yield-aware source scheduling" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What do you want to do?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find Jobs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Clients & Sheets" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "System Status" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run sourcing now" })).toBeDisabled();
+
+  await page.getByText("Advanced sourcing controls", { exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Yield-aware bonus targets" }),
   ).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Pause schedule" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Resume schedule" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Run refresh" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Pause automatic sourcing" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Resume automatic sourcing" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Run custom sourcing" })).toBeDisabled();
+
   await expect(page.getByRole("button", { name: "Check Sheet" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Disable Sheet" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Re-enable Sheet" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Apply control" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Check status" })).toBeDisabled();
 });
 
 test("control validation canonicalizes timezones and generated batch IDs", () => {
@@ -211,19 +215,21 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
   });
 
   await page.goto("/operations");
-  await expect(
-    page.getByRole("heading", { name: "Yield-aware source scheduling" }),
-  ).toBeVisible();
-  await expect(page.getByText("Last 72 hours of persisted source evidence")).toBeVisible();
-  await expect(page.getByText("100 extra targets after the fairness floor")).toBeVisible();
-
-  const refreshSection = page
+  const statusSection = page
     .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "Run inventory refresh" }) });
-  await refreshSection
+    .filter({ has: page.getByRole("heading", { name: "System Status" }) });
+  await expect(statusSection.getByText("Yield-aware scheduling", { exact: true })).toBeVisible();
+  await expect(statusSection.getByText(/72-hour evidence window/)).toBeVisible();
+  await expect(statusSection.getByText(/100 scheduled bonus targets/)).toBeVisible();
+
+  const findJobsSection = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Find Jobs" }) });
+  await findJobsSection.getByText("Advanced sourcing controls", { exact: true }).click();
+  await findJobsSection
     .getByRole("combobox", { name: "Yield-aware bonus targets" })
     .selectOption("50");
-  await refreshSection.getByRole("button", { name: "Run refresh" }).click();
+  await findJobsSection.getByRole("button", { name: "Run custom sourcing" }).click();
 
   await expect.poll(() => dispatched.length).toBe(1);
   expect(dispatched[0]).toMatchObject({
@@ -274,8 +280,8 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     await dialog.accept();
   });
 
-  await page.getByRole("combobox", { name: "Operation" }).selectOption("pause");
-  await page.getByRole("button", { name: "Apply control" }).click();
+  await page.getByRole("combobox", { name: "What do you want to do?" }).selectOption("pause");
+  await page.getByRole("button", { name: "Pause delivery" }).click();
   await expect.poll(() => dialogs.length).toBe(1);
   expect(dialogs[0]).toContain("Example client — Example delivery destination");
   expect(dialogs[0]).toContain("ad763a0336d92204");
@@ -284,34 +290,36 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
 
-  const sheetSection = page
-    .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "Client Sheets" }) });
-  await sheetSection.getByRole("combobox", { name: "Sheet target" }).selectOption("manual");
-  await sheetSection.getByLabel("Sheet profile ID").fill("0123456789abcdef");
-  await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
+  const sheetBlock = page
+    .locator(".operations-client-block")
+    .filter({ has: page.getByRole("heading", { name: "Google Sheet" }) });
+  await sheetBlock.getByText("Advanced target", { exact: true }).click();
+  await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("manual");
+  await sheetBlock.getByRole("textbox", { name: "Profile ID" }).fill("0123456789abcdef");
+  await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
 
-  await sheetSection.getByRole("combobox", { name: "Sheet target" }).selectOption("listed");
-  await expect(sheetSection.getByLabel("Sheet profile ID")).toHaveCount(0);
-  await sheetSection.getByRole("button", { name: "Check Sheet" }).click();
+  await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("listed");
+  await expect(sheetBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
+  await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
   expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
 
-  const deliverySection = page
-    .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "Client delivery control" }) });
-  await deliverySection.getByRole("combobox", { name: "Delivery target" }).selectOption("manual");
-  await deliverySection.getByLabel("Delivery profile ID").fill("fedcba9876543210");
-  await deliverySection.getByRole("combobox", { name: "Operation" }).selectOption("set-quota");
-  await deliverySection.getByRole("button", { name: "Apply control" }).click();
+  const deliveryBlock = page
+    .locator(".operations-client-block")
+    .filter({ has: page.getByRole("heading", { name: "Delivery" }) });
+  await deliveryBlock.getByText("Advanced target", { exact: true }).click();
+  await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("manual");
+  await deliveryBlock.getByRole("textbox", { name: "Profile ID" }).fill("fedcba9876543210");
+  await deliveryBlock.getByRole("combobox", { name: "What do you want to do?" }).selectOption("set-quota");
+  await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(4);
   expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
 
-  await deliverySection.getByRole("combobox", { name: "Delivery target" }).selectOption("listed");
-  await expect(deliverySection.getByLabel("Delivery profile ID")).toHaveCount(0);
-  await deliverySection.getByRole("button", { name: "Apply control" }).click();
+  await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("listed");
+  await expect(deliveryBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
+  await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(5);
   expect(dispatched[4]?.profile_id).toBe("ad763a0336d92204");
 });
