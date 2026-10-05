@@ -42,12 +42,6 @@ from job_scout.storage.factory import create_repository
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.source_discovery import SourceDiscoveryStore
-from job_scout.yield_scheduling import (
-    YIELD_PRIORITY_EXTRA_BUDGET,
-    TargetYieldSignal,
-    load_target_yield_state,
-    yield_priority_targets,
-)
 from job_scout.workday_production import (
     IndexFirstWorkdayCollector,
     WorkdayBriefBinding,
@@ -56,6 +50,12 @@ from job_scout.workday_production import (
     resolve_active_workday_brief_bindings,
     resolve_retained_workday_candidate_bindings,
     verify_active_workday_brief_bindings,
+)
+from job_scout.yield_scheduling import (
+    YIELD_PRIORITY_EXTRA_BUDGET,
+    TargetYieldSignal,
+    load_target_yield_state,
+    yield_priority_targets,
 )
 
 # Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
