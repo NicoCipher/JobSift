@@ -10,10 +10,7 @@ from job_scout.production_registry import ProductionTarget
 from job_scout.search_brief import load_search_brief
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
-from job_scout.yield_scheduling import (
-    TargetYieldSignal,
-    load_target_yield_state,
-)
+from job_scout.yield_scheduling import TargetYieldSignal, load_target_yield_state
 
 
 REGISTRY = Path("config/source_registries/production_active_v1.json")
