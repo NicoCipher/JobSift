@@ -492,7 +492,7 @@ export function OperationsControl({
           <form className="control-form" onSubmit={submitSheetControl}>
             {sheetTargetMode === "listed" ? (
               <label>
-                Client
+                Client Sheet
                 <select
                   name="sheet_profile_id"
                   defaultValue={profiles[0]?.profile_id ?? ""}
@@ -613,7 +613,7 @@ export function OperationsControl({
 
             {deliveryOperation !== "list" && deliveryTargetMode === "listed" ? (
               <label>
-                Client
+                Delivery profile
                 <select
                   name="profile_id"
                   defaultValue={profiles[0]?.profile_id ?? ""}
