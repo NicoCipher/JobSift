@@ -59,6 +59,32 @@ function shortSha(value: string) {
   return value.slice(0, 8);
 }
 
+function deliveryOperationHelp(operation: string) {
+  if (operation === "pause") return "Stop new deliveries for this client until you resume them.";
+  if (operation === "resume") return "Allow this client to receive deliveries again.";
+  if (operation === "set-quota") return "Change the maximum number of jobs this client can receive per day.";
+  if (operation === "set-mode") return "Review keeps jobs waiting for approval. Auto sends eligible jobs automatically.";
+  if (operation === "set-timezone") return "Change the timezone used for this client's daily quota window.";
+  if (operation === "run-now") return "Run this client's delivery now using the jobs already in shared inventory.";
+  if (operation === "release-batch") return "Publish an approved review batch to the client's registered Sheet.";
+  if (operation === "discard-batch") return "Delete an unpublished review batch.";
+  if (operation === "list") return "Show the delivery profiles JobSift currently knows about.";
+  return "Check this client's current delivery state.";
+}
+
+function deliveryOperationButton(operation: string) {
+  if (operation === "pause") return "Pause delivery";
+  if (operation === "resume") return "Resume delivery";
+  if (operation === "set-quota") return "Save daily limit";
+  if (operation === "set-mode") return "Save delivery mode";
+  if (operation === "set-timezone") return "Save timezone";
+  if (operation === "run-now") return "Send jobs now";
+  if (operation === "release-batch") return "Release batch";
+  if (operation === "discard-batch") return "Discard batch";
+  if (operation === "list") return "List clients";
+  return "Check status";
+}
+
 function deliveryConfirmation(
   operation: string,
   profileId: string,
@@ -317,380 +343,431 @@ export function OperationsControl({
 
   return (
     <>
-      <section className="section-block reading">
-        <h2>Production control plane</h2>
+      <section className="section-block reading operations-intro">
+        <h2>What do you want to do?</h2>
         <p>
-          These controls dispatch the same serialized GitHub Actions workflows used by
-          JobSift production. They do not write Neon directly and cannot change matching,
-          freshness, dedupe, Workday index-first, or Sheet-write safety rules.
+          Use the three sections below for normal JobSift operation. Technical tuning is
+          still available under Advanced, but you do not need it for day-to-day use.
         </p>
+        <nav className="operations-jump" aria-label="Operations sections">
+          <a href="#find-jobs">Find Jobs</a>
+          <a href="#clients-sheets">Clients &amp; Sheets</a>
+          <a href="#system-status">System Status</a>
+        </nav>
         {!status?.control_ready ? (
           <div className="notice">
-            Status is available, but production commands are disabled until the
-            server-only <code>JOBSIFT_GITHUB_TOKEN</code> is configured.
+            Production controls are currently unavailable. The server-only
+            <code> JOBSIFT_GITHUB_TOKEN</code> must be configured before commands can run.
           </div>
         ) : (
-          <div className="control-ready">Production commands enabled</div>
+          <div className="control-ready">Production controls are ready</div>
         )}
         {statusError ? <div className="error">{statusError}</div> : null}
         {message ? <p className="control-message">{message}</p> : null}
       </section>
 
-      <section className="section-block">
-        <h2>Scheduled inventory</h2>
-        <p>
-          Pausing disables future GitHub schedule triggers without changing the durable
-          logical-cohort cursor. Resuming lets the scheduler catch up oldest-first.
-          A run already in progress is not cancelled.
-        </p>
-        <div className="control-actions">
-          <button
-            type="button"
-            disabled={busy || !status?.control_ready || status?.inventory.state !== "active"}
-            onClick={() => {
-              if (window.confirm("Pause scheduled inventory refreshes?")) {
-                void send({ command: "inventory-schedule-pause" });
-              }
-            }}
-          >
-            Pause schedule
-          </button>
-          <button
-            type="button"
-            disabled={busy || !status?.control_ready || status?.inventory.state === "active"}
-            onClick={() => void send({ command: "inventory-schedule-resume" })}
-          >
-            Resume schedule
-          </button>
-        </div>
-      </section>
-
-      <section className="section-block">
+      <section className="section-block operations-section" id="find-jobs">
         <div className="control-heading">
           <div>
-            <h2>Yield-aware source scheduling</h2>
-            <p className="metadata">Active · oldest-due fairness floor stays protected</p>
+            <h2>Find Jobs</h2>
+            <p>
+              Start a production sourcing run now. JobSift keeps the same freshness,
+              matching, dedupe, source-verification, and shared-inventory rules.
+            </p>
           </div>
-          <div className="control-ready">Production strategy</div>
+          <span className="operations-state">
+            Automatic sourcing: {status?.inventory.state === "active" ? "On" : "Off"}
+          </span>
         </div>
-        <p>
-          JobSift learns which employer boards have recently produced fresh jobs that
-          match an active client SearchBrief. Those boards can receive bonus crawl slots,
-          but they never replace sources already due under the fairness schedule.
-        </p>
-        <dl className="facts">
-          <dt>Learning window</dt>
-          <dd>Last 72 hours of persisted source evidence</dd>
-          <dt>Freshness rule</dt>
-          <dd>Only jobs at most 24 hours old can improve source yield</dd>
-          <dt>Scheduled bonus budget</dt>
-          <dd>100 extra targets after the fairness floor</dd>
-          <dt>Workday</dt>
-          <dd>Excluded from bonus targeting; guarded ramp remains separate</dd>
-        </dl>
-      </section>
 
-      <section className="section-block">
-        <h2>Run inventory refresh</h2>
-        <p>
-          Manual runs do not advance the scheduled logical-cohort cursor. Use small target
-          counts for guarded tests. You can also reduce the yield-aware bonus budget for a
-          controlled comparison; scheduled production uses 100 bonus slots and 25 Workday
-          targets.
-        </p>
-        <form className="control-form" onSubmit={submitInventory}>
-          <label>
-            Workday targets
-            <select name="workday_targets" defaultValue="1" disabled={busy || !status?.control_ready}>
-              {["1", "5", "10", "20", "25"].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Detail concurrency
-            <select
-              name="workday_detail_concurrency"
-              defaultValue="4"
-              disabled={busy || !status?.control_ready}
-            >
-              {["4", "6", "8"].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Yield-aware bonus targets
-            <select
-              name="yield_extra_budget"
-              defaultValue="100"
-              disabled={busy || !status?.control_ready}
-            >
-              {["0", "25", "50", "75", "100"].map((value) => (
-                <option key={value} value={value}>
-                  {value === "0" ? "0 — fairness only" : value}
-                </option>
-              ))}
-            </select>
-          </label>
+        <form className="operations-primary-action" onSubmit={submitInventory}>
+          <input type="hidden" name="workday_targets" value="1" />
+          <input type="hidden" name="workday_detail_concurrency" value="4" />
+          <input type="hidden" name="yield_extra_budget" value="100" />
           <button type="submit" disabled={busy || !status?.control_ready}>
-            {busy ? "Sending…" : "Run refresh"}
+            {busy ? "Starting…" : "Run sourcing now"}
           </button>
+          <p className="metadata">
+            Safe default run. It does not change the scheduled crawl cursor.
+          </p>
         </form>
+
+        <details className="operations-advanced">
+          <summary>Advanced sourcing controls</summary>
+          <p className="metadata">
+            Use these only when testing crawl capacity or changing the automatic schedule.
+          </p>
+
+          <h3>Automatic sourcing schedule</h3>
+          <div className="control-actions">
+            <button
+              type="button"
+              disabled={busy || !status?.control_ready || status?.inventory.state !== "active"}
+              onClick={() => {
+                if (window.confirm("Pause scheduled inventory refreshes?")) {
+                  void send({ command: "inventory-schedule-pause" });
+                }
+              }}
+            >
+              Pause automatic sourcing
+            </button>
+            <button
+              type="button"
+              disabled={busy || !status?.control_ready || status?.inventory.state === "active"}
+              onClick={() => void send({ command: "inventory-schedule-resume" })}
+            >
+              Resume automatic sourcing
+            </button>
+          </div>
+
+          <h3>Custom sourcing run</h3>
+          <form className="control-form" onSubmit={submitInventory}>
+            <label>
+              Workday targets
+              <select name="workday_targets" defaultValue="1" disabled={busy || !status?.control_ready}>
+                {["1", "5", "10", "20", "25"].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Workday detail concurrency
+              <select
+                name="workday_detail_concurrency"
+                defaultValue="4"
+                disabled={busy || !status?.control_ready}
+              >
+                {["4", "6", "8"].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Yield-aware bonus targets
+              <select
+                name="yield_extra_budget"
+                defaultValue="100"
+                disabled={busy || !status?.control_ready}
+              >
+                {["0", "25", "50", "75", "100"].map((value) => (
+                  <option key={value} value={value}>
+                    {value === "0" ? "0 — fairness only" : value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" disabled={busy || !status?.control_ready}>
+              {busy ? "Starting…" : "Run custom sourcing"}
+            </button>
+          </form>
+        </details>
       </section>
 
-      <section className="section-block">
-        <h2>Client Sheets</h2>
+      <section className="section-block operations-section" id="clients-sheets">
+        <h2>Clients &amp; Sheets</h2>
         <p>
-          Control the already-registered Google Sheet behind a delivery profile without
-          exposing its spreadsheet ID or tab in public GitHub Actions. Re-enabling verifies
-          the exact stored worksheet identity and header first; the profile remains paused
-          until you explicitly resume it.
+          Choose a client by name, then check their Sheet or control delivery. You normally
+          do not need a profile ID.
         </p>
+
         {profiles.length === 0 ? (
           <div className="notice">
-            No listed client Sheets are available. Use the profile-ID target mode for an existing production profile.
+            No client profiles are listed yet. Advanced profile-ID targeting is available below.
           </div>
         ) : catalogueIncomplete ? (
           <div className="notice">
-            Some client catalogue data could not be loaded. Listed targets may be incomplete; the profile-ID target mode remains available.
+            Some client catalogue data could not be loaded. The listed clients may be incomplete.
           </div>
         ) : null}
-        <form className="control-form" onSubmit={submitSheetControl}>
-          <label>
-            Sheet target
-            <select
-              value={sheetTargetMode}
-              onChange={(event) => {
-                const mode = event.target.value as TargetMode;
-                setSheetTargetMode(mode);
-                if (mode === "listed") setSheetProfileOverride("");
-              }}
-              disabled={busy || !status?.control_ready}
-            >
-              <option value="listed" disabled={profiles.length === 0}>
-                Listed client Sheet
-              </option>
-              <option value="manual">Profile ID</option>
-            </select>
-          </label>
-          {sheetTargetMode === "listed" ? (
-            <label>
-              Client Sheet
-              <select
-                name="sheet_profile_id"
-                defaultValue={profiles[0]?.profile_id ?? ""}
-                disabled={busy || !status?.control_ready || profiles.length === 0}
-              >
-                {profiles.length === 0 ? (
-                  <option value="">No listed client Sheets</option>
-                ) : (
-                  profiles.map((profile) => (
-                    <option key={profile.profile_id} value={profile.profile_id}>
-                      {profile.client_name} — {profile.destination_name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-          ) : (
-            <label>
-              Sheet profile ID
-              <input
-                name="sheet_profile_id_override"
-                value={sheetProfileOverride}
-                onChange={(event) => setSheetProfileOverride(event.target.value)}
-                autoComplete="off"
-                inputMode="text"
-                pattern="[0-9a-f]{16}"
-                placeholder="16-character profile ID"
-                disabled={busy || !status?.control_ready}
-              />
-            </label>
-          )}
-          <button
-            type="submit"
-            value="sheet-check"
-            disabled={
-              busy ||
-              !status?.control_ready ||
-              (sheetTargetMode === "listed"
-                ? profiles.length === 0
-                : !validProfileId(sheetProfileOverride.trim()))
-            }
-          >
-            Check Sheet
-          </button>
-          <button
-            type="submit"
-            value="sheet-disable"
-            disabled={
-              busy ||
-              !status?.control_ready ||
-              (sheetTargetMode === "listed"
-                ? profiles.length === 0
-                : !validProfileId(sheetProfileOverride.trim()))
-            }
-          >
-            Disable Sheet
-          </button>
-          <button
-            type="submit"
-            value="sheet-enable"
-            disabled={
-              busy ||
-              !status?.control_ready ||
-              (sheetTargetMode === "listed"
-                ? profiles.length === 0
-                : !validProfileId(sheetProfileOverride.trim()))
-            }
-          >
-            Re-enable Sheet
-          </button>
-        </form>
-      </section>
 
-      <section className="section-block">
-        <h2>Client delivery control</h2>
-        <p>
-          Uses the existing delivery mutation queue. Profile IDs are the opaque control IDs
-          already emitted by JobSift profile setup/status.
-        </p>
-        <form className="control-form control-form-wide" onSubmit={submitDelivery}>
-          <label>
-            Operation
-            <select
-              name="operation"
-              value={deliveryOperation}
-              onChange={(event) => setDeliveryOperation(event.target.value)}
-              disabled={busy || !status?.control_ready}
-            >
-              <option value="list">List profiles</option>
-              <option value="status">Profile status</option>
-              <option value="pause">Pause profile</option>
-              <option value="resume">Resume profile</option>
-              <option value="set-quota">Set daily quota</option>
-              <option value="set-mode">Set delivery mode</option>
-              <option value="set-timezone">Set timezone</option>
-              <option value="run-now">Run delivery now</option>
-              <option value="release-batch">Release review batch</option>
-              <option value="discard-batch">Discard review batch</option>
-            </select>
-          </label>
-          <label>
-            Delivery target
-            <select
-              value={deliveryTargetMode}
-              onChange={(event) => {
-                const mode = event.target.value as TargetMode;
-                setDeliveryTargetMode(mode);
-                if (mode === "listed") setDeliveryProfileOverride("");
-              }}
-              disabled={busy || !status?.control_ready || deliveryOperation === "list"}
-            >
-              <option value="listed" disabled={profiles.length === 0}>
-                Listed delivery profile
-              </option>
-              <option value="manual">Profile ID</option>
-            </select>
-          </label>
-          {deliveryTargetMode === "listed" ? (
-            <label>
-              Delivery profile
-              <select
-                name="profile_id"
-                defaultValue={profiles[0]?.profile_id ?? ""}
-                disabled={
-                  busy ||
-                  !status?.control_ready ||
-                  profiles.length === 0 ||
-                  deliveryOperation === "list"
-                }
-              >
-                {profiles.length === 0 ? (
-                  <option value="">No listed delivery profiles</option>
-                ) : (
-                  profiles.map((profile) => (
-                    <option key={profile.profile_id} value={profile.profile_id}>
-                      {profile.client_name} — {profile.destination_name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-          ) : (
-            <label>
-              Delivery profile ID
-              <input
-                name="profile_id_override"
-                value={deliveryProfileOverride}
-                onChange={(event) => setDeliveryProfileOverride(event.target.value)}
-                autoComplete="off"
-                inputMode="text"
-                pattern="[0-9a-f]{16}"
-                placeholder="16-character profile ID"
-                disabled={busy || !status?.control_ready || deliveryOperation === "list"}
-              />
-            </label>
-          )}
-          <label>
-            Daily quota
-            <input
-              name="daily_quota"
-              type="number"
-              min="1"
-              max="5000"
-              defaultValue="100"
-              disabled={busy || !status?.control_ready}
-            />
-          </label>
-          <label>
-            Delivery mode
-            <select name="delivery_mode" defaultValue="review" disabled={busy || !status?.control_ready}>
-              <option value="review">Review</option>
-              <option value="auto">Auto</option>
-            </select>
-          </label>
-          <label>
-            Timezone
-            <input
-              name="timezone"
-              defaultValue="Africa/Lagos"
-              autoComplete="off"
-              disabled={busy || !status?.control_ready}
-            />
-          </label>
-          <label>
-            Batch ID
-            <input
-              name="batch_id"
-              autoComplete="off"
-              placeholder="For release/discard"
-              disabled={busy || !status?.control_ready}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={
-              busy ||
-              !status?.control_ready ||
-              (deliveryOperation !== "list" &&
-                (deliveryTargetMode === "listed"
+        <div className="operations-client-block">
+          <h3>Google Sheet</h3>
+          <p className="metadata">
+            Check whether the registered Sheet is usable, or disable/re-enable it safely.
+          </p>
+          <form className="control-form" onSubmit={submitSheetControl}>
+            {sheetTargetMode === "listed" ? (
+              <label>
+                Client
+                <select
+                  name="sheet_profile_id"
+                  defaultValue={profiles[0]?.profile_id ?? ""}
+                  disabled={busy || !status?.control_ready || profiles.length === 0}
+                >
+                  {profiles.length === 0 ? (
+                    <option value="">No listed clients</option>
+                  ) : (
+                    profiles.map((profile) => (
+                      <option key={profile.profile_id} value={profile.profile_id}>
+                        {profile.client_name} — {profile.destination_name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+            ) : (
+              <label>
+                Profile ID
+                <input
+                  name="sheet_profile_id_override"
+                  value={sheetProfileOverride}
+                  onChange={(event) => setSheetProfileOverride(event.target.value)}
+                  autoComplete="off"
+                  inputMode="text"
+                  pattern="[0-9a-f]{16}"
+                  placeholder="16-character profile ID"
+                  disabled={busy || !status?.control_ready}
+                />
+              </label>
+            )}
+            <button
+              type="submit"
+              value="sheet-check"
+              disabled={
+                busy ||
+                !status?.control_ready ||
+                (sheetTargetMode === "listed"
                   ? profiles.length === 0
-                  : !validProfileId(deliveryProfileOverride.trim())))
-            }
-          >
-            {busy ? "Sending…" : "Apply control"}
-          </button>
-        </form>
+                  : !validProfileId(sheetProfileOverride.trim()))
+              }
+            >
+              Check Sheet
+            </button>
+            <button
+              type="submit"
+              value="sheet-disable"
+              disabled={
+                busy ||
+                !status?.control_ready ||
+                (sheetTargetMode === "listed"
+                  ? profiles.length === 0
+                  : !validProfileId(sheetProfileOverride.trim()))
+              }
+            >
+              Disable Sheet
+            </button>
+            <button
+              type="submit"
+              value="sheet-enable"
+              disabled={
+                busy ||
+                !status?.control_ready ||
+                (sheetTargetMode === "listed"
+                  ? profiles.length === 0
+                  : !validProfileId(sheetProfileOverride.trim()))
+              }
+            >
+              Re-enable Sheet
+            </button>
+
+            <details className="operations-inline-advanced">
+              <summary>Advanced target</summary>
+              <label>
+                Target by
+                <select
+                  value={sheetTargetMode}
+                  onChange={(event) => {
+                    const mode = event.target.value as TargetMode;
+                    setSheetTargetMode(mode);
+                    if (mode === "listed") setSheetProfileOverride("");
+                  }}
+                  disabled={busy || !status?.control_ready}
+                >
+                  <option value="listed" disabled={profiles.length === 0}>
+                    Client name
+                  </option>
+                  <option value="manual">Profile ID</option>
+                </select>
+              </label>
+            </details>
+          </form>
+        </div>
+
+        <div className="operations-client-block">
+          <h3>Delivery</h3>
+          <form className="control-form control-form-wide" onSubmit={submitDelivery}>
+            <label>
+              What do you want to do?
+              <select
+                name="operation"
+                value={deliveryOperation}
+                onChange={(event) => setDeliveryOperation(event.target.value)}
+                disabled={busy || !status?.control_ready}
+              >
+                <option value="status">Check delivery status</option>
+                <option value="run-now">Send jobs now</option>
+                <option value="pause">Pause delivery</option>
+                <option value="resume">Resume delivery</option>
+                <option value="set-quota">Change daily limit</option>
+                <option value="set-mode">Change review/auto mode</option>
+                <option value="release-batch">Release review batch</option>
+                <option value="discard-batch">Discard review batch</option>
+                <option value="list">List all clients</option>
+                <option value="set-timezone">Change timezone</option>
+              </select>
+            </label>
+
+            {deliveryOperation !== "list" && deliveryTargetMode === "listed" ? (
+              <label>
+                Client
+                <select
+                  name="profile_id"
+                  defaultValue={profiles[0]?.profile_id ?? ""}
+                  disabled={busy || !status?.control_ready || profiles.length === 0}
+                >
+                  {profiles.length === 0 ? (
+                    <option value="">No listed clients</option>
+                  ) : (
+                    profiles.map((profile) => (
+                      <option key={profile.profile_id} value={profile.profile_id}>
+                        {profile.client_name} — {profile.destination_name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+            ) : deliveryOperation !== "list" ? (
+              <label>
+                Profile ID
+                <input
+                  name="profile_id_override"
+                  value={deliveryProfileOverride}
+                  onChange={(event) => setDeliveryProfileOverride(event.target.value)}
+                  autoComplete="off"
+                  inputMode="text"
+                  pattern="[0-9a-f]{16}"
+                  placeholder="16-character profile ID"
+                  disabled={busy || !status?.control_ready}
+                />
+              </label>
+            ) : null}
+
+            {deliveryOperation === "set-quota" ? (
+              <label>
+                Daily job limit
+                <input
+                  name="daily_quota"
+                  type="number"
+                  min="1"
+                  max="5000"
+                  defaultValue="100"
+                  disabled={busy || !status?.control_ready}
+                />
+              </label>
+            ) : null}
+
+            {deliveryOperation === "set-mode" ? (
+              <label>
+                Delivery mode
+                <select
+                  name="delivery_mode"
+                  defaultValue="review"
+                  disabled={busy || !status?.control_ready}
+                >
+                  <option value="review">Review before sending</option>
+                  <option value="auto">Send automatically</option>
+                </select>
+              </label>
+            ) : null}
+
+            {deliveryOperation === "set-timezone" ? (
+              <label>
+                Timezone
+                <input
+                  name="timezone"
+                  defaultValue="Africa/Lagos"
+                  autoComplete="off"
+                  disabled={busy || !status?.control_ready}
+                />
+              </label>
+            ) : null}
+
+            {deliveryOperation === "release-batch" || deliveryOperation === "discard-batch" ? (
+              <label>
+                Review batch ID
+                <input
+                  name="batch_id"
+                  autoComplete="off"
+                  placeholder="Batch ID"
+                  disabled={busy || !status?.control_ready}
+                />
+              </label>
+            ) : null}
+
+            <p className="operations-help">{deliveryOperationHelp(deliveryOperation)}</p>
+
+            <button
+              type="submit"
+              disabled={
+                busy ||
+                !status?.control_ready ||
+                (deliveryOperation !== "list" &&
+                  (deliveryTargetMode === "listed"
+                    ? profiles.length === 0
+                    : !validProfileId(deliveryProfileOverride.trim())))
+              }
+            >
+              {busy ? "Sending…" : deliveryOperationButton(deliveryOperation)}
+            </button>
+
+            <details className="operations-inline-advanced">
+              <summary>Advanced target</summary>
+              <label>
+                Target client by
+                <select
+                  value={deliveryTargetMode}
+                  onChange={(event) => {
+                    const mode = event.target.value as TargetMode;
+                    setDeliveryTargetMode(mode);
+                    if (mode === "listed") setDeliveryProfileOverride("");
+                  }}
+                  disabled={busy || !status?.control_ready || deliveryOperation === "list"}
+                >
+                  <option value="listed" disabled={profiles.length === 0}>
+                    Client name
+                  </option>
+                  <option value="manual">Profile ID</option>
+                </select>
+              </label>
+            </details>
+          </form>
+        </div>
       </section>
 
-      <WorkflowRuns title="Inventory refresh activity" workflow={status?.inventory} />
-      <WorkflowRuns title="Client control activity" workflow={status?.delivery} />
+      <section className="section-block operations-section" id="system-status">
+        <h2>System Status</h2>
+        <p>
+          Use this section to confirm that production automation is running. You do not
+          need to change anything here during normal operation.
+        </p>
+        <dl className="facts">
+          <dt>Production commands</dt>
+          <dd>{status?.control_ready ? "Ready" : "Unavailable"}</dd>
+          <dt>Automatic sourcing</dt>
+          <dd>{status?.inventory.state === "active" ? "On" : "Off"}</dd>
+          <dt>Yield-aware scheduling</dt>
+          <dd>On · 72-hour evidence window · 100 scheduled bonus targets</dd>
+          <dt>Freshness protection</dt>
+          <dd>Only jobs at most 24 hours old can improve source yield</dd>
+        </dl>
+
+        <details className="operations-advanced">
+          <summary>How source scheduling works</summary>
+          <p>
+            Oldest-due fairness stays protected first. Productive employer boards can get
+            bonus crawl slots from spare capacity. Workday remains excluded from bonus
+            targeting and uses its guarded ramp separately.
+          </p>
+        </details>
+      </section>
+
+      <WorkflowRuns title="Sourcing activity" workflow={status?.inventory} />
+      <WorkflowRuns title="Client delivery activity" workflow={status?.delivery} />
     </>
   );
+}
 }
