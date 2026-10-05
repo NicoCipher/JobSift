@@ -307,6 +307,43 @@ def test_common_crawl_retries_transient_index_failure(tmp_path: Path) -> None:
     assert report["new_targets"] == 1
 
 
+
+def test_common_crawl_404_page_count_still_fails_closed(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/collinfo.json":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "CC-MAIN-2026-39",
+                        "cdx-api": (
+                            "https://index.commoncrawl.org/"
+                            "CC-MAIN-2026-39-index"
+                        ),
+                    }
+                ],
+                request=request,
+            )
+        return httpx.Response(404, request=request)
+
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    query = DiscoveryQuery("lever-global", "jobs.lever.co/*")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = CommonCrawlDiscovery(
+            client,
+            store,
+            delay_seconds=0,
+            queries=(query,),
+        ).discover(base_target_identities=set(), observed_at=NOW)
+
+    assert report["queries_failed"] == 1
+    assert report.get("queries_succeeded", 0) == 0
+    assert store.get_cursor(
+        discovery_source="commoncrawl-cdx",
+        query_id="lever-global",
+    ) is None
+
+
 def test_common_crawl_404_page_advances_cursor_as_empty_page(
     tmp_path: Path,
 ) -> None:
@@ -616,6 +653,7 @@ def test_health_candidates_reserve_capacity_for_unchecked_backlog(
     reasons = [candidate["health_selection_reason"] for candidate in selected]
     assert reasons.count("new_candidate") == 2
     assert reasons.count("routine") == 2
+    assert sum(candidate["ever_admitted"] for candidate in selected) == 2
 
     summary = store.summary(now=NOW + timedelta(hours=24))
     assert summary["health_unchecked_targets"] == 4
