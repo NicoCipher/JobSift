@@ -23,6 +23,17 @@ on:
           - "4"
           - "6"
           - "8"
+      yield_extra_budget:
+        description: "Extra positive-yield targets after the oldest-due fairness floor"
+        required: false
+        default: "100"
+        type: choice
+        options:
+          - "0"
+          - "25"
+          - "50"
+          - "75"
+          - "100"
   schedule:
     # GitHub scheduled workflows are best-effort. Four staggered trigger
     # opportunities per hour let the persistent logical scheduler recover
@@ -85,6 +96,7 @@ jobs:
           # index-first Workday run at 25. Manual dispatch remains available for staged tests.
           WORKDAY_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_targets || '25' }}
           WORKDAY_DETAIL_CONCURRENCY: ${{ github.event_name == 'workflow_dispatch' && inputs.workday_detail_concurrency || '4' }}
+          YIELD_EXTRA_BUDGET: ${{ github.event_name == 'workflow_dispatch' && inputs.yield_extra_budget || '100' }}
           LOGICAL_COHORT: ${{ steps.schedule.outputs.cohort }}
         run: |
           python -m job_scout.inventory_refresh plan \
@@ -95,6 +107,7 @@ jobs:
             --cohort "$LOGICAL_COHORT" \
             --workday-limit "$WORKDAY_TARGETS" \
             --workday-detail-concurrency "$WORKDAY_DETAIL_CONCURRENCY" \
+            --yield-extra-budget "$YIELD_EXTRA_BUDGET" \
             --output-dir refresh-plan
 
       - name: Export worker matrix
