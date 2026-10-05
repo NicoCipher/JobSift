@@ -397,6 +397,7 @@ class SourceDiscoveryStore:
                 "company_hint": row["company_hint"],
                 "latest_health_classification": row["latest_health_classification"],
                 "latest_health_checked_at": row["latest_health_checked_at"],
+                "ever_admitted": row["admitted_at"] is not None,
                 "health_selection_reason": reason,
             }
             for row, reason in selected
