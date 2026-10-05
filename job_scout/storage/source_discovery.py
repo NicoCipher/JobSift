@@ -312,16 +312,20 @@ class SourceDiscoveryStore:
         """
         if limit < 1:
             raise ValueError("health candidate limit must be positive")
-        if admission_max_age_hours < 2:
-            raise ValueError("admission health age must be at least two hours")
-        if expiry_guard_hours < 1 or expiry_guard_hours >= admission_max_age_hours:
-            raise ValueError("health expiry guard must fit inside admission age")
+        if admission_max_age_hours < 1:
+            raise ValueError("admission health age must be positive")
+        if expiry_guard_hours < 0:
+            raise ValueError("health expiry guard cannot be negative")
 
+        effective_guard_hours = min(
+            expiry_guard_hours,
+            max(admission_max_age_hours - 1, 0),
+        )
         current_dt = _aware(now)
         current = current_dt.isoformat()
         urgent_cutoff = (
             current_dt
-            - timedelta(hours=admission_max_age_hours - expiry_guard_hours)
+            - timedelta(hours=admission_max_age_hours - effective_guard_hours)
         ).isoformat()
         with self.repository.connect() as connection:
             rows = connection.execute(
