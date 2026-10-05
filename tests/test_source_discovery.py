@@ -246,7 +246,6 @@ def test_common_crawl_discovery_advances_persisted_page_cursor(tmp_path: Path) -
     assert any("page=1" in value for value in requests)
 
 
-
 def test_common_crawl_retries_transient_index_failure(tmp_path: Path) -> None:
     page_count_attempts = 0
 
