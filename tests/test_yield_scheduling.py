@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from job_scout import inventory_refresh
 from job_scout.domain.models import Job, RemoteStatus
 from job_scout.normalization.core import content_fingerprint
 from job_scout.production_registry import ProductionTarget
 from job_scout.search_brief import load_search_brief
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
-from job_scout import inventory_refresh
 from job_scout.yield_scheduling import (
     TargetYieldSignal,
     load_target_yield_state,
