@@ -1237,6 +1237,15 @@ def main() -> None:
         default=DEFAULT_WORKDAY_DETAIL_CONCURRENCY,
         help="Bounded concurrent Workday detail reads per target.",
     )
+    plan.add_argument(
+        "--yield-extra-budget",
+        type=int,
+        choices=range(0, YIELD_PRIORITY_EXTRA_BUDGET + 1),
+        default=YIELD_PRIORITY_EXTRA_BUDGET,
+        help=(
+            "Extra positive-yield target slots added after the oldest-due fairness floor."
+        ),
+    )
 
     collect = commands.add_parser("collect")
     collect.add_argument("--registry", type=Path, required=True)
@@ -1367,6 +1376,7 @@ def main() -> None:
                 incremental_target_state=incremental_target_state,
                 selection_state=selection_state,
                 yield_state=yield_state,
+                yield_extra_budget=args.yield_extra_budget,
             )
             _write_json(args.output_dir / "parent-registry.json", registry)
             _write_json(args.output_dir / "registry.json", subset)
@@ -1399,6 +1409,7 @@ def main() -> None:
                         refresh.yield_priority_targets_by_source
                     ),
                     "yield_signal_sha256": refresh.yield_signal_sha256,
+                    "yield_extra_budget": args.yield_extra_budget,
                     "yield_positive_targets": sum(
                         signal.eligible_fresh_jobs > 0
                         for signal in yield_state.values()
