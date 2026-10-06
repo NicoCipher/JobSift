@@ -359,6 +359,10 @@ def match_job(job: Job, profile: SearchBrief | CandidateProfile) -> JobMatch:
             job_id=job.id,
             client_id=brief.client_id,
             decision=MatchDecision.REJECT,
+            matched_reasons=[
+                *reasons,
+                *(f"needs review: {reason}" for reason in reviews),
+            ],
             rejection_reasons=rejects,
             matcher_version=MATCHER_VERSION,
         )
