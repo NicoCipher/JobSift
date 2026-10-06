@@ -179,6 +179,88 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
   expect(crossOrigin.status()).toBe(403);
 });
 
+test("operator command center exposes pending review batch without opaque IDs", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            run: {
+              id: 43,
+              run_number: 43,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T18:59:46Z",
+              updated_at: "2026-10-06T19:12:25Z",
+              url: "https://example.invalid/run/43",
+            },
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "ad763a0336d92204",
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 30,
+                needs_review_postings: 0,
+                selection_eligible_postings: 30,
+                stale_posting_suppressed_groups: 29,
+                company_cap_suppressed_groups: 0,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  const dispatched: Record<string, unknown>[] = [];
+  await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { accepted: true } }),
+    });
+  });
+
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.goto("/operations");
+
+  await expect(page.getByRole("heading", { name: "Right now" })).toBeVisible();
+  await expect(page.getByText("1 job is waiting for approval")).toBeVisible();
+  await expect(page.getByText("Example client — Example delivery destination")).toBeVisible();
+  await expect(page.getByText(/pending review batch stopped a new client evaluation/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Release 1 job" }).click();
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]).toMatchObject({
+    command: "client-control",
+    operation: "release-batch",
+    profile_id: "ad763a0336d92204",
+    batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+  });
+});
+
 test("yield-aware scheduling is visible and dispatches guarded bonus capacity", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
