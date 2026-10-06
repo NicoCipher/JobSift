@@ -368,10 +368,14 @@ export function OperationsControl({
     }, delay);
   }
 
-  async function send(payload: Record<string, string>) {
+  async function send(
+    payload: Record<string, string>,
+    options: { waitForState?: boolean } = {},
+  ) {
     const needsVerifiedState =
       payload.command === "inventory-refresh" ||
       (payload.command === "client-control" && payload.operation !== "list");
+    const waitForState = needsVerifiedState || options.waitForState === true;
     if (needsVerifiedState && !stateVerified) {
       setMessage(
         "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish before changing delivery.",
@@ -389,7 +393,7 @@ export function OperationsControl({
       const result = (await readJson(response)) as {
         data?: { control_request_id?: unknown };
       };
-      if (needsVerifiedState) {
+      if (waitForState) {
         setAwaitingFreshState(true);
         const requestId = result.data?.control_request_id;
         if (!validControlRequestId(requestId)) {
@@ -607,10 +611,32 @@ export function OperationsControl({
         </div>
 
         {latestSnapshot?.complete === false ? (
-          <div className="error" role="alert">
-            <strong>Client state could not be verified.</strong>{" "}
-            {latestSnapshot.state_error ??
-              "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
+          <div className="error operator-state-recovery" role="alert">
+            <div>
+              <strong>Client state could not be verified.</strong>{" "}
+              {latestSnapshot.state_error ??
+                "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
+            </div>
+            <button
+              type="button"
+              disabled={busy || awaitingFreshState || !status?.control_ready}
+              onClick={() =>
+                void send(
+                  {
+                    command: "client-control",
+                    operation: "list",
+                    profile_id: "",
+                    daily_quota: "100",
+                    delivery_mode: "review",
+                    timezone: "Africa/Lagos",
+                    batch_id: "",
+                  },
+                  { waitForState: true },
+                )
+              }
+            >
+              {awaitingFreshState ? "Syncing…" : "Sync current state"}
+            </button>
           </div>
         ) : latestSnapshot?.truncated ? (
           <div className="notice" role="status">
