@@ -257,9 +257,7 @@ export function OperationsControl({
 
   function profileLabel(profileId: string) {
     const profile = profiles.find((item) => item.profile_id === profileId);
-    return profile
-      ? `${profile.client_name} — ${profile.destination_name}`
-      : "Delivery profile";
+    return profile ? `${profile.client_name} — ${profile.destination_name}` : null;
   }
 
   const loadStatus = useCallback(async () => {
@@ -313,6 +311,10 @@ export function OperationsControl({
   async function actOnPending(profile: ProfileSnapshot, operation: "release-batch" | "discard-batch") {
     if (!profile.batch_id) return;
     const label = profileLabel(profile.profile_id);
+    if (!label) {
+      setMessage("Client name is unavailable, so JobSift will not allow an irreversible batch action.");
+      return;
+    }
     const verb = operation === "release-batch" ? "Release" : "Discard";
     const effect =
       operation === "release-batch"
@@ -514,7 +516,7 @@ export function OperationsControl({
             {pendingBatches.map((profile) => (
               <div className="operator-batch-card" key={profile.batch_id ?? profile.profile_id}>
                 <div>
-                  <strong>{profileLabel(profile.profile_id)}</strong>
+                  <strong>{profileLabel(profile.profile_id) ?? "Client name unavailable"}</strong>
                   <p className="metadata">
                     {countLabel(profile.selected_count)} selected · {countLabel(profile.shortfall)} short
                     of the requested limit
@@ -523,7 +525,7 @@ export function OperationsControl({
                 <div className="operator-decision-actions">
                   <button
                     type="button"
-                    disabled={busy || !status?.control_ready}
+                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id)}
                     onClick={() => void actOnPending(profile, "release-batch")}
                   >
                     Release {countLabel(profile.selected_count)} job
@@ -531,12 +533,17 @@ export function OperationsControl({
                   <button
                     type="button"
                     className="secondary-action"
-                    disabled={busy || !status?.control_ready}
+                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id)}
                     onClick={() => void actOnPending(profile, "discard-batch")}
                   >
                     Discard
                   </button>
                 </div>
+                {!profileLabel(profile.profile_id) ? (
+                  <p className="notice">
+                    Batch actions are locked until this production profile can be matched to a client name.
+                  </p>
+                ) : null}
                 <details>
                   <summary>Why only {countLabel(profile.selected_count)}?</summary>
                   <div className="operator-mini-grid">
