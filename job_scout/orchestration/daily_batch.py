@@ -39,7 +39,11 @@ def _timestamp(value) -> float:
 
 
 def _delivery_priority_key(candidate):
-    decision_rank = 0 if candidate.match.decision is MatchDecision.STRONG_MATCH else 1
+    decision_rank = {
+        MatchDecision.STRONG_MATCH: 0,
+        MatchDecision.POSSIBLE_MATCH: 1,
+        MatchDecision.NEEDS_REVIEW: 2,
+    }.get(candidate.match.decision, 3)
     score = candidate.match.score if candidate.match.score is not None else -1
     return (
         decision_rank,
@@ -59,11 +63,11 @@ def _freshness_disposition(request, candidate) -> str | None:
     )
 
 def _assemble(request, candidates):
-    eligible = [
-        v
-        for v in candidates
-        if v.match.decision in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
-    ]
+    confirmed_decisions = {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
+    selectable_decisions = set(confirmed_decisions)
+    if request.include_needs_review:
+        selectable_decisions.add(MatchDecision.NEEDS_REVIEW)
+    eligible = [v for v in candidates if v.match.decision in selectable_decisions]
     groups = {}
     for v in eligible:
         groups.setdefault(v.group_id, []).append(v)
@@ -166,7 +170,7 @@ def _assemble(request, candidates):
         freshness_reason = candidate_freshness.get(v.job.id)
         dispositions[v.job.id] = (
             v.match.decision.value
-            if v.match.decision not in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
+            if v.match.decision not in selectable_decisions
             else "historical"
             if v.group_id in historical
             else "prior_delivery"
@@ -186,12 +190,18 @@ def _assemble(request, candidates):
 
     counts = DailyBatchCounts(
         candidate_postings=len(candidates),
-        match_eligible_postings=len(eligible),
+        match_eligible_postings=sum(
+            v.match.decision in confirmed_decisions for v in candidates
+        ),
         needs_review_postings=sum(
             v.match.decision is MatchDecision.NEEDS_REVIEW for v in candidates
         ),
         rejected_postings=sum(v.match.decision is MatchDecision.REJECT for v in candidates),
-        match_eligible_groups=len(groups),
+        selection_eligible_postings=len(eligible),
+        match_eligible_groups=len(
+            {v.group_id for v in candidates if v.match.decision in confirmed_decisions}
+        ),
+        selection_eligible_groups=len(groups),
         historically_suppressed_groups=len(historical),
         previously_delivered_groups=len(delivered),
         duplicate_postings_collapsed=len(eligible) - len(groups),
