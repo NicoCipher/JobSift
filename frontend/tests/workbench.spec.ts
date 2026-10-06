@@ -398,6 +398,21 @@ test("journaled delivery recovery is visible and cannot be discarded", async ({ 
 });
 
 test("unverified latest operator state locks state-dependent controls", async ({ page }) => {
+  const dispatched: Record<string, unknown>[] = [];
+  await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: "33333333-3333-4333-8333-333333333333",
+        },
+      }),
+    });
+  });
+
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -447,6 +462,15 @@ test("unverified latest operator state locks state-dependent controls", async ({
   await expect(page.getByRole("button", { name: "Run sourcing now" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Check Sheet", exact: true }).last()).toBeDisabled();
   await expect(page.getByLabel("What do you want to do?")).toBeDisabled();
+
+  const sync = page.getByRole("button", { name: "Sync current state" });
+  await expect(sync).toBeEnabled();
+  await sync.click();
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]).toMatchObject({
+    command: "client-control",
+    operation: "list",
+  });
 });
 
 test("failed status refresh locks actions from the previous verified snapshot", async ({ page }) => {
