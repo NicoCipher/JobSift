@@ -308,7 +308,8 @@ def run_once(
 
     plan, brief_path = _runtime_plan(config)
     brief = load_search_brief(brief_path)
-    repository = repository or create_repository(config.database_path)
+    if repository is None:
+        repository = create_repository(config.database_path)
     if config.validation_only and repository.remote_url:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
