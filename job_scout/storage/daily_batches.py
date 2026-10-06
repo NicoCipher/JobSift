@@ -644,7 +644,14 @@ class DailyBatchStore:
                 v.evidence_sha256 != expected[v.job.id]
                 or v.historical
                 or v.match.decision
-                not in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
+                not in (
+                    {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
+                    | (
+                        {MatchDecision.NEEDS_REVIEW}
+                        if result.request.include_needs_review
+                        else set()
+                    )
+                )
                 or v.group_id in delivered_groups
             ):
                 raise BatchConflict("prepared evidence or delivery state changed")
