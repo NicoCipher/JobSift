@@ -65,7 +65,6 @@ type PendingItem = {
 type ProfileSnapshot = {
   action: string;
   profile_id: string;
-  destination_name: string | null;
   profile_status: string | null;
   delivery_mode: string | null;
   daily_quota: number | null;
@@ -84,6 +83,7 @@ type ProfileSnapshot = {
   company_cap_suppressed_groups: number | null;
   pending_items: PendingItem[];
   pending_items_truncated: boolean;
+  recovery_required: boolean;
   client_funnel: FunnelSnapshot | null;
 };
 
@@ -267,9 +267,12 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
       })
     : [];
   return {
-    action: batchId ? "awaiting_release" : "ready",
+    action: batchId
+      ? pending?.recovery_required === true
+        ? "reconciliation_required"
+        : "awaiting_release"
+      : "ready",
     profile_id: source.profile_id,
-    destination_name: textValue(source.destination_name),
     profile_status: textValue(source.profile_status, 32),
     delivery_mode: textValue(source.delivery_mode, 32),
     daily_quota: integer(source.daily_quota),
@@ -288,11 +291,12 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
     company_cap_suppressed_groups: integer(counts.company_cap_suppressed_groups),
     pending_items: preview,
     pending_items_truncated: pending?.preview_truncated === true,
+    recovery_required: pending?.recovery_required === true,
     client_funnel: null,
   };
 }
 
-function parseAuthoritativeState(logs: string): ProfileSnapshot[] {
+function parseAuthoritativeState(logs: string) {
   const ansi = /\u001b\[[0-9;]*m/g;
   const marker = "JOBSIFT_OPERATOR_STATE=";
   const lines = logs.replace(ansi, "").split("\n").reverse();
@@ -304,15 +308,18 @@ function parseAuthoritativeState(logs: string): ProfileSnapshot[] {
       if (parsed.schema_version !== "operator-state-v1" || !Array.isArray(parsed.profiles)) {
         continue;
       }
-      return parsed.profiles.flatMap((value) => {
-        const profile = authoritativeProfile(value);
-        return profile ? [profile] : [];
-      });
+      return {
+        profiles: parsed.profiles.flatMap((value) => {
+          const profile = authoritativeProfile(value);
+          return profile ? [profile] : [];
+        }),
+        truncated: parsed.truncated === true,
+      };
     } catch {
       continue;
     }
   }
-  return [];
+  return null;
 }
 
 function parseEvaluationProfiles(logs: string): Map<string, FunnelSnapshot> {
@@ -419,13 +426,15 @@ async function latestOperatorSnapshot(
 
   let chosen: SnapshotCandidate | null = null;
   let profiles: ProfileSnapshot[] = [];
+  let truncated = false;
   for (const candidate of candidates) {
     const logs = await jobLogsForRun(candidate, token);
     if (!logs) continue;
     const parsed = parseAuthoritativeState(logs);
-    if (!parsed.length && !logs.includes("JOBSIFT_OPERATOR_STATE=")) continue;
+    if (!parsed) continue;
     chosen = candidate;
-    profiles = parsed;
+    profiles = parsed.profiles;
+    truncated = parsed.truncated;
     break;
   }
 
@@ -448,7 +457,7 @@ async function latestOperatorSnapshot(
       }
     : null;
 
-  return { run, profiles };
+  return { run, profiles, truncated };
 }
 
 export async function GET() {
@@ -466,7 +475,7 @@ export async function GET() {
           control_ready: false,
           inventory: unavailable("Refresh Live Job Inventory", workflows.inventory),
           delivery: unavailable("Client Delivery Control", workflows.delivery),
-          operator_snapshot: { run: null, profiles: [] },
+          operator_snapshot: { run: null, profiles: [], truncated: false },
         },
       },
       { headers: { "Cache-Control": "no-store" } },
