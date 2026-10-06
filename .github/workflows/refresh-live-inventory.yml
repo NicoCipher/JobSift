@@ -181,7 +181,7 @@ jobs:
       - plan
       - collect
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       JOBSIFT_DATABASE: /tmp/jobsift.sqlite3
       JOBSIFT_PLAN_DIR: config/sourcing_plans
@@ -229,6 +229,7 @@ jobs:
       - name: Persist shared inventory
         run: |
           mkdir -p refresh-result
+          started=$SECONDS
           python -m job_scout.inventory_refresh fan-in \
             --registry refresh-plan/registry.json \
             --parent-registry refresh-plan/parent-registry.json \
@@ -239,6 +240,7 @@ jobs:
             --retention-hours "$JOBSIFT_INVENTORY_RETENTION_HOURS" \
             --skip-retention \
             --output refresh-result/report.json
+          echo "Persist shared inventory: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Google credentials
         run: |
@@ -247,7 +249,10 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
 
       - name: Deliver to active client profiles
-        run: python -m job_scout.profile_delivery_runner
+        run: |
+          started=$SECONDS
+          python -m job_scout.profile_delivery_runner
+          echo "Deliver active profiles: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Mark scheduled cohort complete
         if: ${{ github.event_name == 'schedule' }}
