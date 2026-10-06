@@ -65,7 +65,8 @@ def _pending_batch(repository, *, client_id: str, destination: str):
 
 
 def snapshot(repository) -> dict[str, object]:
-    profiles = ClientDeliveryProfileStore(repository).list()
+    profile_store = ClientDeliveryProfileStore(repository)
+    profiles = profile_store.list()
     destinations = ClientSheetDestinationStore(repository)
     rows: list[dict[str, object]] = []
     for profile in profiles[:MAX_PROFILE_SNAPSHOTS]:
@@ -83,9 +84,7 @@ def snapshot(repository) -> dict[str, object]:
                 "daily_quota": profile.daily_quota,
                 "timezone": profile.timezone,
                 "sheet_status": destination.status,
-                "delivered_today": ClientDeliveryProfileStore(repository).delivered_today(
-                    profile
-                ),
+                "delivered_today": profile_store.delivered_today(profile),
                 "pending_batch": _pending_batch(
                     repository,
                     client_id=profile.client_id,
