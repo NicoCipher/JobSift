@@ -1,12 +1,14 @@
 from datetime import UTC, datetime
 
-from job_scout.domain.models import JobLifecycle
+from job_scout.domain.models import Job, JobLifecycle
+from job_scout.normalization.core import content_fingerprint
 from job_scout.storage.postgres import (
     POSTGRES_SCHEMA_VERSION,
     PostgresRepository,
     _chunks,
     translate_sql,
 )
+from job_scout.storage.sqlite import SQLiteRepository
 
 
 def test_begin_immediate_uses_transaction_scoped_advisory_lock():
@@ -178,7 +180,7 @@ def test_postgres_group_assignment_20k_stays_set_oriented():
         call for call in connection.execute_calls
         if call[0].startswith("DELETE FROM delivery_keys")
     ]
-    assert len(reads) == 80
+    assert len(reads) == 120
     assert len(key_deletes) == 40
     assert len(connection.executemany_calls) == 3
     assert sorted(len(rows) for _, rows in connection.executemany_calls) == [
@@ -187,3 +189,118 @@ def test_postgres_group_assignment_20k_stays_set_oriented():
         20_000,
     ]
     assert max(len(parameters) for _, parameters in reads) <= 1_000
+
+
+def _delivery_order_job(job_id: str, *, apply_url: str) -> Job:
+    now = datetime(2026, 10, 6, tzinfo=UTC)
+    description = "Build reliable production software."
+    return Job(
+        id=job_id,
+        source="greenhouse",
+        source_job_id=job_id,
+        source_board_id="capacity-order",
+        title="Software Engineer",
+        company="Example",
+        description_text=description,
+        job_url=f"https://example.com/jobs/{job_id}",
+        apply_url=apply_url,
+        canonical_url=f"https://example.com/jobs/{job_id}",
+        discovered_at=now,
+        last_seen_at=now,
+        content_fingerprint=content_fingerprint(
+            title="Software Engineer",
+            description=description,
+            location=None,
+            employment_type=None,
+        ),
+    )
+
+
+def _group_map(repository: SQLiteRepository) -> dict[str, str]:
+    with repository.connect() as connection:
+        rows = connection.execute(
+            "SELECT job_id,group_id FROM posting_delivery_groups ORDER BY job_id"
+        ).fetchall()
+    return {row["job_id"]: row["group_id"] for row in rows}
+
+
+def _run_legacy_group_updates(
+    repository: SQLiteRepository,
+    jobs: list[Job],
+) -> dict[str, str]:
+    with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        for job in jobs:
+            repository._assign_group(connection, job)
+    return _group_map(repository)
+
+
+def _run_bulk_group_updates(
+    repository: SQLiteRepository,
+    jobs: list[Job],
+) -> dict[str, str]:
+    postgres = object.__new__(PostgresRepository)
+    with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        postgres._assign_groups_bulk_in_connection(connection, jobs)
+    return _group_map(repository)
+
+
+def test_bulk_group_assignment_matches_legacy_when_changed_key_disappears_first(tmp_path):
+    shared = "https://apply.example.com/postings/shared"
+    old_a = _delivery_order_job("a", apply_url=shared)
+    old_b = _delivery_order_job(
+        "b", apply_url="https://apply.example.com/postings/b-old"
+    )
+    new_a = old_a.model_copy(
+        update={"apply_url": "https://apply.example.com/postings/a-new"}
+    )
+    new_b = old_b.model_copy(update={"apply_url": shared})
+
+    legacy = SQLiteRepository(tmp_path / "legacy-a-first.sqlite3")
+    bulk = SQLiteRepository(tmp_path / "bulk-a-first.sqlite3")
+    for repository in (legacy, bulk):
+        repository.upsert_job(old_a.model_copy(deep=True))
+        repository.upsert_job(old_b.model_copy(deep=True))
+
+    legacy_groups = _run_legacy_group_updates(
+        legacy,
+        [new_a.model_copy(deep=True), new_b.model_copy(deep=True)],
+    )
+    bulk_groups = _run_bulk_group_updates(
+        bulk,
+        [new_a.model_copy(deep=True), new_b.model_copy(deep=True)],
+    )
+
+    assert bulk_groups == legacy_groups
+    assert bulk_groups["a"] != bulk_groups["b"]
+
+
+def test_bulk_group_assignment_matches_legacy_when_shared_key_is_seen_first(tmp_path):
+    shared = "https://apply.example.com/postings/shared"
+    old_a = _delivery_order_job("a", apply_url=shared)
+    old_b = _delivery_order_job(
+        "b", apply_url="https://apply.example.com/postings/b-old"
+    )
+    new_a = old_a.model_copy(
+        update={"apply_url": "https://apply.example.com/postings/a-new"}
+    )
+    new_b = old_b.model_copy(update={"apply_url": shared})
+
+    legacy = SQLiteRepository(tmp_path / "legacy-b-first.sqlite3")
+    bulk = SQLiteRepository(tmp_path / "bulk-b-first.sqlite3")
+    for repository in (legacy, bulk):
+        repository.upsert_job(old_a.model_copy(deep=True))
+        repository.upsert_job(old_b.model_copy(deep=True))
+
+    legacy_groups = _run_legacy_group_updates(
+        legacy,
+        [new_b.model_copy(deep=True), new_a.model_copy(deep=True)],
+    )
+    bulk_groups = _run_bulk_group_updates(
+        bulk,
+        [new_b.model_copy(deep=True), new_a.model_copy(deep=True)],
+    )
+
+    assert bulk_groups == legacy_groups
+    assert bulk_groups["a"] == bulk_groups["b"]
