@@ -311,7 +311,14 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
   };
 }
 
-function parseAuthoritativeState(logs: string) {
+type AuthoritativeState = {
+  observed_at: string | null;
+  control_request_id: string | null;
+  profiles: ProfileSnapshot[];
+  truncated: boolean;
+};
+
+function parseAuthoritativeState(logs: string): AuthoritativeState | null {
   const ansi = /\u001b\[[0-9;]*m/g;
   const marker = "JOBSIFT_OPERATOR_STATE=";
   const lines = logs.replace(ansi, "").split("\n").reverse();
@@ -377,7 +384,7 @@ type SnapshotCandidate = {
 type SnapshotEvidence =
   | { state: "legacy" }
   | { state: "incomplete"; reason: string }
-  | { state: "complete"; logs: string };
+  | { state: "complete"; snapshot: AuthoritativeState };
 
 const snapshotEvidenceCache = new Map<number, SnapshotEvidence>();
 const funnelCache = new Map<number, Map<string, FunnelSnapshot>>();
@@ -425,7 +432,14 @@ async function snapshotEvidenceForRun(
         `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
         token,
       );
-      const result: SnapshotEvidence = { state: "complete", logs };
+      const snapshot = parseAuthoritativeState(logs);
+      if (!snapshot?.observed_at) {
+        return {
+          state: "incomplete",
+          reason: "Latest operator state snapshot is malformed or missing its observation time.",
+        };
+      }
+      const result: SnapshotEvidence = { state: "complete", snapshot };
       return candidate.run.status === "completed"
         ? rememberRunCache(snapshotEvidenceCache, candidate.run.id, result)
         : result;
@@ -555,14 +569,12 @@ async function latestOperatorSnapshot(
   async function parsedSnapshot(candidate: SnapshotCandidate) {
     const evidence = await snapshotEvidenceForRun(candidate, token);
     if (evidence.state !== "complete") return null;
-    const parsed = parseAuthoritativeState(evidence.logs);
-    if (!parsed?.observed_at) return null;
     return {
       candidate,
-      observedAt: parsed.observed_at,
-      controlRequestId: parsed.control_request_id,
-      profiles: parsed.profiles,
-      truncated: parsed.truncated,
+      observedAt: evidence.snapshot.observed_at as string,
+      controlRequestId: evidence.snapshot.control_request_id,
+      profiles: evidence.snapshot.profiles,
+      truncated: evidence.snapshot.truncated,
     };
   }
 
