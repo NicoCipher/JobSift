@@ -268,7 +268,10 @@ export function OperationsControl({
 
   const latestSnapshot = status?.operator_snapshot;
   const stateVerified =
-    latestSnapshot?.complete !== false && latestSnapshot?.truncated !== true;
+    status !== null &&
+    !statusError &&
+    latestSnapshot?.complete !== false &&
+    latestSnapshot?.truncated !== true;
   const pendingBatches =
     latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
@@ -308,6 +311,15 @@ export function OperationsControl({
   }, []);
 
   async function send(payload: Record<string, string>) {
+    const needsVerifiedState =
+      payload.command === "inventory-refresh" ||
+      (payload.command === "client-control" && payload.operation !== "list");
+    if (needsVerifiedState && !stateVerified) {
+      setMessage(
+        "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish before changing delivery.",
+      );
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -866,7 +878,7 @@ export function OperationsControl({
           <form className="control-form" onSubmit={submitInventory}>
             <label>
               Workday targets
-              <select name="workday_targets" defaultValue="1" disabled={busy || !status?.control_ready}>
+              <select name="workday_targets" defaultValue="1" disabled={busy || !status?.control_ready || !stateVerified}>
                 {["1", "5", "10", "20", "25"].map((value) => (
                   <option key={value} value={value}>
                     {value}
@@ -879,7 +891,7 @@ export function OperationsControl({
               <select
                 name="workday_detail_concurrency"
                 defaultValue="4"
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || !stateVerified}
               >
                 {["4", "6", "8"].map((value) => (
                   <option key={value} value={value}>
@@ -893,7 +905,7 @@ export function OperationsControl({
               <select
                 name="yield_extra_budget"
                 defaultValue="100"
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || !stateVerified}
               >
                 {["0", "25", "50", "75", "100"].map((value) => (
                   <option key={value} value={value}>
@@ -902,7 +914,7 @@ export function OperationsControl({
                 ))}
               </select>
             </label>
-            <button type="submit" disabled={busy || !status?.control_ready}>
+            <button type="submit" disabled={busy || !status?.control_ready || !stateVerified}>
               {busy ? "Starting…" : "Run custom sourcing"}
             </button>
           </form>
@@ -962,7 +974,7 @@ export function OperationsControl({
                   inputMode="text"
                   pattern="[0-9a-f]{16}"
                   placeholder="16-character profile ID"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             )}
@@ -1017,7 +1029,7 @@ export function OperationsControl({
                     setSheetTargetMode(mode);
                     if (mode === "listed") setSheetProfileOverride("");
                   }}
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 >
                   <option value="listed" disabled={profiles.length === 0}>
                     Client name
@@ -1038,7 +1050,7 @@ export function OperationsControl({
                 name="operation"
                 value={deliveryOperation}
                 onChange={(event) => setDeliveryOperation(event.target.value)}
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || !stateVerified}
               >
                 <option value="status">Check delivery status</option>
                 <option value="run-now">Send jobs now</option>
@@ -1083,7 +1095,7 @@ export function OperationsControl({
                   inputMode="text"
                   pattern="[0-9a-f]{16}"
                   placeholder="16-character profile ID"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -1097,7 +1109,7 @@ export function OperationsControl({
                   min="1"
                   max="5000"
                   defaultValue="100"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -1108,7 +1120,7 @@ export function OperationsControl({
                 <select
                   name="delivery_mode"
                   defaultValue="review"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 >
                   <option value="review">Review before sending</option>
                   <option value="auto">Send automatically</option>
@@ -1123,7 +1135,7 @@ export function OperationsControl({
                   name="timezone"
                   defaultValue="Africa/Lagos"
                   autoComplete="off"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -1135,7 +1147,7 @@ export function OperationsControl({
                   name="batch_id"
                   autoComplete="off"
                   placeholder="Batch ID"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
