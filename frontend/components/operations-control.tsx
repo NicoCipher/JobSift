@@ -62,6 +62,8 @@ type ProfileSnapshot = {
 };
 
 type OperatorSnapshot = {
+  complete: boolean;
+  state_error: string | null;
   run: {
     id: number;
     run_number: number;
@@ -265,6 +267,8 @@ export function OperationsControl({
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
 
   const latestSnapshot = status?.operator_snapshot;
+  const stateVerified =
+    latestSnapshot?.complete === true && latestSnapshot.truncated !== true;
   const pendingBatches =
     latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
@@ -516,6 +520,19 @@ export function OperationsControl({
           </button>
         </div>
 
+        {latestSnapshot && !latestSnapshot.complete ? (
+          <div className="error" role="alert">
+            <strong>Client state could not be verified.</strong>{" "}
+            {latestSnapshot.state_error ??
+              "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
+          </div>
+        ) : latestSnapshot?.truncated ? (
+          <div className="notice" role="status">
+            <strong>Client state is incomplete.</strong> JobSift has locked client actions until
+            the full state can be verified.
+          </div>
+        ) : null}
+
         {latestSnapshot?.run ? (
           <div className="operator-run-strip">
             <div>
@@ -608,7 +625,12 @@ export function OperationsControl({
                 <div className="operator-decision-actions">
                   <button
                     type="button"
-                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id)}
+                    disabled={
+                      busy ||
+                      !status?.control_ready ||
+                      !stateVerified ||
+                      !profileLabel(profile.profile_id)
+                    }
                     onClick={() => void actOnPending(profile, "release-batch")}
                   >
                     {profile.recovery_required
@@ -621,6 +643,7 @@ export function OperationsControl({
                     disabled={
                       busy ||
                       !status?.control_ready ||
+                      !stateVerified ||
                       !profileLabel(profile.profile_id) ||
                       profile.recovery_required
                     }
@@ -651,12 +674,7 @@ export function OperationsControl({
               </div>
             ))}
           </div>
-        ) : latestSnapshot?.truncated ? (
-          <div className="notice">
-            Client state is incomplete, so JobSift will not claim that every client is clear.
-            Refresh after the next state update before making that assumption.
-          </div>
-        ) : latestProfile ? (
+        ) : !stateVerified ? null : latestProfile ? (
           <div className="operator-clear">
             <strong>No review batch is blocking the listed client state.</strong>
             <span>JobSift is free to prepare the next delivery batch for the profiles shown.</span>
@@ -693,7 +711,8 @@ export function OperationsControl({
             </div>
             {latestSnapshot.profiles.map((profile) => {
               const label = profileLabel(profile.profile_id);
-              const locked = !label || busy || !status?.control_ready;
+              const locked =
+                !label || busy || !status?.control_ready || !stateVerified;
               return (
                 <article className="operator-client-card" key={profile.profile_id}>
                   <div className="operator-client-summary">
@@ -804,7 +823,10 @@ export function OperationsControl({
           <input type="hidden" name="workday_targets" value="1" />
           <input type="hidden" name="workday_detail_concurrency" value="4" />
           <input type="hidden" name="yield_extra_budget" value="100" />
-          <button type="submit" disabled={busy || !status?.control_ready}>
+          <button
+            type="submit"
+            disabled={busy || !status?.control_ready || !stateVerified}
+          >
             {busy ? "Starting…" : "Run sourcing now"}
           </button>
           <p className="metadata">
