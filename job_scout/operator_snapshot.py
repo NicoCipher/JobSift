@@ -182,10 +182,22 @@ def snapshot(repository) -> dict[str, object]:
         else:
             connection.execute("BEGIN")
 
-        # This timestamp is captured before the first data read. The subsequent
-        # projection is read from one transaction, so a later observed_at never
-        # labels an older/torn mixture of profile, quota, batch, and Sheet state.
-        observed_at = datetime.now(UTC)
+        # The observation clock and the first table read happen in the same
+        # statement, which pins the transaction snapshot at the timestamp we
+        # publish. This avoids ordering a stale read ahead of a newer mutation.
+        if getattr(connection, "is_postgres", False):
+            observation = connection.execute(
+                "SELECT clock_timestamp()::text AS observed_at,COUNT(*) AS profile_count "
+                "FROM client_delivery_profiles"
+            ).fetchone()
+        else:
+            observation = connection.execute(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%f+00:00','now') AS observed_at,"
+                "COUNT(*) AS profile_count FROM client_delivery_profiles"
+            ).fetchone()
+        if observation is None:
+            raise RuntimeError("operator state observation boundary is unavailable")
+        observed_at = datetime.fromisoformat(str(observation["observed_at"]))
         profile_rows = connection.execute(
             "SELECT * FROM client_delivery_profiles "
             "ORDER BY client_id,destination_id LIMIT ?",
