@@ -640,6 +640,7 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
 
 test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {
   let stateVersion = 0;
+  let lastControlRequestId: string | null = null;
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -651,6 +652,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
           delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
           operator_snapshot: {
             complete: true,
+            control_request_id: lastControlRequestId,
             state_error: null,
             run: {
               id: 100 + stateVersion,
@@ -674,10 +676,17 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await page.route("**/api/control/dispatch", async (route) => {
     dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
     stateVersion += 1;
+    lastControlRequestId =
+      `00000000-0000-4000-8000-${String(stateVersion).padStart(12, "0")}`;
     await route.fulfill({
       status: 202,
       contentType: "application/json",
-      body: JSON.stringify({ data: { accepted: true } }),
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: lastControlRequestId,
+        },
+      }),
     });
   });
 
