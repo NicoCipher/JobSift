@@ -289,7 +289,20 @@ export function OperationsControl({
   const [sheetProfileOverride, setSheetProfileOverride] = useState("");
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
   const [awaitingFreshState, setAwaitingFreshState] = useState(false);
+  const [setupClientName, setSetupClientName] = useState("");
+  const [setupDestinationName, setSetupDestinationName] = useState("");
+  const [setupSpreadsheet, setSetupSpreadsheet] = useState("");
+  const [setupTab, setSetupTab] = useState("Sheet1");
+  const [setupLinkHeader, setSetupLinkHeader] = useState("LINKS");
+  const [setupTitleHeader, setSetupTitleHeader] = useState("JOB TITLE");
+  const [setupCompanyHeader, setSetupCompanyHeader] = useState("COMPANY NAME");
+  const [setupDescriptionHeader, setSetupDescriptionHeader] = useState("DESCRIPTION");
+  const [setupPlatformHeader, setSetupPlatformHeader] = useState("");
+  const [setupStatusHeader, setSetupStatusHeader] = useState("");
+  const [setupQuota, setSetupQuota] = useState("100");
+  const [setupMode, setSetupMode] = useState("review");
   const pendingControlRequestId = useRef<string | null>(null);
+  const reloadAfterConfirmation = useRef(false);
   const statePollTimer = useRef<number | null>(null);
 
   const latestSnapshot = status?.operator_snapshot;
@@ -328,6 +341,10 @@ export function OperationsControl({
       ) {
         pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
+        if (reloadAfterConfirmation.current) {
+          reloadAfterConfirmation.current = false;
+          window.location.reload();
+        }
       }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
@@ -370,10 +387,11 @@ export function OperationsControl({
 
   async function send(
     payload: Record<string, string>,
-    options: { waitForState?: boolean } = {},
+    options: { waitForState?: boolean; reloadAfterState?: boolean } = {},
   ) {
     const needsVerifiedState =
       payload.command === "inventory-refresh" ||
+      payload.command === "client-sheet-onboard" ||
       (payload.command === "client-control" && payload.operation !== "list");
     const waitForState = needsVerifiedState || options.waitForState === true;
     if (needsVerifiedState && !stateVerified) {
@@ -395,6 +413,7 @@ export function OperationsControl({
       };
       if (waitForState) {
         setAwaitingFreshState(true);
+        reloadAfterConfirmation.current = options.reloadAfterState === true;
         const requestId = result.data?.control_request_id;
         if (!validControlRequestId(requestId)) {
           pendingControlRequestId.current = null;
@@ -414,6 +433,30 @@ export function OperationsControl({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitClientSetup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await send(
+      {
+        command: "client-sheet-onboard",
+        plan: "taiwo-software-remote-us-v2",
+        client_name: setupClientName,
+        destination_name: setupDestinationName,
+        spreadsheet: setupSpreadsheet,
+        tab: setupTab,
+        link_header: setupLinkHeader,
+        title_header: setupTitleHeader,
+        company_header: setupCompanyHeader,
+        description_header: setupDescriptionHeader,
+        platform_header: setupPlatformHeader,
+        status_header: setupStatusHeader,
+        daily_quota: setupQuota,
+        delivery_mode: setupMode,
+        timezone: "Africa/Lagos",
+      },
+      { waitForState: true, reloadAfterState: true },
+    );
   }
 
   async function actOnProfile(
@@ -915,6 +958,132 @@ export function OperationsControl({
             a new client evaluation. Handle the batch above, then run sourcing again.
           </div>
         ) : null}
+      </section>
+
+      <section className="section-block operations-section" id="connect-client">
+        <div className="control-heading">
+          <div>
+            <h2>Connect a client Sheet</h2>
+            <p>
+              Paste the Google Sheet once. JobSift encrypts the private Sheet details
+              before GitHub Actions receives the setup request.
+            </p>
+          </div>
+        </div>
+        <form className="operations-form setup-wizard" onSubmit={submitClientSetup}>
+          <div className="setup-wizard-grid">
+            <label>
+              Client name
+              <input
+                required
+                maxLength={120}
+                value={setupClientName}
+                onChange={(event) => setSetupClientName(event.target.value)}
+                placeholder="Example: Acme"
+                disabled={busy || awaitingFreshState || !stateVerified}
+              />
+            </label>
+            <label>
+              Sheet name
+              <input
+                required
+                maxLength={120}
+                value={setupDestinationName}
+                onChange={(event) => setSetupDestinationName(event.target.value)}
+                placeholder="Example: Acme Jobs"
+                disabled={busy || awaitingFreshState || !stateVerified}
+              />
+            </label>
+          </div>
+          <label>
+            Google Sheet link
+            <input
+              required
+              type="url"
+              value={setupSpreadsheet}
+              onChange={(event) => setSetupSpreadsheet(event.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+              disabled={busy || awaitingFreshState || !stateVerified}
+            />
+          </label>
+          <div className="setup-wizard-grid">
+            <label>
+              Tab name
+              <input
+                required
+                value={setupTab}
+                onChange={(event) => setSetupTab(event.target.value)}
+                disabled={busy || awaitingFreshState || !stateVerified}
+              />
+            </label>
+            <label>
+              Jobs per day
+              <input
+                required
+                type="number"
+                min="1"
+                max="5000"
+                inputMode="numeric"
+                value={setupQuota}
+                onChange={(event) => setSetupQuota(event.target.value)}
+                disabled={busy || awaitingFreshState || !stateVerified}
+              />
+            </label>
+            <label>
+              Sending mode
+              <select
+                value={setupMode}
+                onChange={(event) => setSetupMode(event.target.value)}
+                disabled={busy || awaitingFreshState || !stateVerified}
+              >
+                <option value="review">Review first</option>
+                <option value="auto">Send automatically</option>
+              </select>
+            </label>
+          </div>
+          <details>
+            <summary>Match your Sheet columns</summary>
+            <p className="metadata">
+              Type the header text exactly as it appears in row 1 of the Sheet.
+            </p>
+            <div className="setup-wizard-grid">
+              <label>
+                Job link column
+                <input required value={setupLinkHeader} onChange={(event) => setSetupLinkHeader(event.target.value)} />
+              </label>
+              <label>
+                Job title column
+                <input required value={setupTitleHeader} onChange={(event) => setSetupTitleHeader(event.target.value)} />
+              </label>
+              <label>
+                Company column
+                <input required value={setupCompanyHeader} onChange={(event) => setSetupCompanyHeader(event.target.value)} />
+              </label>
+              <label>
+                Description column
+                <input value={setupDescriptionHeader} onChange={(event) => setSetupDescriptionHeader(event.target.value)} />
+              </label>
+              <label>
+                Platform column
+                <input value={setupPlatformHeader} onChange={(event) => setSetupPlatformHeader(event.target.value)} />
+              </label>
+              <label>
+                Status column
+                <input value={setupStatusHeader} onChange={(event) => setSetupStatusHeader(event.target.value)} />
+              </label>
+            </div>
+          </details>
+          <div className="notice">
+            Search setup: <strong>US remote software roles · ≤24h fresh</strong>. The
+            next interface milestone is editing these job criteria per client.
+          </div>
+          <button
+            type="submit"
+            disabled={busy || awaitingFreshState || !status?.control_ready || !stateVerified}
+          >
+            {busy ? "Connecting…" : "Connect client Sheet"}
+          </button>
+        </form>
       </section>
 
       <section className="section-block operations-section" id="find-jobs">
