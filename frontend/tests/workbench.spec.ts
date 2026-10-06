@@ -248,7 +248,9 @@ test("operator command center exposes pending review batch without opaque IDs", 
 
   await expect(page.getByRole("heading", { name: "Right now" })).toBeVisible();
   await expect(page.getByText("1 job is waiting for approval")).toBeVisible();
-  await expect(page.getByText("Example client — Example delivery destination")).toBeVisible();
+  await expect(
+    page.getByRole("region").getByText("Example client — Example delivery destination"),
+  ).toBeVisible();
   await expect(page.getByText(/pending review batch stopped a new client evaluation/)).toBeVisible();
 
   await page.getByRole("button", { name: "Release 1 job" }).click();
@@ -259,6 +261,56 @@ test("operator command center exposes pending review batch without opaque IDs", 
     profile_id: "ad763a0336d92204",
     batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
   });
+});
+
+test("pending batch actions fail closed when the client label is unavailable", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            run: {
+              id: 44,
+              run_number: 44,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T19:00:00Z",
+              updated_at: "2026-10-06T19:10:00Z",
+              url: "https://example.invalid/run/44",
+            },
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "0123456789abcdef",
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 30,
+                needs_review_postings: 0,
+                selection_eligible_postings: 30,
+                stale_posting_suppressed_groups: 29,
+                company_cap_suppressed_groups: 0,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+  await page.goto("/operations");
+  await expect(page.getByText("Client name unavailable")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Release 1 job" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Discard" })).toBeDisabled();
+  await expect(page.getByText(/Batch actions are locked/)).toBeVisible();
 });
 
 test("yield-aware scheduling is visible and dispatches guarded bonus capacity", async ({ page }) => {
