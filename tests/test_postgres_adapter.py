@@ -246,6 +246,23 @@ def _run_bulk_group_updates(
     return _group_map(repository)
 
 
+def test_postgres_group_merge_20k_uses_bounded_round_trips():
+    repository = object.__new__(PostgresRepository)
+    connection = _RecordingConnection()
+    merge_map = {
+        f"group-{index:05d}": "group-root"
+        for index in range(20_000)
+    }
+
+    repository._merge_delivery_groups_bulk_in_connection(
+        connection,
+        merge_map,
+    )
+
+    assert len(connection.execute_calls) == 160
+    assert max(len(parameters) for _, parameters in connection.execute_calls) <= 1_000
+
+
 def test_postgres_bulk_upsert_preserves_duplicate_provider_identity_sequence():
     repository = object.__new__(PostgresRepository)
     connection = _RecordingConnection()
