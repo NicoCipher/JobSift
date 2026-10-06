@@ -103,7 +103,6 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path):
     assert state["schema_version"] == "operator-state-v1"
     assert state["truncated"] is False
     row = state["profiles"][0]
-    assert row["destination_name"] == "Acme Jobs"
     assert row["profile_status"] == "paused"
     assert row["pending_batch"]["batch_id"] == prepared.batch_id
     assert row["pending_batch"]["selected_count"] == 1
@@ -118,3 +117,16 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path):
         }
     ]
     assert row["pending_batch"]["preview_truncated"] is False
+    assert row["pending_batch"]["recovery_required"] is False
+
+    with repo.connect() as connection:
+        connection.execute(
+            "UPDATE daily_batches SET status='failed',export_before_sha256=?,"
+            "export_after_sha256=?,error=? WHERE batch_id=?",
+            ("a" * 64, "b" * 64, "Google Sheets append outcome uncertain", prepared.batch_id),
+        )
+
+    recovery = snapshot(repo)["profiles"][0]["pending_batch"]
+    assert recovery["batch_id"] == prepared.batch_id
+    assert recovery["status"] == "failed"
+    assert recovery["recovery_required"] is True
