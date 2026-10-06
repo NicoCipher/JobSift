@@ -357,6 +357,62 @@ class PostgresRepository(SQLiteRepository):
                 ] = row
         return existing
 
+    def _merge_delivery_groups_bulk_in_connection(
+        self,
+        connection: PostgresConnection,
+        merge_map: dict[str, str],
+    ) -> None:
+        """Merge persisted delivery groups in bounded set-oriented statements.
+
+        The legacy resolver processes losing groups in sorted order. When two
+        losing groups carry delivery history for the same client/destination,
+        the lexicographically first losing group wins unless the canonical
+        target already has history. Process sorted chunks in order and use
+        DISTINCT ON inside each chunk to preserve that precedence.
+        """
+        ordered = sorted(merge_map.items())
+        for chunk in _chunks(ordered):
+            values_sql = ",".join("(?,?)" for _ in chunk)
+            mapping_parameters = [
+                value
+                for old_group, new_group in chunk
+                for value in (old_group, new_group)
+            ]
+            connection.execute(
+                "WITH mapping(old_group,new_group) AS (VALUES "
+                f"{values_sql}) "
+                "INSERT INTO group_deliveries "
+                "(group_id,client_id,destination,job_id,exported_at) "
+                "SELECT new_group,client_id,destination,job_id,exported_at "
+                "FROM ("
+                "SELECT DISTINCT ON (m.new_group,d.client_id,d.destination) "
+                "m.new_group,d.client_id,d.destination,d.job_id,d.exported_at,"
+                "m.old_group "
+                "FROM mapping m JOIN group_deliveries d "
+                "ON d.group_id=m.old_group "
+                "ORDER BY m.new_group,d.client_id,d.destination,m.old_group"
+                ") winners "
+                "ON CONFLICT DO NOTHING",
+                mapping_parameters,
+            )
+            old_groups = [old_group for old_group, _new_group in chunk]
+            old_placeholders = ",".join("?" for _ in old_groups)
+            connection.execute(
+                f"DELETE FROM group_deliveries WHERE group_id IN ({old_placeholders})",
+                old_groups,
+            )
+            connection.execute(
+                "UPDATE posting_delivery_groups AS p SET group_id=m.new_group "
+                "FROM (VALUES "
+                f"{values_sql}) AS m(old_group,new_group) "
+                "WHERE p.group_id=m.old_group",
+                mapping_parameters,
+            )
+            connection.execute(
+                f"DELETE FROM delivery_groups WHERE id IN ({old_placeholders})",
+                old_groups,
+            )
+
     def _assign_groups_bulk_in_connection(
         self,
         connection: PostgresConnection,
@@ -512,27 +568,10 @@ class PostgresRepository(SQLiteRepository):
             for group_id in database_groups
             if find(group_id) != group_id
         }
-        for old_group, new_group in sorted(merge_map.items()):
-            connection.execute(
-                "INSERT INTO group_deliveries "
-                "(group_id,client_id,destination,job_id,exported_at) "
-                "SELECT ?,client_id,destination,job_id,exported_at "
-                "FROM group_deliveries WHERE group_id=? "
-                "ON CONFLICT DO NOTHING",
-                (new_group, old_group),
-            )
-            connection.execute(
-                "DELETE FROM group_deliveries WHERE group_id=?",
-                (old_group,),
-            )
-            connection.execute(
-                "UPDATE posting_delivery_groups SET group_id=? WHERE group_id=?",
-                (new_group, old_group),
-            )
-            connection.execute(
-                "DELETE FROM delivery_groups WHERE id=?",
-                (old_group,),
-            )
+        self._merge_delivery_groups_bulk_in_connection(
+            connection,
+            merge_map,
+        )
 
         connection.executemany(
             "INSERT INTO posting_delivery_groups (job_id,group_id) VALUES (?,?) "
