@@ -22,10 +22,47 @@ type WorkflowStatus = {
   runs: Run[];
 };
 
+type FunnelSnapshot = {
+  overall: Record<string, number>;
+  age_buckets: Record<string, number>;
+  delivery: Record<string, number>;
+};
+
+type ProfileSnapshot = {
+  action: string;
+  profile_id: string;
+  batch_id: string | null;
+  batch_status: string | null;
+  requested_quota: number | null;
+  selected_count: number | null;
+  shortfall: number | null;
+  fresh_eligible_employers: number | null;
+  match_eligible_postings: number | null;
+  needs_review_postings: number | null;
+  selection_eligible_postings: number | null;
+  stale_posting_suppressed_groups: number | null;
+  company_cap_suppressed_groups: number | null;
+  client_funnel: FunnelSnapshot | null;
+};
+
+type OperatorSnapshot = {
+  run: {
+    id: number;
+    run_number: number;
+    status: string;
+    conclusion: string | null;
+    created_at: string;
+    updated_at: string;
+    url: string;
+  } | null;
+  profiles: ProfileSnapshot[];
+};
+
 type ControlStatus = {
   control_ready: boolean;
   inventory: WorkflowStatus;
   delivery: WorkflowStatus;
+  operator_snapshot: OperatorSnapshot;
 };
 
 type ApiError = { error?: { message?: string } };
@@ -102,6 +139,32 @@ function deliveryConfirmation(
     return `Discard batch ${batchId} for ${target}? This permanently removes the unpublished prepared batch.`;
   }
   return null;
+}
+
+function countLabel(value: number | null | undefined) {
+  return value === null || value === undefined ? "—" : value.toLocaleString();
+}
+
+function FunnelSummary({ funnel }: { funnel: FunnelSnapshot }) {
+  const stages = [
+    ["Fresh ≤24h", funnel.overall.fresh_0_24h],
+    ["Role title", funnel.overall.title_matched_0_24h],
+    ["US market", funnel.overall.target_market_survived_0_24h],
+    ["Remote", funnel.overall.remote_survived_0_24h],
+    ["All brief rules", funnel.overall.other_rules_survived_0_24h],
+    ["Confirmed", funnel.overall.confirmed_matches_0_24h],
+    ["Needs review", funnel.overall.needs_review_matches_0_24h],
+  ] as const;
+  return (
+    <div className="operator-funnel" aria-label="Latest client match funnel">
+      {stages.map(([label, value]) => (
+        <div className="operator-metric" key={label}>
+          <strong>{countLabel(value)}</strong>
+          <span>{label}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function WorkflowRuns({
@@ -185,6 +248,20 @@ export function OperationsControl({
   const [sheetProfileOverride, setSheetProfileOverride] = useState("");
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
 
+  const latestSnapshot = status?.operator_snapshot;
+  const pendingBatches =
+    latestSnapshot?.profiles.filter(
+      (profile) => profile.action === "awaiting_release" && Boolean(profile.batch_id),
+    ) ?? [];
+  const latestProfile = latestSnapshot?.profiles[0];
+
+  function profileLabel(profileId: string) {
+    const profile = profiles.find((item) => item.profile_id === profileId);
+    return profile
+      ? `${profile.client_name} — ${profile.destination_name}`
+      : "Delivery profile";
+  }
+
   const loadStatus = useCallback(async () => {
     try {
       const response = await fetch("/api/control/status", { cache: "no-store" });
@@ -231,6 +308,26 @@ export function OperationsControl({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function actOnPending(profile: ProfileSnapshot, operation: "release-batch" | "discard-batch") {
+    if (!profile.batch_id) return;
+    const label = profileLabel(profile.profile_id);
+    const verb = operation === "release-batch" ? "Release" : "Discard";
+    const effect =
+      operation === "release-batch"
+        ? "This sends the reviewed jobs to the client's Sheet."
+        : "This removes the unpublished batch without sending it.";
+    if (!window.confirm(`${verb} this batch for ${label}? ${effect}`)) return;
+    await send({
+      command: "client-control",
+      operation,
+      profile_id: profile.profile_id,
+      daily_quota: "100",
+      delivery_mode: "review",
+      timezone: "Africa/Lagos",
+      batch_id: profile.batch_id,
+    });
   }
 
   async function submitInventory(event: FormEvent<HTMLFormElement>) {
@@ -364,6 +461,124 @@ export function OperationsControl({
         )}
         {statusError ? <div className="error">{statusError}</div> : null}
         {message ? <p className="control-message">{message}</p> : null}
+      </section>
+
+      <section className="section-block operator-command-center" aria-labelledby="operator-now-title">
+        <div className="control-heading">
+          <div>
+            <h2 id="operator-now-title">Right now</h2>
+            <p>See what JobSift is waiting on before you run another command.</p>
+          </div>
+          <button type="button" disabled={busy} onClick={() => void loadStatus()}>
+            Refresh status
+          </button>
+        </div>
+
+        {latestSnapshot?.run ? (
+          <div className="operator-run-strip">
+            <div>
+              <span className="metadata">Latest sourcing run</span>
+              <strong>#{latestSnapshot.run.run_number}</strong>
+            </div>
+            <div>
+              <span className="metadata">Result</span>
+              <strong>
+                {latestSnapshot.run.status === "completed"
+                  ? latestSnapshot.run.conclusion ?? "completed"
+                  : latestSnapshot.run.status}
+              </strong>
+            </div>
+            <div>
+              <span className="metadata">Finished</span>
+              <strong>{new Date(latestSnapshot.run.updated_at).toLocaleString()}</strong>
+            </div>
+          </div>
+        ) : (
+          <p className="metadata">No production sourcing run has been reported yet.</p>
+        )}
+
+        {pendingBatches.length ? (
+          <div className="operator-attention">
+            <div>
+              <p className="operator-eyebrow">Needs your decision</p>
+              <h3>
+                {pendingBatches.length === 1
+                  ? `${countLabel(pendingBatches[0].selected_count)} job is waiting for approval`
+                  : `${pendingBatches.length} review batches are waiting`}
+              </h3>
+              <p>
+                JobSift will not prepare another batch for this client until you release or
+                discard the pending batch.
+              </p>
+            </div>
+            {pendingBatches.map((profile) => (
+              <div className="operator-batch-card" key={profile.batch_id ?? profile.profile_id}>
+                <div>
+                  <strong>{profileLabel(profile.profile_id)}</strong>
+                  <p className="metadata">
+                    {countLabel(profile.selected_count)} selected · {countLabel(profile.shortfall)} short
+                    of the requested limit
+                  </p>
+                </div>
+                <div className="operator-decision-actions">
+                  <button
+                    type="button"
+                    disabled={busy || !status?.control_ready}
+                    onClick={() => void actOnPending(profile, "release-batch")}
+                  >
+                    Release {countLabel(profile.selected_count)} job
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={busy || !status?.control_ready}
+                    onClick={() => void actOnPending(profile, "discard-batch")}
+                  >
+                    Discard
+                  </button>
+                </div>
+                <details>
+                  <summary>Why only {countLabel(profile.selected_count)}?</summary>
+                  <div className="operator-mini-grid">
+                    <span>Matched <strong>{countLabel(profile.match_eligible_postings)}</strong></span>
+                    <span>Needs review <strong>{countLabel(profile.needs_review_postings)}</strong></span>
+                    <span>Stale before delivery <strong>{countLabel(profile.stale_posting_suppressed_groups)}</strong></span>
+                    <span>Employer cap <strong>{countLabel(profile.company_cap_suppressed_groups)}</strong></span>
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+        ) : latestProfile ? (
+          <div className="operator-clear">
+            <strong>No review batch is blocking this client.</strong>
+            <span>JobSift is free to prepare the next delivery batch.</span>
+          </div>
+        ) : null}
+
+        {latestProfile?.client_funnel ? (
+          <div className="operator-diagnostics">
+            <div className="control-heading">
+              <div>
+                <h3>Latest client funnel</h3>
+                <p className="metadata">
+                  These are measured backend counts, not estimates.
+                </p>
+              </div>
+            </div>
+            <FunnelSummary funnel={latestProfile.client_funnel} />
+            <div className="operator-age-grid">
+              <span>0–24h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_0_24h)}</strong></span>
+              <span>24–48h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_24_48h)}</strong></span>
+              <span>48–72h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_48_72h)}</strong></span>
+            </div>
+          </div>
+        ) : pendingBatches.length ? (
+          <div className="notice">
+            The latest client funnel is not available because the pending review batch stopped
+            a new client evaluation. Handle the batch above, then run sourcing again.
+          </div>
+        ) : null}
       </section>
 
       <section className="section-block operations-section" id="find-jobs">
