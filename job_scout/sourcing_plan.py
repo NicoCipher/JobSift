@@ -329,6 +329,7 @@ class InventoryEvaluationReport(BaseModel):
     evaluated_at: datetime
     total_evaluated: int
     total_matched: int
+    total_needs_review: int = 0
     total_rejected: int
 
 
