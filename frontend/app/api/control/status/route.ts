@@ -54,6 +54,14 @@ type FunnelSnapshot = {
   delivery: Record<string, number>;
 };
 
+type PendingItem = {
+  ordinal: number;
+  title: string;
+  company: string;
+  link: string | null;
+  platform: string;
+};
+
 type ProfileSnapshot = {
   action: string;
   profile_id: string;
@@ -74,6 +82,8 @@ type ProfileSnapshot = {
   selection_eligible_postings: number | null;
   stale_posting_suppressed_groups: number | null;
   company_cap_suppressed_groups: number | null;
+  pending_items: PendingItem[];
+  pending_items_truncated: boolean;
   client_funnel: FunnelSnapshot | null;
 };
 
@@ -236,6 +246,26 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
       ? (pending.counts as Record<string, unknown>)
       : {};
   const batchId = validBatchId(pending?.batch_id) ? pending.batch_id : null;
+  const preview = Array.isArray(pending?.preview)
+    ? pending.preview.flatMap((value): PendingItem[] => {
+        if (!value || typeof value !== "object") return [];
+        const item = value as Record<string, unknown>;
+        const ordinal = integer(item.ordinal);
+        if (ordinal === null || ordinal < 1) return [];
+        const rawLink = textValue(item.link, 2048);
+        const link =
+          rawLink && /^https?:\/\//i.test(rawLink) ? rawLink : null;
+        return [
+          {
+            ordinal,
+            title: textValue(item.title, 240) ?? "Untitled job",
+            company: textValue(item.company, 240) ?? "Company not reported",
+            link,
+            platform: textValue(item.platform, 80) ?? "Source not reported",
+          },
+        ];
+      })
+    : [];
   return {
     action: batchId ? "awaiting_release" : "ready",
     profile_id: source.profile_id,
@@ -256,6 +286,8 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
     selection_eligible_postings: integer(counts.selection_eligible_postings),
     stale_posting_suppressed_groups: integer(counts.stale_posting_suppressed_groups),
     company_cap_suppressed_groups: integer(counts.company_cap_suppressed_groups),
+    pending_items: preview,
+    pending_items_truncated: pending?.preview_truncated === true,
     client_funnel: null,
   };
 }
