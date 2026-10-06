@@ -16,22 +16,18 @@ function deliveryProfileControlId(clientId: string, destinationId: string) {
     .slice(0, 16);
 }
 
-type OperatorProfileAlias = ManagedProfile & { client_id: string };
-
-function operatorProfileAliases(): OperatorProfileAlias[] {
-  const raw = process.env.JOBSIFT_OPERATOR_PROFILE_ALIASES?.trim();
+function operatorControlProfiles(): ManagedProfile[] {
+  const raw = process.env.JOBSIFT_OPERATOR_PROFILES?.trim();
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     const seen = new Set<string>();
-    return parsed.flatMap((value): OperatorProfileAlias[] => {
+    return parsed.flatMap((value): ManagedProfile[] => {
       if (!value || typeof value !== "object") return [];
       const item = value as Record<string, unknown>;
       const profileId =
         typeof item.profile_id === "string" ? item.profile_id.trim().toLowerCase() : "";
-      const clientId =
-        typeof item.client_id === "string" ? item.client_id.trim().slice(0, 160) : "";
       const clientName =
         typeof item.client_name === "string" ? item.client_name.trim().slice(0, 120) : "";
       const destinationName =
@@ -40,7 +36,6 @@ function operatorProfileAliases(): OperatorProfileAlias[] {
           : "";
       if (
         !/^[0-9a-f]{16}$/.test(profileId) ||
-        !clientId ||
         !clientName ||
         !destinationName ||
         seen.has(profileId)
@@ -50,7 +45,6 @@ function operatorProfileAliases(): OperatorProfileAlias[] {
       seen.add(profileId);
       return [{
         profile_id: profileId,
-        client_id: clientId,
         client_name: clientName,
         destination_name: destinationName,
       }];
@@ -91,56 +85,51 @@ export default async function SectionPage({
   if (liveMode && !["operations", "settings"].includes(section)) {
     return <div className="section-content"><h1>{titles[section]}</h1><p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p><Link href="/jobs">Open Jobs</Link></div>;
   }
-  const session = await api.getSession();
-  const clientId = session.data.client_scopes[0].client_id;
+  const session = section === "operations" ? null : await api.getSession();
+  const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
   if (section === "operations") {
-    const clients = await Promise.all(
-      session.data.client_scopes.map(async (scope) => {
-        try {
-          return await api.getClient(scope.client_id);
-        } catch {
-          return null;
-        }
-      }),
-    );
-    const catalogueIncomplete = clients.some((client) => client === null);
-    const catalogueProfiles: ManagedProfile[] = clients.flatMap((response) =>
-      response
-        ? response.data.destinations.map((destination) => ({
-            profile_id: deliveryProfileControlId(
-              response.data.client_id,
-              destination.destination_id,
-            ),
-            client_name: response.data.display_name,
-            destination_name: destination.display_name,
-          }))
-        : [],
-    );
-    const profiles = [...catalogueProfiles];
-    const known = new Set(profiles.map((profile) => profile.profile_id));
-    const authorizedClientIds = new Set(
-      session.data.client_scopes.map((scope) => scope.client_id),
-    );
-    for (const alias of operatorProfileAliases()) {
-      if (
-        authorizedClientIds.has(alias.client_id) &&
-        !known.has(alias.profile_id)
-      ) {
-        profiles.push({
-          profile_id: alias.profile_id,
-          client_name: alias.client_name,
-          destination_name: alias.destination_name,
-        });
-        known.add(alias.profile_id);
-      }
+    const configuredProfiles = operatorControlProfiles();
+    if (configuredProfiles.length || process.env.NODE_ENV === "production") {
+      content = (
+        <OperationsControl
+          profiles={configuredProfiles}
+          catalogueIncomplete={false}
+        />
+      );
+    } else {
+      // Development-only fallback keeps authored fixture coverage useful. Production
+      // controls fail closed unless the server-only operator allowlist is configured.
+      const developmentSession = await api.getSession();
+      const clients = await Promise.all(
+        developmentSession.data.client_scopes.map(async (scope) => {
+          try {
+            return await api.getClient(scope.client_id);
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const catalogueIncomplete = clients.some((client) => client === null);
+      const profiles: ManagedProfile[] = clients.flatMap((response) =>
+        response
+          ? response.data.destinations.map((destination) => ({
+              profile_id: deliveryProfileControlId(
+                response.data.client_id,
+                destination.destination_id,
+              ),
+              client_name: response.data.display_name,
+              destination_name: destination.display_name,
+            }))
+          : [],
+      );
+      content = (
+        <OperationsControl
+          profiles={profiles}
+          catalogueIncomplete={catalogueIncomplete}
+        />
+      );
     }
-    content = (
-      <OperationsControl
-        profiles={profiles}
-        catalogueIncomplete={catalogueIncomplete}
-      />
-    );
   } else if (section === "settings")
     content = (
       <section className="section-block reading">
