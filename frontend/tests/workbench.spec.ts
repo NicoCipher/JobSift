@@ -527,6 +527,82 @@ test("failed status refresh locks actions from the previous verified snapshot", 
   await expect(release).toBeDisabled();
 });
 
+test("a newer authoritative snapshot can prove a dispatched command was superseded", async ({ page }) => {
+  const requestedId = "11111111-1111-4111-8111-111111111111";
+  const newerId = "22222222-2222-4222-8222-222222222222";
+  let commandAccepted = false;
+
+  await page.route("**/api/control/status*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            complete: true,
+            observed_at: commandAccepted
+              ? "2026-10-06T20:10:00Z"
+              : "2026-10-06T20:00:00Z",
+            control_request_id: commandAccepted ? newerId : null,
+            confirmed_control_request_id: commandAccepted ? requestedId : null,
+            state_error: null,
+            run: {
+              id: commandAccepted ? 2 : 1,
+              run_number: commandAccepted ? 2 : 1,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T20:00:00Z",
+              updated_at: commandAccepted
+                ? "2026-10-06T20:10:00Z"
+                : "2026-10-06T20:00:00Z",
+              url: "https://example.invalid/state",
+              kind: "inventory",
+            },
+            truncated: false,
+            profiles: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/control/dispatch", async (route) => {
+    commandAccepted = true;
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: requestedId,
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  const runNow = page.getByRole("button", { name: "Run sourcing now" });
+  await expect(runNow).toBeEnabled();
+  await runNow.click();
+  await expect(runNow).toBeDisabled();
+
+  await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(runNow).toBeEnabled();
+});
+
 test("truncated operator state never claims all clients are clear", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
