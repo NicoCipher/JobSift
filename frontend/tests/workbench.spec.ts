@@ -448,10 +448,9 @@ test("unverified latest operator state locks state-dependent controls", async ({
 });
 
 test("failed status refresh locks actions from the previous verified snapshot", async ({ page }) => {
-  let requests = 0;
+  let failStatus = false;
   await page.route("**/api/control/status", async (route) => {
-    requests += 1;
-    if (requests > 1) {
+    if (failStatus) {
       await route.fulfill({
         status: 503,
         contentType: "application/json",
@@ -520,6 +519,7 @@ test("failed status refresh locks actions from the previous verified snapshot", 
   const release = page.getByRole("button", { name: "Release 1 job" });
   await expect(release).toBeEnabled();
 
+  failStatus = true;
   await page.getByRole("button", { name: "Refresh status" }).click();
   await expect(page.getByText("Could not load JobSift workflow status.")).toBeVisible();
   await expect(release).toBeDisabled();
