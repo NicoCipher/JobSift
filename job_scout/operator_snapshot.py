@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
@@ -122,6 +123,7 @@ def snapshot(repository) -> dict[str, object]:
         )
     return {
         "schema_version": "operator-state-v1",
+        "observed_at": datetime.now(UTC).isoformat(),
         "control_request_id": (
             os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip() or None
         ),
