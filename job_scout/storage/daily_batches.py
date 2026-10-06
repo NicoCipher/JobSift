@@ -17,6 +17,7 @@ from job_scout.dedupe.resolver import DEDUPE_VERSION
 from job_scout.domain.daily_batch import (
     BatchConflict,
     DailyBatchItem,
+    DailyBatchRequest,
     DailyBatchResult,
     RetryableDestinationConflict,
 )
@@ -504,7 +505,12 @@ class DailyBatchStore:
             ).fetchone()
             request_json = canonical(request.model_dump(mode="json"))
             if old:
-                if old["request_json"] != request_json:
+                stored_request_json = canonical(
+                    DailyBatchRequest.model_validate_json(
+                        old["request_json"]
+                    ).model_dump(mode="json")
+                )
+                if stored_request_json != request_json:
                     raise BatchConflict("idempotency key reused with incompatible request")
                 return self._load(c, old["batch_id"])
             candidates = self._candidates(
