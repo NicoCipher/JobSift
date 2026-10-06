@@ -357,21 +357,42 @@ type SnapshotCandidate = {
   jobName: "operator-snapshot" | "control" | "configure";
 };
 
-async function jobLogsForRun(candidate: SnapshotCandidate, token: string) {
-  if (candidate.run.status !== "completed") return null;
+type SnapshotEvidence =
+  | { state: "legacy" }
+  | { state: "incomplete"; reason: string }
+  | { state: "complete"; logs: string };
+
+async function snapshotEvidenceForRun(
+  candidate: SnapshotCandidate,
+  token: string,
+): Promise<SnapshotEvidence> {
   try {
     const jobs = await github<{ jobs: GithubJob[] }>(
       `/repos/${owner}/${repo}/actions/runs/${candidate.run.id}/jobs?per_page=100`,
       token,
     );
     const job = jobs.jobs.find((value) => value.name === candidate.jobName);
-    if (!job || job.status !== "completed") return null;
-    return await githubText(
-      `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
-      token,
-    );
+    if (!job) return { state: "legacy" };
+    if (job.status !== "completed") {
+      return { state: "incomplete", reason: "Latest operator state update is still running." };
+    }
+    try {
+      const logs = await githubText(
+        `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
+        token,
+      );
+      return { state: "complete", logs };
+    } catch {
+      return {
+        state: "incomplete",
+        reason: "Latest operator state could not be read safely.",
+      };
+    }
   } catch {
-    return null;
+    return {
+      state: "incomplete",
+      reason: "Latest operator state could not be verified safely.",
+    };
   }
 }
 
@@ -427,22 +448,37 @@ async function latestOperatorSnapshot(
   let chosen: SnapshotCandidate | null = null;
   let profiles: ProfileSnapshot[] = [];
   let truncated = false;
+  let complete = false;
+  let stateError: string | null = null;
+
   for (const candidate of candidates) {
-    const logs = await jobLogsForRun(candidate, token);
-    if (!logs) continue;
-    const parsed = parseAuthoritativeState(logs);
-    if (!parsed) continue;
+    if (candidate.run.status !== "completed") continue;
+    const evidence = await snapshotEvidenceForRun(candidate, token);
+    if (evidence.state === "legacy") continue;
     chosen = candidate;
+    if (evidence.state === "incomplete") {
+      stateError = evidence.reason;
+      break;
+    }
+    const parsed = parseAuthoritativeState(evidence.logs);
+    if (!parsed) {
+      stateError =
+        "Latest JobSift mutation completed, but its authoritative state snapshot is unavailable.";
+      break;
+    }
     profiles = parsed.profiles;
     truncated = parsed.truncated;
+    complete = true;
     break;
   }
 
-  const funnels = await latestEvaluationFunnels(inventoryRuns, token);
-  profiles = profiles.map((profile) => ({
-    ...profile,
-    client_funnel: funnels.get(profile.profile_id) ?? null,
-  }));
+  if (complete) {
+    const funnels = await latestEvaluationFunnels(inventoryRuns, token);
+    profiles = profiles.map((profile) => ({
+      ...profile,
+      client_funnel: funnels.get(profile.profile_id) ?? null,
+    }));
+  }
 
   const run = chosen
     ? {
@@ -457,7 +493,17 @@ async function latestOperatorSnapshot(
       }
     : null;
 
-  return { run, profiles, truncated };
+  return {
+    run,
+    profiles,
+    truncated,
+    complete,
+    state_error:
+      stateError ??
+      (!chosen
+        ? "No authoritative JobSift operator state has been reported yet."
+        : null),
+  };
 }
 
 export async function GET() {
@@ -475,7 +521,13 @@ export async function GET() {
           control_ready: false,
           inventory: unavailable("Refresh Live Job Inventory", workflows.inventory),
           delivery: unavailable("Client Delivery Control", workflows.delivery),
-          operator_snapshot: { run: null, profiles: [], truncated: false },
+          operator_snapshot: {
+            run: null,
+            profiles: [],
+            truncated: false,
+            complete: false,
+            state_error: "Production operator state is unavailable.",
+          },
         },
       },
       { headers: { "Cache-Control": "no-store" } },
