@@ -1,5 +1,5 @@
 "use client";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 export type Preferences = {
   theme: "system" | "light" | "dark";
   density: "default" | "compact" | "comfortable";
@@ -54,6 +54,10 @@ export function savePreferences(patch: Partial<Preferences>) {
 }
 export function PresentationSettings() {
   const preferences = usePreferences();
+  useEffect(() => {
+    document.documentElement.dataset.theme = preferences.theme;
+    document.documentElement.dataset.density = preferences.density;
+  }, [preferences.theme, preferences.density]);
   return (
     <>
       <label className="settings-field">
