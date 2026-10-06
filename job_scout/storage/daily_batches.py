@@ -547,6 +547,12 @@ class DailyBatchStore:
                     employer_key(Job.model_validate_json(row[0])) for row in delivered_jobs
                 }
 
+            delivered_groups = self._delivered_groups(
+                c,
+                (v.group_id for v in candidates),
+                request.client_id,
+                request.destination,
+            )
             scoped = [
                 BatchCandidate(
                     job=v.job,
@@ -555,12 +561,7 @@ class DailyBatchStore:
                     evidence_sha256=v.evidence_sha256,
                     employer_key=v.employer_key,
                     historical=v.historical,
-                    delivered=c.execute(
-                        "SELECT 1 FROM group_deliveries WHERE group_id=? AND client_id=? "
-                        "AND destination=?",
-                        (v.group_id, request.client_id, request.destination),
-                    ).fetchone()
-                    is not None,
+                    delivered=v.group_id in delivered_groups,
                     employer_recently_delivered=v.employer_key in recent_employers,
                 )
                 for v in candidates
@@ -640,6 +641,12 @@ class DailyBatchStore:
         expected = {i.representative_job_id: i.evidence_sha256 for i in result.items}
         if len({v.group_id for v in candidates}) != len(candidates):
             raise BatchConflict("prepared groups merged; selection cannot be silently changed")
+        delivered_groups = self._delivered_groups(
+            c,
+            (v.group_id for v in candidates),
+            result.request.client_id,
+            result.request.destination,
+        )
         for v in candidates:
             freshness = posting_freshness_disposition(
                 posted_at=v.job.posted_at,
@@ -656,11 +663,7 @@ class DailyBatchStore:
                 or v.historical
                 or v.match.decision
                 not in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
-                or c.execute(
-                    "SELECT 1 FROM group_deliveries WHERE group_id=? "
-                    "AND client_id=? AND destination=?",
-                    (v.group_id, result.request.client_id, result.request.destination),
-                ).fetchone()
+                or v.group_id in delivered_groups
             ):
                 raise BatchConflict("prepared evidence or delivery state changed")
 
