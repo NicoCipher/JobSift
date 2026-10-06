@@ -7,6 +7,7 @@ from job_scout import sourcing_plan
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
 from job_scout.storage.daily_batches import DailyBatchStore
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -105,6 +106,48 @@ def test_recent_inventory_retains_needs_review_candidate_ids(tmp_path, monkeypat
     assert report.total_needs_review == 1
     assert report.total_rejected == 1
     assert candidate_ids == ("confirmed", "reviewable")
+
+
+def test_run_scoped_inventory_reports_needs_review_total(tmp_path, monkeypatch):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    reviewable = posting("reviewable-run", "Backend Engineer")
+    repo.upsert_job(reviewable)
+    now = datetime.now(UTC)
+
+    inventory = InventoryRunStore(repo)
+    run_id = "reviewable-run"
+    inventory.create(run_id=run_id, plan_id="test-plan", started_at=now)
+    inventory.add_jobs(
+        run_id=run_id,
+        target_identity="greenhouse:acme",
+        jobs=[reviewable],
+    )
+    inventory.finish(run_id=run_id, status="success", completed_at=now)
+
+    monkeypatch.setattr(
+        sourcing_plan,
+        "match_job",
+        lambda job, _brief: JobMatch(
+            job_id=job.id,
+            client_id="client-a",
+            decision="needs_review",
+            evaluated_at=now,
+            matcher_version="test",
+        ),
+    )
+
+    report = sourcing_plan.evaluate_inventory_run(
+        repository=repo,
+        run_id=run_id,
+        brief=SimpleNamespace(client_id="client-a"),
+        retention_hours=72,
+        evaluated_at=now,
+    )
+
+    assert report.total_evaluated == 1
+    assert report.total_matched == 0
+    assert report.total_needs_review == 1
+    assert report.total_rejected == 0
 
 
 def test_recent_inventory_rejects_old_posting_reverified_now(tmp_path, monkeypatch):
