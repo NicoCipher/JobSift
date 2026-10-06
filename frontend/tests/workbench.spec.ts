@@ -224,6 +224,16 @@ test("operator command center exposes pending review batch without opaque IDs", 
                 selection_eligible_postings: 30,
                 stale_posting_suppressed_groups: 29,
                 company_cap_suppressed_groups: 0,
+                pending_items: [
+                  {
+                    ordinal: 1,
+                    title: "Software Engineer",
+                    company: "Acme",
+                    link: "https://example.invalid/job-1",
+                    platform: "Greenhouse",
+                  },
+                ],
+                pending_items_truncated: false,
                 client_funnel: null,
               },
             ],
@@ -248,6 +258,11 @@ test("operator command center exposes pending review batch without opaque IDs", 
 
   await expect(page.getByRole("heading", { name: "Right now" })).toBeVisible();
   await expect(page.getByText("1 job is waiting for approval")).toBeVisible();
+  await expect(page.getByText("Software Engineer", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute(
+    "href",
+    "https://example.invalid/job-1",
+  );
   await expect(
     page.getByRole("region").getByText("Example client — Example delivery destination"),
   ).toBeVisible();
@@ -298,6 +313,16 @@ test("pending batch actions fail closed when the client label is unavailable", a
                 selection_eligible_postings: 30,
                 stale_posting_suppressed_groups: 29,
                 company_cap_suppressed_groups: 0,
+                pending_items: [
+                  {
+                    ordinal: 1,
+                    title: "Software Engineer",
+                    company: "Acme",
+                    link: "https://example.invalid/job-1",
+                    platform: "Greenhouse",
+                  },
+                ],
+                pending_items_truncated: false,
                 client_funnel: null,
               },
             ],
