@@ -29,6 +29,7 @@ class DailyBatchRequest(BatchModel):
     destination_config_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     idempotency_key: str
     requested_quota: int = Field(strict=True, ge=1)
+    include_needs_review: bool = False
     max_jobs_per_employer_per_batch: int | None = Field(default=None, ge=1, le=1000)
     employer_cooldown_days: int = Field(default=0, ge=0, le=3650)
     max_posting_age_hours: int | None = Field(default=None, ge=1, le=24 * 30)
@@ -93,7 +94,9 @@ class DailyBatchCounts(BatchModel):
     match_eligible_postings: int = Field(ge=0)
     needs_review_postings: int = Field(ge=0)
     rejected_postings: int = Field(ge=0)
+    selection_eligible_postings: int = Field(default=0, ge=0)
     match_eligible_groups: int = Field(ge=0)
+    selection_eligible_groups: int = Field(default=0, ge=0)
     historically_suppressed_groups: int = Field(ge=0)
     previously_delivered_groups: int = Field(ge=0)
     duplicate_postings_collapsed: int = Field(ge=0)
@@ -112,12 +115,22 @@ class DailyBatchCounts(BatchModel):
             self.match_eligible_postings + self.needs_review_postings + self.rejected_postings
         ):
             raise ValueError("posting decisions must partition candidate postings")
-        if self.match_eligible_postings != (
-            self.match_eligible_groups + self.duplicate_postings_collapsed
+        selection_postings = (
+            self.selection_eligible_postings or self.match_eligible_postings
+        )
+        selection_groups = self.selection_eligible_groups or self.match_eligible_groups
+        if not (
+            self.match_eligible_postings
+            <= selection_postings
+            <= self.match_eligible_postings + self.needs_review_postings
+        ):
+            raise ValueError("selection eligibility must be a subset of reviewable supply")
+        if selection_postings != (
+            selection_groups + self.duplicate_postings_collapsed
         ):
             raise ValueError("duplicate accounting must retain posting/group units")
         if (
-            self.match_eligible_groups
+            selection_groups
             != (
                 self.historically_suppressed_groups
                 + self.previously_delivered_groups
