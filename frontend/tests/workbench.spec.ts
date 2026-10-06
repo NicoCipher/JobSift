@@ -652,7 +652,9 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
           delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
           operator_snapshot: {
             complete: true,
+            observed_at: `2026-10-06T20:00:0${stateVersion}Z`,
             control_request_id: lastControlRequestId,
+            confirmed_control_request_id: lastControlRequestId,
             state_error: null,
             run: {
               id: 100 + stateVersion,
