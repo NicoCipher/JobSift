@@ -14,7 +14,6 @@ from job_scout.domain.models import (
 from job_scout.funnel_diagnostics import ClientFunnelAccumulator
 from job_scout.matching.matcher import match_job
 
-
 NOW = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
 
 
