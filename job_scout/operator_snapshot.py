@@ -15,6 +15,7 @@ from job_scout.delivery_profiles import (
     ClientDeliveryProfileStore,
     delivery_profile_control_id,
 )
+from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.factory import create_repository
 
 MAX_PROFILE_SNAPSHOTS = 100
@@ -66,6 +67,7 @@ def _pending_batch(repository, *, client_id: str, destination: str):
 
 def snapshot(repository) -> dict[str, object]:
     profile_store = ClientDeliveryProfileStore(repository)
+    DailyBatchStore(repository)
     profiles = profile_store.list()
     destinations = ClientSheetDestinationStore(repository)
     rows: list[dict[str, object]] = []
