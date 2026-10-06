@@ -449,10 +449,10 @@ async function inProgressRunCanChangeState(
     );
     const mutation = jobs.jobs.find((value) => value.name === "persist-and-deliver");
     if (!mutation) return false;
-    if (mutation.status === "completed" && mutation.conclusion === "skipped") {
-      return false;
+    if (mutation.status === "completed") {
+      return mutation.conclusion !== "skipped";
     }
-    return mutation.status === "in_progress" || mutation.status === "completed";
+    return ["queued", "waiting", "pending", "in_progress"].includes(mutation.status);
   } catch {
     return true;
   }
