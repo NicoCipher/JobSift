@@ -63,7 +63,9 @@ type ProfileSnapshot = {
 
 type OperatorSnapshot = {
   complete: boolean;
+  observed_at: string | null;
   control_request_id: string | null;
+  confirmed_control_request_id: string | null;
   state_error: string | null;
   run: {
     id: number;
@@ -112,7 +114,7 @@ function hasConfirmedControlRequest(
   return (
     snapshot.complete === true &&
     !snapshot.truncated &&
-    snapshot.control_request_id === requestId
+    snapshot.confirmed_control_request_id === requestId
   );
 }
 
@@ -308,7 +310,11 @@ export function OperationsControl({
 
   const loadStatus = useCallback(async () => {
     try {
-      const response = await fetch("/api/control/status", { cache: "no-store" });
+      const requestId = pendingControlRequestId.current;
+      const statusUrl = requestId
+        ? `/api/control/status?control_request_id=${encodeURIComponent(requestId)}`
+        : "/api/control/status";
+      const response = await fetch(statusUrl, { cache: "no-store" });
       const body = (await readJson(response)) as { data: ControlStatus };
       setStatus(body.data);
       setStatusError("");
