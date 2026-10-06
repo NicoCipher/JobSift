@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +89,7 @@ type ProfileSnapshot = {
 
 type OperatorState = {
   schema_version: string;
+  observed_at?: unknown;
   control_request_id?: unknown;
   profiles: unknown[];
   truncated: boolean;
@@ -241,6 +242,12 @@ function controlRequestId(value: unknown): string | null {
     : null;
 }
 
+function observedAt(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
 function authoritativeProfile(value: unknown): ProfileSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
@@ -317,6 +324,7 @@ function parseAuthoritativeState(logs: string) {
         continue;
       }
       return {
+        observed_at: observedAt(parsed.observed_at),
         control_request_id: controlRequestId(parsed.control_request_id),
         profiles: parsed.profiles.flatMap((value) => {
           const profile = authoritativeProfile(value);
@@ -455,6 +463,7 @@ async function latestOperatorSnapshot(
   deliveryRuns: WorkflowRun[],
   configureRuns: WorkflowRun[],
   token: string,
+  requestedControlRequestId: string | null,
 ) {
   const candidates: SnapshotCandidate[] = [
     ...inventoryRuns.map((run) => ({
@@ -482,11 +491,14 @@ async function latestOperatorSnapshot(
   let complete = false;
   let stateError: string | null = null;
   let correlatedRequestId: string | null = null;
+  let currentObservedAt: string | null = null;
+  let chosenIndex = -1;
 
-  for (const candidate of candidates) {
+  for (const [candidateIndex, candidate] of candidates.entries()) {
     if (candidate.run.status !== "completed") {
       if (await inProgressRunCanChangeState(candidate, token)) {
         chosen = candidate;
+        chosenIndex = candidateIndex;
         stateError =
           "A newer JobSift operation is still changing client state. Controls stay locked until its authoritative snapshot completes.";
         break;
@@ -496,6 +508,7 @@ async function latestOperatorSnapshot(
     const evidence = await snapshotEvidenceForRun(candidate, token);
     if (evidence.state === "legacy") continue;
     chosen = candidate;
+    chosenIndex = candidateIndex;
     if (evidence.state === "incomplete") {
       stateError = evidence.reason;
       break;
@@ -508,9 +521,41 @@ async function latestOperatorSnapshot(
     }
     profiles = parsed.profiles;
     truncated = parsed.truncated;
+    currentObservedAt = parsed.observed_at;
     correlatedRequestId = parsed.control_request_id;
     complete = true;
     break;
+  }
+
+  let confirmedControlRequestId =
+    complete &&
+    requestedControlRequestId !== null &&
+    correlatedRequestId === requestedControlRequestId
+      ? requestedControlRequestId
+      : null;
+
+  if (
+    complete &&
+    requestedControlRequestId &&
+    !confirmedControlRequestId &&
+    currentObservedAt &&
+    chosenIndex >= 0
+  ) {
+    const currentTime = Date.parse(currentObservedAt);
+    for (const candidate of candidates.slice(chosenIndex + 1)) {
+      if (candidate.run.status !== "completed") continue;
+      const evidence = await snapshotEvidenceForRun(candidate, token);
+      if (evidence.state !== "complete") continue;
+      const parsed = parseAuthoritativeState(evidence.logs);
+      if (
+        parsed?.control_request_id === requestedControlRequestId &&
+        parsed.observed_at &&
+        Date.parse(parsed.observed_at) <= currentTime
+      ) {
+        confirmedControlRequestId = requestedControlRequestId;
+        break;
+      }
+    }
   }
 
   if (complete) {
@@ -539,7 +584,9 @@ async function latestOperatorSnapshot(
     profiles,
     truncated,
     complete,
+    observed_at: currentObservedAt,
     control_request_id: correlatedRequestId,
+    confirmed_control_request_id: confirmedControlRequestId,
     state_error:
       stateError ??
       (!chosen
@@ -548,7 +595,23 @@ async function latestOperatorSnapshot(
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const requestedControlRequestIdRaw = request.nextUrl.searchParams.get("control_request_id");
+  const requestedControlRequestId = requestedControlRequestIdRaw
+    ? controlRequestId(requestedControlRequestIdRaw)
+    : null;
+  if (requestedControlRequestIdRaw && !requestedControlRequestId) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid control request correlation ID.",
+        },
+      },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   const token = process.env.JOBSIFT_GITHUB_TOKEN?.trim() ?? "";
   if (!token) {
     const unavailable = (name: string, workflow: string) => ({
@@ -568,7 +631,9 @@ export async function GET() {
             profiles: [],
             truncated: false,
             complete: false,
+            observed_at: null,
             control_request_id: null,
+            confirmed_control_request_id: null,
             state_error: "Production operator state is unavailable.",
           },
         },
@@ -588,6 +653,7 @@ export async function GET() {
       delivery.runs,
       configure.runs,
       token,
+      requestedControlRequestId,
     );
     return NextResponse.json(
       {
