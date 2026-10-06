@@ -5,12 +5,49 @@ import { api } from "@/lib/api/client";
 import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
 import { PresentationSettings } from "@/components/preferences";
-import { OperationsControl } from "@/components/operations-control";
+import {
+  OperationsControl,
+  type ManagedProfile,
+} from "@/components/operations-control";
 function deliveryProfileControlId(clientId: string, destinationId: string) {
   return createHash("sha256")
     .update(`jobsift-delivery-profile-v1\0${clientId}\0${destinationId}`)
     .digest("hex")
     .slice(0, 16);
+}
+
+function operatorProfileAliases(): ManagedProfile[] {
+  const raw = process.env.JOBSIFT_OPERATOR_PROFILE_ALIASES?.trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    return parsed.flatMap((value): ManagedProfile[] => {
+      if (!value || typeof value !== "object") return [];
+      const item = value as Record<string, unknown>;
+      const profileId =
+        typeof item.profile_id === "string" ? item.profile_id.trim().toLowerCase() : "";
+      const clientName =
+        typeof item.client_name === "string" ? item.client_name.trim().slice(0, 120) : "";
+      const destinationName =
+        typeof item.destination_name === "string"
+          ? item.destination_name.trim().slice(0, 120)
+          : "";
+      if (
+        !/^[0-9a-f]{16}$/.test(profileId) ||
+        !clientName ||
+        !destinationName ||
+        seen.has(profileId)
+      ) {
+        return [];
+      }
+      seen.add(profileId);
+      return [{ profile_id: profileId, client_name: clientName, destination_name: destinationName }];
+    });
+  } catch {
+    return [];
+  }
 }
 
 const titles: Record<string, string> = {
@@ -58,20 +95,26 @@ export default async function SectionPage({
       }),
     );
     const catalogueIncomplete = clients.some((client) => client === null);
-    const profiles = clients.flatMap((response) =>
+    const catalogueProfiles: ManagedProfile[] = clients.flatMap((response) =>
       response
         ? response.data.destinations.map((destination) => ({
             profile_id: deliveryProfileControlId(
               response.data.client_id,
               destination.destination_id,
             ),
-            client_id: response.data.client_id,
             client_name: response.data.display_name,
-            destination_id: destination.destination_id,
             destination_name: destination.display_name,
           }))
         : [],
     );
+    const profiles = [...catalogueProfiles];
+    const known = new Set(profiles.map((profile) => profile.profile_id));
+    for (const alias of operatorProfileAliases()) {
+      if (!known.has(alias.profile_id)) {
+        profiles.push(alias);
+        known.add(alias.profile_id);
+      }
+    }
     content = (
       <OperationsControl
         profiles={profiles}
