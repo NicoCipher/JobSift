@@ -31,6 +31,12 @@ type FunnelSnapshot = {
 type ProfileSnapshot = {
   action: string;
   profile_id: string;
+  destination_name: string | null;
+  profile_status: string | null;
+  delivery_mode: string | null;
+  daily_quota: number | null;
+  sheet_status: string | null;
+  delivered_today: number | null;
   batch_id: string | null;
   batch_status: string | null;
   requested_quota: number | null;
@@ -54,6 +60,7 @@ type OperatorSnapshot = {
     created_at: string;
     updated_at: string;
     url: string;
+    kind?: "inventory" | "delivery" | "configure";
   } | null;
   profiles: ProfileSnapshot[];
 };
@@ -255,9 +262,10 @@ export function OperationsControl({
     ) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
 
-  function profileLabel(profileId: string) {
+  function profileLabel(profileId: string, destinationName?: string | null) {
     const profile = profiles.find((item) => item.profile_id === profileId);
-    return profile ? `${profile.client_name} — ${profile.destination_name}` : null;
+    if (profile) return `${profile.client_name} — ${profile.destination_name}`;
+    return destinationName?.trim() || null;
   }
 
   const loadStatus = useCallback(async () => {
@@ -310,7 +318,7 @@ export function OperationsControl({
 
   async function actOnPending(profile: ProfileSnapshot, operation: "release-batch" | "discard-batch") {
     if (!profile.batch_id) return;
-    const label = profileLabel(profile.profile_id);
+    const label = profileLabel(profile.profile_id, profile.destination_name);
     if (!label) {
       setMessage("Client name is unavailable, so JobSift will not allow an irreversible batch action.");
       return;
@@ -479,7 +487,7 @@ export function OperationsControl({
         {latestSnapshot?.run ? (
           <div className="operator-run-strip">
             <div>
-              <span className="metadata">Latest sourcing run</span>
+              <span className="metadata">Latest state update</span>
               <strong>#{latestSnapshot.run.run_number}</strong>
             </div>
             <div>
@@ -489,6 +497,15 @@ export function OperationsControl({
                   ? latestSnapshot.run.conclusion ?? "completed"
                   : latestSnapshot.run.status}
               </strong>
+              {latestSnapshot.run.kind ? (
+                <span className="metadata">
+                  {latestSnapshot.run.kind === "inventory"
+                    ? "Sourcing"
+                    : latestSnapshot.run.kind === "delivery"
+                      ? "Delivery"
+                      : "Client setup"}
+                </span>
+              ) : null}
             </div>
             <div>
               <span className="metadata">Finished</span>
@@ -516,7 +533,7 @@ export function OperationsControl({
             {pendingBatches.map((profile) => (
               <div className="operator-batch-card" key={profile.batch_id ?? profile.profile_id}>
                 <div>
-                  <strong>{profileLabel(profile.profile_id) ?? "Client name unavailable"}</strong>
+                  <strong>{profileLabel(profile.profile_id, profile.destination_name) ?? "Client name unavailable"}</strong>
                   <p className="metadata">
                     {countLabel(profile.selected_count)} selected · {countLabel(profile.shortfall)} short
                     of the requested limit
@@ -525,7 +542,7 @@ export function OperationsControl({
                 <div className="operator-decision-actions">
                   <button
                     type="button"
-                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id)}
+                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id, profile.destination_name)}
                     onClick={() => void actOnPending(profile, "release-batch")}
                   >
                     Release {countLabel(profile.selected_count)} job
@@ -533,13 +550,13 @@ export function OperationsControl({
                   <button
                     type="button"
                     className="secondary-action"
-                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id)}
+                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id, profile.destination_name)}
                     onClick={() => void actOnPending(profile, "discard-batch")}
                   >
                     Discard
                   </button>
                 </div>
-                {!profileLabel(profile.profile_id) ? (
+                {!profileLabel(profile.profile_id, profile.destination_name) ? (
                   <p className="notice">
                     Batch actions are locked until this production profile can be matched to a client name.
                   </p>
@@ -560,6 +577,26 @@ export function OperationsControl({
           <div className="operator-clear">
             <strong>No review batch is blocking this client.</strong>
             <span>JobSift is free to prepare the next delivery batch.</span>
+          </div>
+        ) : null}
+
+        {latestProfile ? (
+          <div className="operator-mini-grid" aria-label="Current delivery profile state">
+            <span>
+              Profile <strong>{latestProfile.profile_status ?? "Unknown"}</strong>
+            </span>
+            <span>
+              Mode <strong>{latestProfile.delivery_mode ?? "Unknown"}</strong>
+            </span>
+            <span>
+              Sent today{" "}
+              <strong>
+                {countLabel(latestProfile.delivered_today)}/{countLabel(latestProfile.daily_quota)}
+              </strong>
+            </span>
+            <span>
+              Sheet <strong>{latestProfile.sheet_status ?? "Unknown"}</strong>
+            </span>
           </div>
         ) : null}
 
