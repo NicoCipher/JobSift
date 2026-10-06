@@ -16,9 +16,7 @@ function deliveryProfileControlId(clientId: string, destinationId: string) {
     .slice(0, 16);
 }
 
-function operatorControlProfiles(): ManagedProfile[] {
-  const raw = process.env.JOBSIFT_OPERATOR_PROFILES?.trim();
-  if (!raw) return [];
+function parseOperatorControlProfiles(raw: string): ManagedProfile[] {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -49,6 +47,36 @@ function operatorControlProfiles(): ManagedProfile[] {
         destination_name: destinationName,
       }];
     });
+  } catch {
+    return [];
+  }
+}
+
+async function operatorControlProfiles(): Promise<ManagedProfile[]> {
+  const local = process.env.JOBSIFT_OPERATOR_PROFILES?.trim();
+  if (local) return parseOperatorControlProfiles(local);
+
+  const token = process.env.JOBSIFT_GITHUB_TOKEN?.trim();
+  if (!token) return [];
+  try {
+    const response = await fetch(
+      "https://api.github.com/repos/NicoCipher/JobSift/actions/variables/JOBSIFT_OPERATOR_PROFILES",
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "JobSift-operator-control",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    if (!response.ok) return [];
+    const body = (await response.json()) as { value?: unknown };
+    return typeof body.value === "string"
+      ? parseOperatorControlProfiles(body.value)
+      : [];
   } catch {
     return [];
   }
@@ -89,7 +117,7 @@ export default async function SectionPage({
   const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
   if (section === "operations") {
-    const configuredProfiles = operatorControlProfiles();
+    const configuredProfiles = await operatorControlProfiles();
     if (configuredProfiles.length || process.env.NODE_ENV === "production") {
       content = (
         <OperationsControl
