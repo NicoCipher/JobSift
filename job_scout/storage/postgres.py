@@ -373,14 +373,11 @@ class PostgresRepository(SQLiteRepository):
             return
 
         ordered_jobs = list(jobs)
-        jobs_by_id = {job.id: job for job in ordered_jobs}
-        if len(jobs_by_id) != len(ordered_jobs):
-            raise ValueError("bulk group assignment requires unique job IDs")
-        job_ids = sorted(jobs_by_id)
-        new_keys_by_job = {
-            job.id: sorted(delivery_keys(job))
+        job_ids = sorted({job.id for job in ordered_jobs})
+        incoming_keys = [
+            (job, sorted(delivery_keys(job)))
             for job in ordered_jobs
-        }
+        ]
 
         existing_job_groups: dict[str, str] = {}
         old_keys_by_job: dict[str, set[tuple[str, str]]] = {
@@ -409,7 +406,7 @@ class PostgresRepository(SQLiteRepository):
         relevant_keys = sorted(
             {
                 key
-                for keys in new_keys_by_job.values()
+                for _job, keys in incoming_keys
                 for key in keys
             }
         )
@@ -454,7 +451,12 @@ class PostgresRepository(SQLiteRepository):
             find(group_id)
 
         assigned_group_by_job: dict[str, str] = {}
-        for job in ordered_jobs:
+        current_keys_by_job = {
+            job_id: set(keys)
+            for job_id, keys in old_keys_by_job.items()
+        }
+        final_keys_by_job: dict[str, list[tuple[str, str]]] = {}
+        for job, new_keys in incoming_keys:
             own_group = str(
                 uuid5(
                     NAMESPACE_URL,
@@ -465,7 +467,10 @@ class PostgresRepository(SQLiteRepository):
             existing_group = existing_job_groups.get(job.id)
             if existing_group is not None:
                 visible_groups.add(find(existing_group))
-            for key in new_keys_by_job[job.id]:
+            previous_assignment = assigned_group_by_job.get(job.id)
+            if previous_assignment is not None:
+                visible_groups.add(find(previous_assignment))
+            for key in new_keys:
                 visible_groups.update(
                     find(group_id)
                     for group_id in holders_by_key.get(key, {}).values()
@@ -475,18 +480,21 @@ class PostgresRepository(SQLiteRepository):
             for other in sorted(visible_groups):
                 group_id = union(group_id, other)
             assigned_group_by_job[job.id] = find(group_id)
+            existing_job_groups[job.id] = assigned_group_by_job[job.id]
 
-            # This mirrors legacy _assign_group ordering: resolve against the
-            # current key index, then remove this posting's previous evidence,
-            # then expose its newly computed evidence to later postings.
-            for key in old_keys_by_job[job.id]:
+            # Mirror sequential _assign_group exactly, including repeated
+            # provider identities in the same batch: each occurrence sees the
+            # key state left by the previous occurrence of that same posting.
+            for key in current_keys_by_job[job.id]:
                 holders = holders_by_key.get(key)
                 if holders is not None:
                     holders.pop(job.id, None)
-            for key in new_keys_by_job[job.id]:
+            for key in new_keys:
                 holders_by_key.setdefault(key, {})[job.id] = assigned_group_by_job[
                     job.id
                 ]
+            current_keys_by_job[job.id] = set(new_keys)
+            final_keys_by_job[job.id] = new_keys
 
         final_job_groups = {
             job_id: find(group_id)
@@ -538,9 +546,9 @@ class PostgresRepository(SQLiteRepository):
                 chunk,
             )
         key_rows = [
-            (job.id, kind, value)
-            for job in ordered_jobs
-            for kind, value in new_keys_by_job[job.id]
+            (job_id, kind, value)
+            for job_id in job_ids
+            for kind, value in final_keys_by_job.get(job_id, ())
         ]
         if key_rows:
             connection.executemany(
