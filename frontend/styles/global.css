@@ -1026,6 +1026,27 @@ summary {
   border-left: 3px solid var(--border-strong);
   background: var(--subtle);
 }
+.operator-client-list {
+  display: grid;
+  gap: var(--s12);
+  border-top: 1px solid var(--border);
+  padding-top: var(--s16);
+}
+.operator-client-card {
+  display: grid;
+  gap: var(--s12);
+  padding: var(--s16);
+  border: 1px solid var(--border);
+}
+.operator-client-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s16);
+  align-items: flex-start;
+}
+.operator-client-summary p {
+  margin: var(--s4) 0 0;
+}
 .operator-diagnostics {
   display: grid;
   gap: var(--s12);
@@ -1104,7 +1125,8 @@ summary {
   .operator-decision-actions button {
     width: 100%;
   }
-  .operator-review-item {
+  .operator-review-item,
+  .operator-client-summary {
     align-items: flex-start;
     flex-direction: column;
   }
