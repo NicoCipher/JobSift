@@ -924,6 +924,30 @@ summary {
   display: grid;
   gap: var(--s16);
 }
+.setup-wizard {
+  display: grid;
+  gap: var(--s16);
+  max-width: 880px;
+}
+.setup-wizard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s12);
+}
+.setup-wizard label {
+  display: grid;
+  gap: var(--s6);
+  font-weight: var(--semibold);
+}
+.setup-wizard input,
+.setup-wizard select {
+  width: 100%;
+  min-height: 44px;
+}
+.setup-wizard > button {
+  min-height: 48px;
+  font-weight: var(--semibold);
+}
 .operator-command-center .control-heading {
   align-items: flex-start;
 }
@@ -1122,6 +1146,9 @@ summary {
 }
 
 @media (max-width: 639px) {
+  .setup-wizard-grid {
+    grid-template-columns: 1fr;
+  }
   .operator-run-strip,
   .operator-funnel,
   .operator-age-grid,
