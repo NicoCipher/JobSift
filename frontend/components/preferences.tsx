@@ -59,17 +59,18 @@ export function PresentationSettings() {
   const preferences = usePreferences();
   useEffect(() => {
     // Hydration starts from the server snapshot. Re-read browser storage once
-    // mounted so that persisted choices cannot be overwritten by "system".
+    // mounted and apply it directly; savePreferences keeps the DOM synchronized
+    // after that. Dispatch on the next task so useSyncExternalStore has attached
+    // its subscriber before we ask React to replace the server snapshot.
     cached = storedPreferences();
     loaded = true;
     document.documentElement.dataset.theme = cached.theme;
     document.documentElement.dataset.density = cached.density;
-    window.dispatchEvent(new Event("jobsift-preferences"));
+    const notify = window.setTimeout(() => {
+      window.dispatchEvent(new Event("jobsift-preferences"));
+    }, 0);
+    return () => window.clearTimeout(notify);
   }, []);
-  useEffect(() => {
-    document.documentElement.dataset.theme = preferences.theme;
-    document.documentElement.dataset.density = preferences.density;
-  }, [preferences.theme, preferences.density]);
   return (
     <>
       <label className="settings-field">
