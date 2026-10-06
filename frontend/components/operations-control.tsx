@@ -268,7 +268,7 @@ export function OperationsControl({
 
   const latestSnapshot = status?.operator_snapshot;
   const stateVerified =
-    latestSnapshot?.complete === true && latestSnapshot.truncated !== true;
+    latestSnapshot?.complete !== false && latestSnapshot?.truncated !== true;
   const pendingBatches =
     latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
@@ -520,7 +520,7 @@ export function OperationsControl({
           </button>
         </div>
 
-        {latestSnapshot && !latestSnapshot.complete ? (
+        {latestSnapshot?.complete === false ? (
           <div className="error" role="alert">
             <strong>Client state could not be verified.</strong>{" "}
             {latestSnapshot.state_error ??
