@@ -18,6 +18,27 @@ The deployed Vercel project must remain protected by Vercel Authentication for
 all deployment targets. Do not treat a shareable deployment-protection bypass
 link as an operator session. POST controls also reject cross-origin requests.
 
+Production client labels and the opaque profile handles that may be controlled
+from `/operations` come from the server-only `JOBSIFT_OPERATOR_PROFILES`
+allowlist. This keeps the production control plane independent from fictional UI
+fixtures and prevents an unlisted backend profile from becoming actionable merely
+because it appears in a workflow snapshot. Example:
+
+```json
+[
+  {
+    "profile_id": "0123456789abcdef",
+    "client_name": "ACME",
+    "destination_name": "ACME Jobs"
+  }
+]
+```
+
+The variable contains no Sheet URL, spreadsheet ID, client ID, or credentials.
+When it is absent in production, JobSift may still show opaque backend state but
+client-specific mutations remain locked because no trusted human-readable target
+is configured. Development retains the authored fixture catalogue for tests.
+
 Manual inventory refreshes preserve the existing workflow contract: choices are
 limited to Workday targets 1/5/10/20/25, detail concurrency 4/6/8, and a
 yield-aware bonus budget of 0/25/50/75/100 targets. The bonus is applied only
