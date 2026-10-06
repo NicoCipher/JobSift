@@ -256,6 +256,12 @@ def _batch_payload(
         "selected_count": batch.selected_count,
         "shortfall": batch.shortfall,
         "fresh_eligible_employers": batch.counts.fresh_eligible_employers,
+        "match_eligible_postings": batch.counts.match_eligible_postings,
+        "needs_review_postings": batch.counts.needs_review_postings,
+        "selection_eligible_postings": (
+            batch.counts.selection_eligible_postings
+            or batch.counts.match_eligible_postings
+        ),
         "company_cap_suppressed_groups": batch.counts.company_cap_suppressed_groups,
         "employer_cooldown_suppressed_groups": batch.counts.employer_cooldown_suppressed_groups,
         "stale_posting_suppressed_groups": batch.counts.stale_posting_suppressed_groups,
@@ -284,6 +290,11 @@ def _batch_payload(
                 evaluation.total_matched
                 if evaluation is not None
                 else getattr(sourcing, "total_matched", 0)
+            ),
+            "needs_review": (
+                getattr(evaluation, "total_needs_review", 0)
+                if evaluation is not None
+                else 0
             ),
             "rejected": (
                 evaluation.total_rejected
@@ -679,6 +690,9 @@ def run_once(
         ),
         idempotency_key=idempotency_key,
         requested_quota=effective_quota,
+        include_needs_review=(
+            profile is not None and profile.delivery_mode == "review"
+        ),
         max_jobs_per_employer_per_batch=brief.delivery_policy.max_jobs_per_employer_per_batch,
         employer_cooldown_days=brief.delivery_policy.employer_cooldown_days,
         max_posting_age_hours=brief.posting_freshness.max_age_hours,
