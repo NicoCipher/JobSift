@@ -20,10 +20,10 @@ stages is therefore the deterministic primary loss bucket for that funnel order.
 For example, `title_matched_0_24h - target_market_survived_0_24h` is the number
 lost at the target-market gate even when a job also fails a later rule.
 
-`target_market_review_0_24h` and `remote_review_0_24h` are subsets that survived
-their stage only because the configured unknown-evidence policy requires review.
 The final fresh cohort is partitioned into `confirmed_matches_0_24h`,
-`needs_review_matches_0_24h`, and `rejected_0_24h`.
+`needs_review_matches_0_24h`, and `rejected_0_24h`. Review-required supply is
+reported from the authoritative final matcher decision rather than reconstructing
+intermediate matcher state.
 
 The funnel is computed from the existing authoritative `JobMatch`; it never runs a
 second matcher or implements a parallel SearchBrief.
