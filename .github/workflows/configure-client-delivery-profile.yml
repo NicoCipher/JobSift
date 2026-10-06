@@ -34,6 +34,16 @@ on:
         required: true
         default: Africa/Lagos
         type: string
+      encrypted_registration:
+        description: Encrypted private Sheet registration envelope
+        required: false
+        default: ""
+        type: string
+      control_request_id:
+        description: Opaque request correlation ID
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -53,6 +63,8 @@ jobs:
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON: ${{ secrets.JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON }}
+      JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
+      CONTROL_ENCRYPTED_REGISTRATION: ${{ inputs.encrypted_registration }}
 
     steps:
       - uses: actions/checkout@v4
@@ -69,17 +81,26 @@ jobs:
         run: |
           test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
-          test -n "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" || {
-            echo "Missing JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON secret"
+          if [ -z "$CONTROL_ENCRYPTED_REGISTRATION" ] && [ -z "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" ]; then
+            echo "No private client Sheet registration context was provided"
             exit 1
-          }
+          fi
 
       - name: Write private registration context
         run: |
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
           chmod 600 "$RUNNER_TEMP/google-service-account.json"
-          printf '%s' "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" > "$RUNNER_TEMP/client-sheet-registration.json"
-          chmod 600 "$RUNNER_TEMP/client-sheet-registration.json"
+          if [ -n "$CONTROL_ENCRYPTED_REGISTRATION" ]; then
+            printf '%s' "$CONTROL_ENCRYPTED_REGISTRATION" > "$RUNNER_TEMP/client-sheet-registration.envelope.json"
+            chmod 600 "$RUNNER_TEMP/client-sheet-registration.envelope.json"
+            python -m job_scout.private_payload decrypt-registration \
+              --envelope "$RUNNER_TEMP/client-sheet-registration.envelope.json" \
+              --service-account "$RUNNER_TEMP/google-service-account.json" \
+              --output "$RUNNER_TEMP/client-sheet-registration.json"
+          else
+            printf '%s' "$JOBSIFT_CLIENT_SHEET_REGISTRATION_JSON" > "$RUNNER_TEMP/client-sheet-registration.json"
+            chmod 600 "$RUNNER_TEMP/client-sheet-registration.json"
+          fi
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
 
       - name: Register or refresh client Sheet destination
@@ -111,3 +132,11 @@ jobs:
       - name: Emit authoritative operator state
         if: ${{ always() }}
         run: python -m job_scout.operator_snapshot
+
+      - name: Remove private setup files
+        if: ${{ always() }}
+        run: |
+          rm -f \
+            "$RUNNER_TEMP/client-sheet-registration.json" \
+            "$RUNNER_TEMP/client-sheet-registration.envelope.json" \
+            "$RUNNER_TEMP/google-service-account.json"
