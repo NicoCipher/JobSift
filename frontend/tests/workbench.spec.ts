@@ -264,7 +264,10 @@ test("operator command center exposes pending review batch without opaque IDs", 
     "https://example.invalid/job-1",
   );
   await expect(
-    page.getByRole("region").getByText("Example client — Example delivery destination"),
+    page.locator(".operator-batch-card").getByText(
+      "Example client — Example delivery destination",
+      { exact: true },
+    ),
   ).toBeVisible();
   await expect(page.getByText(/pending review batch stopped a new client evaluation/)).toBeVisible();
 
@@ -332,7 +335,9 @@ test("pending batch actions fail closed when the client label is unavailable", a
     });
   });
   await page.goto("/operations");
-  await expect(page.getByText("Client name unavailable")).toBeVisible();
+  await expect(
+    page.locator(".operator-batch-card").getByText("Client name unavailable", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Release 1 job" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Discard" })).toBeDisabled();
   await expect(page.getByText(/Batch actions are locked/)).toBeVisible();
