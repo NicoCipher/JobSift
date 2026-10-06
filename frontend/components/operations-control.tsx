@@ -950,7 +950,12 @@ export function OperationsControl({
                 <select
                   name="sheet_profile_id"
                   defaultValue={profiles[0]?.profile_id ?? ""}
-                  disabled={busy || !status?.control_ready || profiles.length === 0}
+                  disabled={
+                    busy ||
+                    !status?.control_ready ||
+                    !stateVerified ||
+                    profiles.length === 0
+                  }
                 >
                   {profiles.length === 0 ? (
                     <option value="">No listed clients</option>
@@ -984,6 +989,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (sheetTargetMode === "listed"
                   ? profiles.length === 0
                   : !validProfileId(sheetProfileOverride.trim()))
@@ -997,6 +1003,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (sheetTargetMode === "listed"
                   ? profiles.length === 0
                   : !validProfileId(sheetProfileOverride.trim()))
@@ -1010,6 +1017,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (sheetTargetMode === "listed"
                   ? profiles.length === 0
                   : !validProfileId(sheetProfileOverride.trim()))
@@ -1159,6 +1167,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (deliveryOperation !== "list" &&
                   (deliveryTargetMode === "listed"
                     ? profiles.length === 0
@@ -1179,7 +1188,12 @@ export function OperationsControl({
                     setDeliveryTargetMode(mode);
                     if (mode === "listed") setDeliveryProfileOverride("");
                   }}
-                  disabled={busy || !status?.control_ready || deliveryOperation === "list"}
+                  disabled={
+                    busy ||
+                    !status?.control_ready ||
+                    !stateVerified ||
+                    deliveryOperation === "list"
+                  }
                 >
                   <option value="listed" disabled={profiles.length === 0}>
                     Client name
