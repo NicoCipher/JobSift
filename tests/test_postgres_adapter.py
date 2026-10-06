@@ -246,6 +246,48 @@ def _run_bulk_group_updates(
     return _group_map(repository)
 
 
+def test_postgres_bulk_upsert_preserves_duplicate_provider_identity_sequence():
+    repository = object.__new__(PostgresRepository)
+    connection = _RecordingConnection()
+    first = _delivery_order_job(
+        "duplicate-first",
+        apply_url="https://apply.example.com/postings/first",
+    )
+    second = first.model_copy(
+        update={
+            "id": "duplicate-second",
+            "apply_url": "https://apply.example.com/postings/second",
+            "content_fingerprint": "changed-fingerprint",
+        }
+    )
+    repository._existing_jobs_in_connection = lambda _connection, _jobs: {}
+
+    states = repository._upsert_jobs_in_connection(
+        connection,
+        [first, second],
+        datetime(2026, 10, 6, tzinfo=UTC).isoformat(),
+    )
+
+    assert second.id == first.id
+    assert states == {first.id: JobLifecycle.CHANGED}
+    group_writes = [
+        rows
+        for statement, rows in connection.executemany_calls
+        if statement.startswith("INSERT INTO posting_delivery_groups")
+    ]
+    assert len(group_writes) == 1
+    assert group_writes[0] == [(first.id, group_writes[0][0][1])]
+    key_writes = [
+        rows
+        for statement, rows in connection.executemany_calls
+        if statement.startswith("INSERT INTO delivery_keys")
+    ]
+    assert len(key_writes) == 1
+    assert all(row[0] == first.id for row in key_writes[0])
+    assert any(row[2].endswith("/second") for row in key_writes[0])
+    assert not any(row[2].endswith("/first") for row in key_writes[0])
+
+
 def test_bulk_group_assignment_matches_legacy_when_changed_key_disappears_first(tmp_path):
     shared = "https://apply.example.com/postings/shared"
     old_a = _delivery_order_job("a", apply_url=shared)
