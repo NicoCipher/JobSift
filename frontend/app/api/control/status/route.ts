@@ -89,6 +89,7 @@ type ProfileSnapshot = {
 
 type OperatorState = {
   schema_version: string;
+  control_request_id?: unknown;
   profiles: unknown[];
   truncated: boolean;
 };
@@ -233,6 +234,13 @@ function validBatchId(value: unknown): value is string {
   );
 }
 
+function controlRequestId(value: unknown): string | null {
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase()
+    : null;
+}
+
 function authoritativeProfile(value: unknown): ProfileSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
@@ -309,6 +317,7 @@ function parseAuthoritativeState(logs: string) {
         continue;
       }
       return {
+        control_request_id: controlRequestId(parsed.control_request_id),
         profiles: parsed.profiles.flatMap((value) => {
           const profile = authoritativeProfile(value);
           return profile ? [profile] : [];
@@ -472,6 +481,7 @@ async function latestOperatorSnapshot(
   let truncated = false;
   let complete = false;
   let stateError: string | null = null;
+  let correlatedRequestId: string | null = null;
 
   for (const candidate of candidates) {
     if (candidate.run.status !== "completed") {
@@ -498,6 +508,7 @@ async function latestOperatorSnapshot(
     }
     profiles = parsed.profiles;
     truncated = parsed.truncated;
+    correlatedRequestId = parsed.control_request_id;
     complete = true;
     break;
   }
@@ -528,6 +539,7 @@ async function latestOperatorSnapshot(
     profiles,
     truncated,
     complete,
+    control_request_id: correlatedRequestId,
     state_error:
       stateError ??
       (!chosen
@@ -556,6 +568,7 @@ export async function GET() {
             profiles: [],
             truncated: false,
             complete: false,
+            control_request_id: null,
             state_error: "Production operator state is unavailable.",
           },
         },
