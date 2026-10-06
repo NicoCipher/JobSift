@@ -738,6 +738,36 @@ def test_canonical_fallback_and_successful_replay(repo, tmp_path):
     )
 
 
+def test_idempotent_retry_normalizes_legacy_request_defaults(repo, tmp_path):
+    jobs = [posting(1)]
+    seed(repo, jobs)
+    req = request(repo, tmp_path / "out.csv", jobs)
+    prepared = prepare(repo, req)
+
+    with repo.connect() as connection:
+        stored = json.loads(
+            connection.execute(
+                "SELECT request_json FROM daily_batches WHERE batch_id=?",
+                (prepared.batch_id,),
+            ).fetchone()[0]
+        )
+        stored.pop("include_needs_review")
+        connection.execute(
+            "UPDATE daily_batches SET request_json=? WHERE batch_id=?",
+            (
+                json.dumps(stored, sort_keys=True, separators=(",", ":")),
+                prepared.batch_id,
+            ),
+        )
+
+    replayed = prepare(repo, req)
+    assert replayed.batch_id == prepared.batch_id
+    assert replayed.request.include_needs_review is False
+
+    with pytest.raises(BatchConflict, match="incompatible"):
+        prepare(repo, req.model_copy(update={"include_needs_review": True}))
+
+
 def test_input_and_ingestion_order(tmp_path):
     jobs = [
         posting(1),
