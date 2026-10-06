@@ -481,80 +481,91 @@ async function latestOperatorSnapshot(
       run,
       jobName: "configure" as const,
     })),
-  ].sort(
-    (left, right) => Date.parse(right.run.updated_at) - Date.parse(left.run.updated_at),
-  );
+  ];
 
-  let chosen: SnapshotCandidate | null = null;
-  let profiles: ProfileSnapshot[] = [];
-  let truncated = false;
-  let complete = false;
-  let stateError: string | null = null;
-  let correlatedRequestId: string | null = null;
-  let currentObservedAt: string | null = null;
-  let chosenIndex = -1;
+  const activeStateChanges: SnapshotCandidate[] = [];
+  const unreadableCompleted: SnapshotCandidate[] = [];
+  const snapshots: Array<{
+    candidate: SnapshotCandidate;
+    observedAt: string;
+    controlRequestId: string | null;
+    profiles: ProfileSnapshot[];
+    truncated: boolean;
+  }> = [];
 
-  for (const [candidateIndex, candidate] of candidates.entries()) {
+  for (const candidate of candidates) {
     if (candidate.run.status !== "completed") {
       if (await inProgressRunCanChangeState(candidate, token)) {
-        chosen = candidate;
-        chosenIndex = candidateIndex;
-        stateError =
-          "A newer JobSift operation is still changing client state. Controls stay locked until its authoritative snapshot completes.";
-        break;
+        activeStateChanges.push(candidate);
       }
       continue;
     }
+
     const evidence = await snapshotEvidenceForRun(candidate, token);
     if (evidence.state === "legacy") continue;
-    chosen = candidate;
-    chosenIndex = candidateIndex;
     if (evidence.state === "incomplete") {
-      stateError = evidence.reason;
-      break;
+      unreadableCompleted.push(candidate);
+      continue;
     }
+
     const parsed = parseAuthoritativeState(evidence.logs);
-    if (!parsed) {
-      stateError =
-        "Latest JobSift mutation completed, but its authoritative state snapshot is unavailable.";
-      break;
+    if (!parsed?.observed_at) {
+      unreadableCompleted.push(candidate);
+      continue;
     }
-    profiles = parsed.profiles;
-    truncated = parsed.truncated;
-    currentObservedAt = parsed.observed_at;
-    correlatedRequestId = parsed.control_request_id;
-    complete = true;
-    break;
+    snapshots.push({
+      candidate,
+      observedAt: parsed.observed_at,
+      controlRequestId: parsed.control_request_id,
+      profiles: parsed.profiles,
+      truncated: parsed.truncated,
+    });
   }
 
-  let confirmedControlRequestId =
-    complete &&
-    requestedControlRequestId !== null &&
-    correlatedRequestId === requestedControlRequestId
-      ? requestedControlRequestId
-      : null;
+  snapshots.sort((left, right) => {
+    const byObservation = Date.parse(right.observedAt) - Date.parse(left.observedAt);
+    if (byObservation !== 0) return byObservation;
+    return right.candidate.run.id - left.candidate.run.id;
+  });
 
-  if (
-    complete &&
-    requestedControlRequestId &&
-    !confirmedControlRequestId &&
-    currentObservedAt &&
-    chosenIndex >= 0
-  ) {
-    const currentTime = Date.parse(currentObservedAt);
-    for (const candidate of candidates.slice(chosenIndex + 1)) {
-      if (candidate.run.status !== "completed") continue;
-      const evidence = await snapshotEvidenceForRun(candidate, token);
-      if (evidence.state !== "complete") continue;
-      const parsed = parseAuthoritativeState(evidence.logs);
-      if (
-        parsed?.control_request_id === requestedControlRequestId &&
-        parsed.observed_at &&
-        Date.parse(parsed.observed_at) <= currentTime
-      ) {
-        confirmedControlRequestId = requestedControlRequestId;
-        break;
-      }
+  const chosenSnapshot = snapshots[0] ?? null;
+  const chosen = chosenSnapshot?.candidate ?? activeStateChanges[0] ?? null;
+  const chosenObservedTime = chosenSnapshot
+    ? Date.parse(chosenSnapshot.observedAt)
+    : Number.NEGATIVE_INFINITY;
+
+  const unsafeUnreadable = unreadableCompleted.find(
+    (candidate) => Date.parse(candidate.run.updated_at) > chosenObservedTime,
+  );
+
+  let profiles = chosenSnapshot?.profiles ?? [];
+  const truncated = chosenSnapshot?.truncated ?? false;
+  const complete =
+    chosenSnapshot !== null &&
+    activeStateChanges.length === 0 &&
+    unsafeUnreadable === undefined;
+
+  let stateError: string | null = null;
+  if (activeStateChanges.length) {
+    stateError =
+      "A JobSift operation is still changing client state. Controls stay locked until its authoritative snapshot completes.";
+  } else if (unsafeUnreadable) {
+    stateError =
+      "A newer JobSift state update could not be verified safely. Controls stay locked until a later authoritative snapshot is available.";
+  } else if (!chosenSnapshot) {
+    stateError = "No authoritative JobSift operator state has been reported yet.";
+  }
+
+  let confirmedControlRequestId: string | null = null;
+  if (complete && requestedControlRequestId && chosenSnapshot) {
+    const requestedSnapshot = snapshots.find(
+      (snapshot) => snapshot.controlRequestId === requestedControlRequestId,
+    );
+    if (
+      requestedSnapshot &&
+      Date.parse(requestedSnapshot.observedAt) <= chosenObservedTime
+    ) {
+      confirmedControlRequestId = requestedControlRequestId;
     }
   }
 
@@ -584,14 +595,10 @@ async function latestOperatorSnapshot(
     profiles,
     truncated,
     complete,
-    observed_at: currentObservedAt,
-    control_request_id: correlatedRequestId,
+    observed_at: chosenSnapshot?.observedAt ?? null,
+    control_request_id: chosenSnapshot?.controlRequestId ?? null,
     confirmed_control_request_id: confirmedControlRequestId,
-    state_error:
-      stateError ??
-      (!chosen
-        ? "No authoritative JobSift operator state has been reported yet."
-        : null),
+    state_error: stateError,
   };
 }
 
