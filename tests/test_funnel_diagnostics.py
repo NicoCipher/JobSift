@@ -147,3 +147,47 @@ def test_fresh_funnel_is_cumulative_and_match_age_buckets_are_separate() -> None
         overall.remote_survived_0_24h - overall.other_rules_survived_0_24h
         == 1
     )
+
+def test_review_stage_counts_survive_rejection_by_later_rules() -> None:
+    jobs = [
+        posting(
+            "market-review-later-reject",
+            title="Software Engineer Manager",
+            country=None,
+            remote_status=RemoteStatus.REMOTE,
+        ),
+        posting(
+            "remote-review-later-reject",
+            title="Software Engineer Manager",
+            country="United States",
+            remote_status=RemoteStatus.UNKNOWN,
+        ),
+    ]
+
+    accumulator = ClientFunnelAccumulator(NOW)
+    matches = []
+    for job in jobs:
+        match = match_job(job, brief()).model_copy(update={"evaluated_at": NOW})
+        matches.append(match)
+        accumulator.observe(job, match)
+
+    assert all(match.decision.value == "reject" for match in matches)
+    assert any(
+        reason == "needs review: target market is unknown"
+        for reason in matches[0].matched_reasons
+    )
+    assert any(
+        reason == "needs review: remote status is unknown"
+        for reason in matches[1].matched_reasons
+    )
+
+    overall = accumulator.snapshot().overall
+    assert overall.fresh_0_24h == 2
+    assert overall.title_matched_0_24h == 2
+    assert overall.target_market_survived_0_24h == 2
+    assert overall.target_market_review_0_24h == 1
+    assert overall.remote_survived_0_24h == 2
+    assert overall.remote_review_0_24h == 1
+    assert overall.other_rules_survived_0_24h == 0
+    assert overall.rejected_0_24h == 2
+
