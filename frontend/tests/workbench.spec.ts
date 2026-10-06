@@ -271,8 +271,10 @@ test("operator command center exposes pending review batch without opaque IDs", 
   ).toBeVisible();
   await expect(page.getByText(/pending review batch stopped a new client evaluation/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Release 1 job" }).click();
+  const release = page.getByRole("button", { name: "Release 1 job" });
+  await release.click();
   await expect.poll(() => dispatched.length).toBe(1);
+  await expect(release).toBeDisabled();
   expect(dispatched[0]).toMatchObject({
     command: "client-control",
     operation: "release-batch",
