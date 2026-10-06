@@ -63,6 +63,7 @@ type ProfileSnapshot = {
 
 type OperatorSnapshot = {
   complete: boolean;
+  control_request_id: string | null;
   state_error: string | null;
   run: {
     id: number;
@@ -95,20 +96,23 @@ export type ManagedProfile = {
 
 type TargetMode = "listed" | "manual";
 
-type StateBaseline = {
-  runId: number | null;
-  updatedAt: string | null;
-};
-
-function hasFreshAuthoritativeState(
-  snapshot: OperatorSnapshot,
-  baseline: StateBaseline,
-) {
-  if (snapshot.complete !== true || snapshot.truncated || !snapshot.run) return false;
-  if (baseline.runId === null) return true;
+function validControlRequestId(value: unknown): value is string {
   return (
-    snapshot.run.id !== baseline.runId ||
-    snapshot.run.updated_at !== baseline.updatedAt
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+function hasConfirmedControlRequest(
+  snapshot: OperatorSnapshot,
+  requestId: string,
+) {
+  return (
+    snapshot.complete === true &&
+    !snapshot.truncated &&
+    snapshot.control_request_id === requestId
   );
 }
 
@@ -283,7 +287,7 @@ export function OperationsControl({
   const [sheetProfileOverride, setSheetProfileOverride] = useState("");
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
   const [awaitingFreshState, setAwaitingFreshState] = useState(false);
-  const pendingStateBaseline = useRef<StateBaseline | null>(null);
+  const pendingControlRequestId = useRef<string | null>(null);
   const statePollTimer = useRef<number | null>(null);
 
   const latestSnapshot = status?.operator_snapshot;
@@ -308,12 +312,12 @@ export function OperationsControl({
       const body = (await readJson(response)) as { data: ControlStatus };
       setStatus(body.data);
       setStatusError("");
-      const baseline = pendingStateBaseline.current;
+      const requestId = pendingControlRequestId.current;
       if (
-        baseline &&
-        hasFreshAuthoritativeState(body.data.operator_snapshot, baseline)
+        requestId &&
+        hasConfirmedControlRequest(body.data.operator_snapshot, requestId)
       ) {
-        pendingStateBaseline.current = null;
+        pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
       }
     } catch (error) {
@@ -349,7 +353,7 @@ export function OperationsControl({
     const delay = attempt < 8 ? 1500 : 5000;
     statePollTimer.current = window.setTimeout(async () => {
       await loadStatus();
-      if (pendingStateBaseline.current && attempt < 60) {
+      if (pendingControlRequestId.current && attempt < 60) {
         pollForFreshState(attempt + 1);
       }
     }, delay);
@@ -373,15 +377,22 @@ export function OperationsControl({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await readJson(response);
+      const result = (await readJson(response)) as {
+        data?: { control_request_id?: unknown };
+      };
       if (needsVerifiedState) {
-        pendingStateBaseline.current = {
-          runId: latestSnapshot?.run?.id ?? null,
-          updatedAt: latestSnapshot?.run?.updated_at ?? null,
-        };
         setAwaitingFreshState(true);
-        setMessage("Command accepted. Waiting for JobSift to confirm the new state…");
-        pollForFreshState();
+        const requestId = result.data?.control_request_id;
+        if (!validControlRequestId(requestId)) {
+          pendingControlRequestId.current = null;
+          setMessage(
+            "Command accepted, but JobSift could not correlate its confirmation. Controls stay locked until you reload after the workflow finishes.",
+          );
+        } else {
+          pendingControlRequestId.current = requestId.toLowerCase();
+          setMessage("Command accepted. Waiting for JobSift to confirm the new state…");
+          pollForFreshState();
+        }
       } else {
         setMessage("Command accepted by GitHub Actions.");
       }
