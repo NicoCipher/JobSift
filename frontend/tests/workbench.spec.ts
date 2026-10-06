@@ -741,7 +741,7 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
 test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {
   let stateVersion = 0;
   let lastControlRequestId: string | null = null;
-  await page.route("**/api/control/status", async (route) => {
+  await page.route("**/api/control/status*", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
