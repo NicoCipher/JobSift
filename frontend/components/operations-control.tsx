@@ -318,10 +318,13 @@ export function OperationsControl({
       const body = (await readJson(response)) as { data: ControlStatus };
       setStatus(body.data);
       setStatusError("");
-      const requestId = pendingControlRequestId.current;
+      const confirmedRequestId = pendingControlRequestId.current;
       if (
-        requestId &&
-        hasConfirmedControlRequest(body.data.operator_snapshot, requestId)
+        confirmedRequestId &&
+        hasConfirmedControlRequest(
+          body.data.operator_snapshot,
+          confirmedRequestId,
+        )
       ) {
         pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
