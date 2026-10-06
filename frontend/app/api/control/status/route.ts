@@ -7,6 +7,7 @@ const repo = "JobSift";
 const workflows = {
   inventory: "refresh-live-inventory.yml",
   delivery: "client-delivery-control.yml",
+  configure: "configure-client-delivery-profile.yml",
 } as const;
 
 type GithubRun = {
@@ -47,9 +48,21 @@ type WorkflowRun = {
   head_sha: string;
 };
 
+type FunnelSnapshot = {
+  overall: Record<string, number>;
+  age_buckets: Record<string, number>;
+  delivery: Record<string, number>;
+};
+
 type ProfileSnapshot = {
   action: string;
   profile_id: string;
+  destination_name: string | null;
+  profile_status: string | null;
+  delivery_mode: string | null;
+  daily_quota: number | null;
+  sheet_status: string | null;
+  delivered_today: number | null;
   batch_id: string | null;
   batch_status: string | null;
   requested_quota: number | null;
@@ -61,11 +74,13 @@ type ProfileSnapshot = {
   selection_eligible_postings: number | null;
   stale_posting_suppressed_groups: number | null;
   company_cap_suppressed_groups: number | null;
-  client_funnel: {
-    overall: Record<string, number>;
-    age_buckets: Record<string, number>;
-    delivery: Record<string, number>;
-  } | null;
+  client_funnel: FunnelSnapshot | null;
+};
+
+type OperatorState = {
+  schema_version: string;
+  profiles: unknown[];
+  truncated: boolean;
 };
 
 function githubHeaders(token: string) {
@@ -131,6 +146,12 @@ function integer(value: unknown): number | null {
   return Number.isInteger(value) ? (value as number) : null;
 }
 
+function textValue(value: unknown, max = 160): string | null {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, max)
+    : null;
+}
+
 function numericRecord(value: unknown, allowed: readonly string[]): Record<string, number> {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
@@ -142,7 +163,7 @@ function numericRecord(value: unknown, allowed: readonly string[]): Record<strin
   );
 }
 
-function sanitizeFunnel(value: unknown): ProfileSnapshot["client_funnel"] {
+function sanitizeFunnel(value: unknown): FunnelSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
   const overallSource =
@@ -189,143 +210,213 @@ function sanitizeFunnel(value: unknown): ProfileSnapshot["client_funnel"] {
   };
 }
 
-function sanitizeProfile(value: unknown): ProfileSnapshot | null {
+function validProfileId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{16}$/.test(value);
+}
+
+function validBatchId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+function authoritativeProfile(value: unknown): ProfileSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
-  const profileId = typeof source.profile_id === "string" ? source.profile_id : "";
-  if (!/^[0-9a-f]{16}$/.test(profileId)) return null;
-  const batchId =
-    typeof source.batch_id === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      source.batch_id,
-    )
-      ? source.batch_id
+  if (!validProfileId(source.profile_id)) return null;
+  const pending =
+    source.pending_batch && typeof source.pending_batch === "object"
+      ? (source.pending_batch as Record<string, unknown>)
       : null;
+  const counts =
+    pending?.counts && typeof pending.counts === "object"
+      ? (pending.counts as Record<string, unknown>)
+      : {};
+  const batchId = validBatchId(pending?.batch_id) ? pending.batch_id : null;
   return {
-    action: typeof source.action === "string" ? source.action.slice(0, 64) : "unknown",
-    profile_id: profileId,
+    action: batchId ? "awaiting_release" : "ready",
+    profile_id: source.profile_id,
+    destination_name: textValue(source.destination_name),
+    profile_status: textValue(source.profile_status, 32),
+    delivery_mode: textValue(source.delivery_mode, 32),
+    daily_quota: integer(source.daily_quota),
+    sheet_status: textValue(source.sheet_status, 32),
+    delivered_today: integer(source.delivered_today),
     batch_id: batchId,
-    batch_status: typeof source.batch_status === "string" ? source.batch_status.slice(0, 32) : null,
-    requested_quota: integer(source.requested_quota),
-    selected_count: integer(source.selected_count),
-    shortfall: integer(source.shortfall),
-    fresh_eligible_employers: integer(source.fresh_eligible_employers),
-    match_eligible_postings: integer(source.match_eligible_postings),
-    needs_review_postings: integer(source.needs_review_postings),
-    selection_eligible_postings: integer(source.selection_eligible_postings),
-    stale_posting_suppressed_groups: integer(source.stale_posting_suppressed_groups),
-    company_cap_suppressed_groups: integer(source.company_cap_suppressed_groups),
-    client_funnel: sanitizeFunnel(source.client_funnel),
+    batch_status: textValue(pending?.status, 32),
+    requested_quota: integer(pending?.requested_quota),
+    selected_count: integer(pending?.selected_count),
+    shortfall: integer(pending?.shortfall),
+    fresh_eligible_employers: integer(counts.fresh_eligible_employers),
+    match_eligible_postings: integer(counts.match_eligible_postings),
+    needs_review_postings: integer(counts.needs_review_postings),
+    selection_eligible_postings: integer(counts.selection_eligible_postings),
+    stale_posting_suppressed_groups: integer(counts.stale_posting_suppressed_groups),
+    company_cap_suppressed_groups: integer(counts.company_cap_suppressed_groups),
+    client_funnel: null,
   };
 }
 
-function parseProfileSnapshots(logs: string): ProfileSnapshot[] {
+function parseAuthoritativeState(logs: string): ProfileSnapshot[] {
   const ansi = /\u001b\[[0-9;]*m/g;
+  const marker = "JOBSIFT_OPERATOR_STATE=";
   const lines = logs.replace(ansi, "").split("\n").reverse();
   for (const line of lines) {
-    for (const marker of ['{"profiles":', '{"profile_id":']) {
-      const start = line.indexOf(marker);
-      if (start < 0) continue;
-      const candidate = line.slice(start).trim();
-      const end = candidate.lastIndexOf("}");
-      if (end < 0) continue;
-      try {
-        const parsed = JSON.parse(candidate.slice(0, end + 1)) as Record<string, unknown>;
-        if (Array.isArray(parsed.profiles)) {
-          const profiles = parsed.profiles.flatMap((value) => {
-            const profile = sanitizeProfile(value);
-            return profile ? [profile] : [];
-          });
-          if (profiles.length) return profiles;
-          continue;
-        }
-        if (
-          typeof parsed.profile_id === "string" &&
-          typeof parsed.batch_id === "string" &&
-          typeof parsed.status === "string"
-        ) {
-          const status = parsed.status;
-          const profile = sanitizeProfile({
-            ...parsed,
-            action: status === "prepared" ? "awaiting_release" : status,
-            batch_status: status,
-          });
-          if (profile) return [profile];
-        }
-      } catch {
+    const start = line.indexOf(marker);
+    if (start < 0) continue;
+    try {
+      const parsed = JSON.parse(line.slice(start + marker.length).trim()) as OperatorState;
+      if (parsed.schema_version !== "operator-state-v1" || !Array.isArray(parsed.profiles)) {
         continue;
       }
+      return parsed.profiles.flatMap((value) => {
+        const profile = authoritativeProfile(value);
+        return profile ? [profile] : [];
+      });
+    } catch {
+      continue;
     }
   }
   return [];
 }
 
-type RunCandidate = {
+function parseEvaluationProfiles(logs: string): Map<string, FunnelSnapshot> {
+  const ansi = /\u001b\[[0-9;]*m/g;
+  const lines = logs.replace(ansi, "").split("\n").reverse();
+  for (const line of lines) {
+    const marker = '{"profiles":';
+    const start = line.indexOf(marker);
+    if (start < 0) continue;
+    const candidate = line.slice(start).trim();
+    const end = candidate.lastIndexOf("}");
+    if (end < 0) continue;
+    try {
+      const parsed = JSON.parse(candidate.slice(0, end + 1)) as { profiles?: unknown[] };
+      if (!Array.isArray(parsed.profiles)) continue;
+      const funnels = new Map<string, FunnelSnapshot>();
+      for (const value of parsed.profiles) {
+        if (!value || typeof value !== "object") continue;
+        const source = value as Record<string, unknown>;
+        if (!validProfileId(source.profile_id)) continue;
+        const funnel = sanitizeFunnel(source.client_funnel);
+        if (funnel) funnels.set(source.profile_id, funnel);
+      }
+      if (funnels.size) return funnels;
+    } catch {
+      continue;
+    }
+  }
+  return new Map();
+}
+
+type SnapshotCandidate = {
+  kind: "inventory" | "delivery" | "configure";
   run: WorkflowRun;
-  jobName: "persist-and-deliver" | "control";
+  jobName: "operator-snapshot" | "control" | "configure";
 };
 
-async function profileEventsForRun(candidate: RunCandidate, token: string) {
-  if (candidate.run.status !== "completed") return [] as ProfileSnapshot[];
+async function jobLogsForRun(candidate: SnapshotCandidate, token: string) {
+  if (candidate.run.status !== "completed") return null;
   try {
     const jobs = await github<{ jobs: GithubJob[] }>(
       `/repos/${owner}/${repo}/actions/runs/${candidate.run.id}/jobs?per_page=100`,
       token,
     );
     const job = jobs.jobs.find((value) => value.name === candidate.jobName);
-    if (!job || job.conclusion !== "success") return [] as ProfileSnapshot[];
-    const logs = await githubText(
+    if (!job || job.conclusion !== "success") return null;
+    return await githubText(
       `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
       token,
     );
-    return parseProfileSnapshots(logs);
   } catch {
-    return [] as ProfileSnapshot[];
+    return null;
   }
+}
+
+async function latestEvaluationFunnels(inventoryRuns: WorkflowRun[], token: string) {
+  for (const run of inventoryRuns) {
+    if (run.status !== "completed") continue;
+    try {
+      const jobs = await github<{ jobs: GithubJob[] }>(
+        `/repos/${owner}/${repo}/actions/runs/${run.id}/jobs?per_page=100`,
+        token,
+      );
+      const persist = jobs.jobs.find((value) => value.name === "persist-and-deliver");
+      if (!persist || persist.conclusion !== "success") continue;
+      const logs = await githubText(
+        `/repos/${owner}/${repo}/actions/jobs/${persist.id}/logs`,
+        token,
+      );
+      const funnels = parseEvaluationProfiles(logs);
+      if (funnels.size) return funnels;
+    } catch {
+      continue;
+    }
+  }
+  return new Map<string, FunnelSnapshot>();
 }
 
 async function latestOperatorSnapshot(
   inventoryRuns: WorkflowRun[],
   deliveryRuns: WorkflowRun[],
+  configureRuns: WorkflowRun[],
   token: string,
 ) {
-  const candidates: RunCandidate[] = [
-    ...inventoryRuns.map((run) => ({ run, jobName: "persist-and-deliver" as const })),
-    ...deliveryRuns.map((run) => ({ run, jobName: "control" as const })),
-  ]
-    .sort(
-      (left, right) =>
-        Date.parse(right.run.updated_at) - Date.parse(left.run.updated_at),
-    )
-    .slice(0, 16);
+  const candidates: SnapshotCandidate[] = [
+    ...inventoryRuns.map((run) => ({
+      kind: "inventory" as const,
+      run,
+      jobName: "operator-snapshot" as const,
+    })),
+    ...deliveryRuns.map((run) => ({
+      kind: "delivery" as const,
+      run,
+      jobName: "control" as const,
+    })),
+    ...configureRuns.map((run) => ({
+      kind: "configure" as const,
+      run,
+      jobName: "configure" as const,
+    })),
+  ].sort(
+    (left, right) => Date.parse(right.run.updated_at) - Date.parse(left.run.updated_at),
+  );
 
-  const byProfile = new Map<string, ProfileSnapshot>();
-  let latestMeaningfulRun: WorkflowRun | null = null;
-
+  let chosen: SnapshotCandidate | null = null;
+  let profiles: ProfileSnapshot[] = [];
   for (const candidate of candidates) {
-    const profiles = await profileEventsForRun(candidate, token);
-    if (!profiles.length) continue;
-    latestMeaningfulRun ??= candidate.run;
-    for (const profile of profiles) {
-      if (!byProfile.has(profile.profile_id)) {
-        byProfile.set(profile.profile_id, profile);
-      }
-    }
+    const logs = await jobLogsForRun(candidate, token);
+    if (!logs) continue;
+    const parsed = parseAuthoritativeState(logs);
+    if (!parsed.length && !logs.includes("JOBSIFT_OPERATOR_STATE=")) continue;
+    chosen = candidate;
+    profiles = parsed;
+    break;
   }
 
-  const run = latestMeaningfulRun
+  const funnels = await latestEvaluationFunnels(inventoryRuns, token);
+  profiles = profiles.map((profile) => ({
+    ...profile,
+    client_funnel: funnels.get(profile.profile_id) ?? null,
+  }));
+
+  const run = chosen
     ? {
-        id: latestMeaningfulRun.id,
-        run_number: latestMeaningfulRun.run_number,
-        status: latestMeaningfulRun.status,
-        conclusion: latestMeaningfulRun.conclusion,
-        created_at: latestMeaningfulRun.created_at,
-        updated_at: latestMeaningfulRun.updated_at,
-        url: latestMeaningfulRun.url,
+        id: chosen.run.id,
+        run_number: chosen.run.run_number,
+        status: chosen.run.status,
+        conclusion: chosen.run.conclusion,
+        created_at: chosen.run.created_at,
+        updated_at: chosen.run.updated_at,
+        url: chosen.run.url,
+        kind: chosen.kind,
       }
     : null;
 
-  return { run, profiles: [...byProfile.values()] };
+  return { run, profiles };
 }
 
 export async function GET() {
@@ -349,14 +440,17 @@ export async function GET() {
       { headers: { "Cache-Control": "no-store" } },
     );
   }
+
   try {
-    const [inventory, delivery] = await Promise.all([
+    const [inventory, delivery, configure] = await Promise.all([
       workflowStatus(workflows.inventory, token),
       workflowStatus(workflows.delivery, token),
+      workflowStatus(workflows.configure, token),
     ]);
     const operatorSnapshot = await latestOperatorSnapshot(
       inventory.runs,
       delivery.runs,
+      configure.runs,
       token,
     );
     return NextResponse.json(
