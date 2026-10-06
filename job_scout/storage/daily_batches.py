@@ -766,30 +766,42 @@ class DailyBatchStore:
                 ]
                 publish(rows, before, after)
                 now = datetime.now(UTC).isoformat()
-                for item in result.items:
-                    group = c.execute(
-                        "SELECT group_id FROM posting_delivery_groups WHERE job_id=?",
-                        (item.representative_job_id,),
-                    ).fetchone()[0]
-                    c.execute(
-                        "INSERT OR IGNORE INTO group_deliveries VALUES (?,?,?,?,?)",
+                selected_ids = [
+                    item.representative_job_id for item in result.items
+                ]
+                current_groups = self._groups_for_jobs(c, selected_ids)
+                missing_groups = [
+                    job_id for job_id in selected_ids if job_id not in current_groups
+                ]
+                if missing_groups:
+                    raise BatchConflict(
+                        f"posting has no delivery group: {missing_groups[0]}"
+                    )
+                c.executemany(
+                    "INSERT OR IGNORE INTO group_deliveries VALUES (?,?,?,?,?)",
+                    [
                         (
-                            group,
+                            current_groups[item.representative_job_id],
                             result.request.client_id,
                             result.request.destination,
                             item.representative_job_id,
                             now,
-                        ),
-                    )
-                    c.execute(
-                        "INSERT OR IGNORE INTO exports VALUES (?,?,?,?)",
+                        )
+                        for item in result.items
+                    ],
+                )
+                c.executemany(
+                    "INSERT OR IGNORE INTO exports VALUES (?,?,?,?)",
+                    [
                         (
                             item.representative_job_id,
                             result.request.client_id,
                             result.request.destination,
                             now,
-                        ),
-                    )
+                        )
+                        for item in result.items
+                    ],
+                )
                 c.execute(
                     "UPDATE daily_batches SET status='delivered',delivered_at=?,error=NULL "
                     "WHERE batch_id=?",
