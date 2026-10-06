@@ -26,9 +26,11 @@ def _pending_batch(repository, *, client_id: str, destination: str):
     with repository.connect() as connection:
         row = connection.execute(
             "SELECT batch_id,status,assembled_at,requested_quota,selected_count,"
-            "shortfall,counts_json,error "
+            "shortfall,counts_json,error,export_before_sha256,export_after_sha256 "
             "FROM daily_batches WHERE client_id=? AND destination=? "
-            "AND status='prepared' ORDER BY assembled_at DESC,batch_id DESC LIMIT 1",
+            "AND status!='delivered' AND (status='prepared' "
+            "OR export_before_sha256 IS NOT NULL OR export_after_sha256 IS NOT NULL) "
+            "ORDER BY assembled_at,batch_id LIMIT 1",
             (client_id, destination),
         ).fetchone()
     if row is None:
@@ -82,6 +84,10 @@ def _pending_batch(repository, *, client_id: str, destination: str):
         "counts": allowed_counts,
         "preview": preview,
         "preview_truncated": row["selected_count"] > len(preview),
+        "recovery_required": (
+            row["export_before_sha256"] is not None
+            or row["export_after_sha256"] is not None
+        ),
         "error": row["error"],
     }
 
@@ -101,7 +107,6 @@ def snapshot(repository) -> dict[str, object]:
                 "profile_id": delivery_profile_control_id(
                     profile.client_id, profile.destination_id
                 ),
-                "destination_name": destination.display_name,
                 "profile_status": profile.status,
                 "delivery_mode": profile.delivery_mode,
                 "daily_quota": profile.daily_quota,
