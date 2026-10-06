@@ -12,25 +12,28 @@ const defaults: Preferences = {
 };
 let cached: Preferences = defaults;
 let loaded = false;
+function storedPreferences(): Preferences {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem("jobsift-presentation") ?? "{}",
+    );
+    return {
+      theme: ["system", "light", "dark"].includes(saved.theme)
+        ? saved.theme
+        : "system",
+      density: ["default", "compact", "comfortable"].includes(saved.density)
+        ? saved.density
+        : "default",
+      shortcuts: saved.shortcuts !== false,
+    };
+  } catch {
+    return defaults;
+  }
+}
 function read() {
   if (!loaded && typeof window !== "undefined") {
     loaded = true;
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem("jobsift-presentation") ?? "{}",
-      );
-      cached = {
-        theme: ["system", "light", "dark"].includes(saved.theme)
-          ? saved.theme
-          : "system",
-        density: ["default", "compact", "comfortable"].includes(saved.density)
-          ? saved.density
-          : "default",
-        shortcuts: saved.shortcuts !== false,
-      };
-    } catch {
-      /* Local preferences are optional. */
-    }
+    cached = storedPreferences();
   }
   return cached;
 }
@@ -54,6 +57,15 @@ export function savePreferences(patch: Partial<Preferences>) {
 }
 export function PresentationSettings() {
   const preferences = usePreferences();
+  useEffect(() => {
+    // Hydration starts from the server snapshot. Re-read browser storage once
+    // mounted so that persisted choices cannot be overwritten by "system".
+    cached = storedPreferences();
+    loaded = true;
+    document.documentElement.dataset.theme = cached.theme;
+    document.documentElement.dataset.density = cached.density;
+    window.dispatchEvent(new Event("jobsift-preferences"));
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = preferences.theme;
     document.documentElement.dataset.density = preferences.density;
