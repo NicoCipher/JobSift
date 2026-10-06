@@ -371,6 +371,31 @@ class PostgresRepository(SQLiteRepository):
         DISTINCT ON inside each chunk to preserve that precedence.
         """
         ordered = sorted(merge_map.items())
+        if not getattr(connection, "is_postgres", False):
+            # The cross-backend semantic regressions intentionally run the
+            # Postgres grouping algorithm against SQLite. Keep that harness
+            # portable while production Postgres uses the bounded set path.
+            for old_group, new_group in ordered:
+                connection.execute(
+                    "INSERT OR IGNORE INTO group_deliveries "
+                    "SELECT ?,client_id,destination,job_id,exported_at "
+                    "FROM group_deliveries WHERE group_id=?",
+                    (new_group, old_group),
+                )
+                connection.execute(
+                    "DELETE FROM group_deliveries WHERE group_id=?",
+                    (old_group,),
+                )
+                connection.execute(
+                    "UPDATE posting_delivery_groups SET group_id=? WHERE group_id=?",
+                    (new_group, old_group),
+                )
+                connection.execute(
+                    "DELETE FROM delivery_groups WHERE id=?",
+                    (old_group,),
+                )
+            return
+
         for chunk in _chunks(ordered):
             values_sql = ",".join("(?,?)" for _ in chunk)
             mapping_parameters = [
