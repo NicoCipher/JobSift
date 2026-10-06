@@ -19,6 +19,7 @@ from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.factory import create_repository
 
 MAX_PROFILE_SNAPSHOTS = 100
+MAX_BATCH_PREVIEW_ITEMS = 50
 
 
 def _pending_batch(repository, *, client_id: str, destination: str):
@@ -33,6 +34,24 @@ def _pending_batch(repository, *, client_id: str, destination: str):
     if row is None:
         return None
     counts = json.loads(row["counts_json"])
+    with repository.connect() as connection:
+        item_rows = connection.execute(
+            "SELECT ordinal,export_row_json FROM daily_batch_items "
+            "WHERE batch_id=? ORDER BY ordinal LIMIT ?",
+            (row["batch_id"], MAX_BATCH_PREVIEW_ITEMS),
+        ).fetchall()
+    preview = []
+    for item in item_rows:
+        export = json.loads(item["export_row_json"])
+        preview.append(
+            {
+                "ordinal": item["ordinal"],
+                "title": str(export.get("Job Title", "")).strip(),
+                "company": str(export.get("Company Name", "")).strip(),
+                "link": str(export.get("Job Link", "")).strip(),
+                "platform": str(export.get("Job Platform", "")).strip(),
+            }
+        )
     allowed_counts = {
         key: counts.get(key)
         for key in (
@@ -61,6 +80,8 @@ def _pending_batch(repository, *, client_id: str, destination: str):
         "selected_count": row["selected_count"],
         "shortfall": row["shortfall"],
         "counts": allowed_counts,
+        "preview": preview,
+        "preview_truncated": row["selected_count"] > len(preview),
         "error": row["error"],
     }
 
