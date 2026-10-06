@@ -438,6 +438,10 @@ class ClientDeliveryProfileStore:
             if publisher.inspect() == after:
                 return batch, reconciliation, remaining
 
+        if profile.delivery_mode == "auto" and batch.request.include_needs_review:
+            raise BatchConflict(
+                "prepared review-mode batch cannot be auto-released after delivery mode changed"
+            )
         if profile.status != "active":
             raise BatchConflict("delivery profile is paused")
         if batch.selected_count > remaining:
