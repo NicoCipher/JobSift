@@ -107,3 +107,7 @@ jobs:
             --delivery-mode "$CONTROL_DELIVERY_MODE" \
             --timezone "$CONTROL_TIMEZONE" \
             --reconcile
+
+      - name: Emit authoritative operator state
+        if: ${{ always() }}
+        run: python -m job_scout.operator_snapshot
