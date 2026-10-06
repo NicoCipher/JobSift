@@ -294,6 +294,24 @@ class SQLiteRepository:
         self._assign_group(connection, job)
         return lifecycle
 
+    def _upsert_jobs_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        jobs: Iterable[Job],
+        now: str,
+    ) -> dict[str, JobLifecycle]:
+        """Persist a batch using one caller-owned transaction.
+
+        SQLite keeps the proven row-at-a-time semantics. Production Postgres
+        overrides this hook with a set-oriented implementation so large fan-in
+        payloads do not pay one network round trip per posting.
+        """
+        states: dict[str, JobLifecycle] = {}
+        for job in jobs:
+            state = self._upsert_job_in_connection(connection, job, now)
+            states[job.id] = state
+        return states
+
     def upsert_job(self, job: Job) -> JobLifecycle:
         now = datetime.now(UTC).isoformat()
         with self.connect() as connection:
@@ -306,13 +324,9 @@ class SQLiteRepository:
         if not values:
             return {}
         now = datetime.now(UTC).isoformat()
-        states: dict[str, JobLifecycle] = {}
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            for job in values:
-                state = self._upsert_job_in_connection(connection, job, now)
-                states[job.id] = state
-        return states
+            return self._upsert_jobs_in_connection(connection, values, now)
 
     @staticmethod
     def _aware(value: datetime) -> datetime:
