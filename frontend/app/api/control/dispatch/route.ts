@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalTimeZone, validBatchId } from "../../../../lib/control-validation";
 
@@ -98,6 +99,7 @@ async function setWorkflowState(enabled: boolean) {
 async function dispatch(workflow: string, inputs: Record<string, string>) {
   const token = githubToken();
   if (!token) return controlUnavailable();
+  const controlRequestId = randomUUID();
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,
     {
@@ -109,7 +111,10 @@ async function dispatch(workflow: string, inputs: Record<string, string>) {
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "JobSift-operator-control",
       },
-      body: JSON.stringify({ ref: "main", inputs }),
+      body: JSON.stringify({
+        ref: "main",
+        inputs: { ...inputs, control_request_id: controlRequestId },
+      }),
       cache: "no-store",
       signal: AbortSignal.timeout(10000),
     },
@@ -126,7 +131,7 @@ async function dispatch(workflow: string, inputs: Record<string, string>) {
     );
   }
   return NextResponse.json(
-    { data: { accepted: true, workflow } },
+    { data: { accepted: true, workflow, control_request_id: controlRequestId } },
     { status: 202, headers: { "Cache-Control": "no-store" } },
   );
 }
