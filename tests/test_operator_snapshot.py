@@ -108,3 +108,13 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path):
     assert row["pending_batch"]["batch_id"] == prepared.batch_id
     assert row["pending_batch"]["selected_count"] == 1
     assert row["pending_batch"]["counts"]["selected_groups"] == 1
+    assert row["pending_batch"]["preview"] == [
+        {
+            "ordinal": 1,
+            "title": "Software Engineer",
+            "company": "Acme",
+            "link": "https://example.com/job-1/apply",
+            "platform": "Greenhouse",
+        }
+    ]
+    assert row["pending_batch"]["preview_truncated"] is False
