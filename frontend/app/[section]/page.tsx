@@ -16,18 +16,22 @@ function deliveryProfileControlId(clientId: string, destinationId: string) {
     .slice(0, 16);
 }
 
-function operatorProfileAliases(): ManagedProfile[] {
+type OperatorProfileAlias = ManagedProfile & { client_id: string };
+
+function operatorProfileAliases(): OperatorProfileAlias[] {
   const raw = process.env.JOBSIFT_OPERATOR_PROFILE_ALIASES?.trim();
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     const seen = new Set<string>();
-    return parsed.flatMap((value): ManagedProfile[] => {
+    return parsed.flatMap((value): OperatorProfileAlias[] => {
       if (!value || typeof value !== "object") return [];
       const item = value as Record<string, unknown>;
       const profileId =
         typeof item.profile_id === "string" ? item.profile_id.trim().toLowerCase() : "";
+      const clientId =
+        typeof item.client_id === "string" ? item.client_id.trim().slice(0, 160) : "";
       const clientName =
         typeof item.client_name === "string" ? item.client_name.trim().slice(0, 120) : "";
       const destinationName =
@@ -36,6 +40,7 @@ function operatorProfileAliases(): ManagedProfile[] {
           : "";
       if (
         !/^[0-9a-f]{16}$/.test(profileId) ||
+        !clientId ||
         !clientName ||
         !destinationName ||
         seen.has(profileId)
@@ -43,7 +48,12 @@ function operatorProfileAliases(): ManagedProfile[] {
         return [];
       }
       seen.add(profileId);
-      return [{ profile_id: profileId, client_name: clientName, destination_name: destinationName }];
+      return [{
+        profile_id: profileId,
+        client_id: clientId,
+        client_name: clientName,
+        destination_name: destinationName,
+      }];
     });
   } catch {
     return [];
@@ -109,9 +119,19 @@ export default async function SectionPage({
     );
     const profiles = [...catalogueProfiles];
     const known = new Set(profiles.map((profile) => profile.profile_id));
+    const authorizedClientIds = new Set(
+      session.data.client_scopes.map((scope) => scope.client_id),
+    );
     for (const alias of operatorProfileAliases()) {
-      if (!known.has(alias.profile_id)) {
-        profiles.push(alias);
+      if (
+        authorizedClientIds.has(alias.client_id) &&
+        !known.has(alias.profile_id)
+      ) {
+        profiles.push({
+          profile_id: alias.profile_id,
+          client_name: alias.client_name,
+          destination_name: alias.destination_name,
+        });
         known.add(alias.profile_id);
       }
     }
