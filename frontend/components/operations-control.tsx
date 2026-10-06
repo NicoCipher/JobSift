@@ -39,7 +39,6 @@ type PendingItem = {
 type ProfileSnapshot = {
   action: string;
   profile_id: string;
-  destination_name: string | null;
   profile_status: string | null;
   delivery_mode: string | null;
   daily_quota: number | null;
@@ -58,6 +57,7 @@ type ProfileSnapshot = {
   company_cap_suppressed_groups: number | null;
   pending_items: PendingItem[];
   pending_items_truncated: boolean;
+  recovery_required: boolean;
   client_funnel: FunnelSnapshot | null;
 };
 
@@ -73,6 +73,7 @@ type OperatorSnapshot = {
     kind?: "inventory" | "delivery" | "configure";
   } | null;
   profiles: ProfileSnapshot[];
+  truncated: boolean;
 };
 
 type ControlStatus = {
@@ -267,15 +268,12 @@ export function OperationsControl({
 
   const latestSnapshot = status?.operator_snapshot;
   const pendingBatches =
-    latestSnapshot?.profiles.filter(
-      (profile) => profile.action === "awaiting_release" && Boolean(profile.batch_id),
-    ) ?? [];
+    latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
 
-  function profileLabel(profileId: string, destinationName?: string | null) {
+  function profileLabel(profileId: string) {
     const profile = profiles.find((item) => item.profile_id === profileId);
-    if (profile) return `${profile.client_name} — ${profile.destination_name}`;
-    return destinationName?.trim() || null;
+    return profile ? `${profile.client_name} — ${profile.destination_name}` : null;
   }
 
   const loadStatus = useCallback(async () => {
@@ -330,7 +328,7 @@ export function OperationsControl({
     profile: ProfileSnapshot,
     operation: "run-now" | "pause" | "resume" | "sheet-check",
   ) {
-    const label = profileLabel(profile.profile_id, profile.destination_name);
+    const label = profileLabel(profile.profile_id);
     if (!label) {
       setMessage("Client name is unavailable, so JobSift will not run this client action.");
       return;
@@ -354,7 +352,7 @@ export function OperationsControl({
 
   async function actOnPending(profile: ProfileSnapshot, operation: "release-batch" | "discard-batch") {
     if (!profile.batch_id) return;
-    const label = profileLabel(profile.profile_id, profile.destination_name);
+    const label = profileLabel(profile.profile_id);
     if (!label) {
       setMessage("Client name is unavailable, so JobSift will not allow an irreversible batch action.");
       return;
@@ -555,21 +553,28 @@ export function OperationsControl({
         {pendingBatches.length ? (
           <div className="operator-attention">
             <div>
-              <p className="operator-eyebrow">Needs your decision</p>
+              <p className="operator-eyebrow">
+                {pendingBatches.some((profile) => profile.recovery_required)
+                  ? "Delivery needs attention"
+                  : "Needs your decision"}
+              </p>
               <h3>
-                {pendingBatches.length === 1
-                  ? `${countLabel(pendingBatches[0].selected_count)} job is waiting for approval`
-                  : `${pendingBatches.length} review batches are waiting`}
+                {pendingBatches.some((profile) => profile.recovery_required)
+                  ? "A Sheet delivery needs safe recovery"
+                  : pendingBatches.length === 1
+                    ? `${countLabel(pendingBatches[0].selected_count)} job is waiting for approval`
+                    : `${pendingBatches.length} review batches are waiting`}
               </h3>
               <p>
-                JobSift will not prepare another batch for this client until you release or
-                discard the pending batch.
+                {pendingBatches.some((profile) => profile.recovery_required)
+                  ? "JobSift detected an unfinished delivery journal. Do not start another batch; use the safe retry below."
+                  : "JobSift will not prepare another batch for this client until you release or discard the pending batch."}
               </p>
             </div>
             {pendingBatches.map((profile) => (
               <div className="operator-batch-card" key={profile.batch_id ?? profile.profile_id}>
                 <div>
-                  <strong>{profileLabel(profile.profile_id, profile.destination_name) ?? "Client name unavailable"}</strong>
+                  <strong>{profileLabel(profile.profile_id) ?? "Client name unavailable"}</strong>
                   <p className="metadata">
                     {countLabel(profile.selected_count)} selected · {countLabel(profile.shortfall)} short
                     of the requested limit
@@ -605,21 +610,33 @@ export function OperationsControl({
                 <div className="operator-decision-actions">
                   <button
                     type="button"
-                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id, profile.destination_name)}
+                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id)}
                     onClick={() => void actOnPending(profile, "release-batch")}
                   >
-                    Release {countLabel(profile.selected_count)} job
+                    {profile.recovery_required
+                      ? "Retry safe delivery"
+                      : `Release ${countLabel(profile.selected_count)} ${profile.selected_count === 1 ? "job" : "jobs"}`}
                   </button>
                   <button
                     type="button"
                     className="secondary-action"
-                    disabled={busy || !status?.control_ready || !profileLabel(profile.profile_id, profile.destination_name)}
+                    disabled={
+                      busy ||
+                      !status?.control_ready ||
+                      !profileLabel(profile.profile_id) ||
+                      profile.recovery_required
+                    }
                     onClick={() => void actOnPending(profile, "discard-batch")}
                   >
                     Discard
                   </button>
                 </div>
-                {!profileLabel(profile.profile_id, profile.destination_name) ? (
+                {profile.recovery_required ? (
+                  <p className="notice">
+                    Discard is locked because this batch has a delivery journal. Safe retry will
+                    reconcile the Sheet before doing anything else.
+                  </p>
+                ) : !profileLabel(profile.profile_id) ? (
                   <p className="notice">
                     Batch actions are locked until this production profile can be matched to a client name.
                   </p>
@@ -636,10 +653,15 @@ export function OperationsControl({
               </div>
             ))}
           </div>
+        ) : latestSnapshot?.truncated ? (
+          <div className="notice">
+            Client state is incomplete, so JobSift will not claim that every client is clear.
+            Refresh after the next state update before making that assumption.
+          </div>
         ) : latestProfile ? (
           <div className="operator-clear">
-            <strong>No review batch is blocking this client.</strong>
-            <span>JobSift is free to prepare the next delivery batch.</span>
+            <strong>No review batch is blocking the listed client state.</strong>
+            <span>JobSift is free to prepare the next delivery batch for the profiles shown.</span>
           </div>
         ) : null}
 
@@ -672,7 +694,7 @@ export function OperationsControl({
               </div>
             </div>
             {latestSnapshot.profiles.map((profile) => {
-              const label = profileLabel(profile.profile_id, profile.destination_name);
+              const label = profileLabel(profile.profile_id);
               const locked = !label || busy || !status?.control_ready;
               return (
                 <article className="operator-client-card" key={profile.profile_id}>
