@@ -395,6 +395,56 @@ test("journaled delivery recovery is visible and cannot be discarded", async ({ 
   await expect(page.getByText(/Discard is locked because this batch has a delivery journal/)).toBeVisible();
 });
 
+test("unverified latest operator state locks state-dependent controls", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            complete: false,
+            state_error:
+              "Latest JobSift mutation completed, but its authoritative state snapshot is unavailable.",
+            run: {
+              id: 45,
+              run_number: 45,
+              status: "completed",
+              conclusion: "failure",
+              created_at: "2026-10-06T20:00:00Z",
+              updated_at: "2026-10-06T20:05:00Z",
+              url: "https://example.invalid/run/45",
+              kind: "delivery",
+            },
+            truncated: false,
+            profiles: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(page.getByRole("alert")).toContainText(
+    "Client state could not be verified",
+  );
+  await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run sourcing now" })).toBeDisabled();
+});
+
 test("truncated operator state never claims all clients are clear", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
