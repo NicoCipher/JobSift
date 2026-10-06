@@ -297,14 +297,18 @@ def _batch_payload(
     return payload
 
 
-def run_once(config: LiveRunnerConfig) -> dict[str, object]:
+def run_once(
+    config: LiveRunnerConfig,
+    *,
+    repository=None,
+) -> dict[str, object]:
     config.database_path.parent.mkdir(parents=True, exist_ok=True)
     config.csv_path.parent.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
 
     plan, brief_path = _runtime_plan(config)
     brief = load_search_brief(brief_path)
-    repository = create_repository(config.database_path)
+    repository = repository or create_repository(config.database_path)
     if config.validation_only and repository.remote_url:
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
