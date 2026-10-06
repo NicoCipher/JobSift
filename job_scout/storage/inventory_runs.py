@@ -195,8 +195,11 @@ class InventoryRunStore:
                     invalidation_values,
                     invalidated_at=completed_at,
                 )
-            for job in job_values:
-                self.repository._upsert_job_in_connection(connection, job, now)
+            self.repository._upsert_jobs_in_connection(
+                connection,
+                job_values,
+                now,
+            )
             if membership_values:
                 connection.executemany(
                     "INSERT OR IGNORE INTO inventory_run_jobs "
