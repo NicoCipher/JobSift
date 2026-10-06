@@ -263,6 +263,9 @@ def test_unresolved_batch_blocks_new_sourcing(tmp_path, monkeypatch):
         error=None,
         counts=SimpleNamespace(
             fresh_eligible_employers=2,
+            match_eligible_postings=2,
+            needs_review_postings=0,
+            selection_eligible_postings=2,
             company_cap_suppressed_groups=0,
             employer_cooldown_suppressed_groups=0,
             stale_posting_suppressed_groups=0,
