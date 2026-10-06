@@ -15,6 +15,68 @@ from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
+def test_batch_payload_combines_match_funnel_with_delivery_suppressions():
+    batch = SimpleNamespace(
+        batch_id="batch-funnel",
+        status="prepared",
+        request=SimpleNamespace(
+            destination_id="jobs",
+            requested_quota=100,
+            completeness="complete",
+        ),
+        selected_count=1,
+        shortfall=99,
+        error=None,
+        counts=SimpleNamespace(
+            fresh_eligible_employers=1,
+            match_eligible_postings=30,
+            needs_review_postings=2,
+            selection_eligible_postings=32,
+            historically_suppressed_groups=3,
+            previously_delivered_groups=4,
+            duplicate_postings_collapsed=5,
+            fresh_eligible_groups=20,
+            company_cap_suppressed_groups=6,
+            employer_cooldown_suppressed_groups=7,
+            stale_posting_suppressed_groups=8,
+            unknown_age_suppressed_groups=9,
+            invalid_time_suppressed_groups=10,
+        ),
+    )
+    evaluation = SimpleNamespace(
+        funnel=SimpleNamespace(
+            model_dump=lambda **_: {
+                "overall": {"fresh_0_24h": 50},
+                "by_source": {"greenhouse": {"fresh_0_24h": 30}},
+            }
+        )
+    )
+    store = SimpleNamespace(export_rows=lambda _batch_id: [])
+
+    payload = live_runner._batch_payload(
+        store,
+        batch,
+        action="prepared",
+        evaluation=evaluation,
+    )
+
+    assert payload["client_funnel"]["overall"]["fresh_0_24h"] == 50
+    assert payload["client_funnel"]["delivery"] == {
+        "historically_suppressed_groups": 3,
+        "previously_delivered_groups": 4,
+        "duplicate_postings_collapsed": 5,
+        "fresh_eligible_groups": 20,
+        "fresh_eligible_employers": 1,
+        "employer_cooldown_suppressed_groups": 7,
+        "stale_posting_suppressed_groups": 8,
+        "unknown_age_suppressed_groups": 9,
+        "invalid_time_suppressed_groups": 10,
+        "company_cap_suppressed_groups": 6,
+        "selected_count": 1,
+        "shortfall": 99,
+    }
+
+
 def test_unresolved_batch_ignores_failed_unpublished_snapshot(tmp_path):
     repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
     DailyBatchStore(repository)
