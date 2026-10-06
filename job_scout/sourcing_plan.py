@@ -280,7 +280,6 @@ class SourcingRunReport(BaseModel):
     total_changed: int
     total_unchanged: int
     total_matched: int
-    total_needs_review: int = 0
     total_rejected: int
     total_exported: int
     targets: list[SourcingTargetReport]
