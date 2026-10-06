@@ -122,6 +122,9 @@ def snapshot(repository) -> dict[str, object]:
         )
     return {
         "schema_version": "operator-state-v1",
+        "control_request_id": (
+            os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip() or None
+        ),
         "profiles": rows,
         "truncated": len(profiles) > MAX_PROFILE_SNAPSHOTS,
     }
