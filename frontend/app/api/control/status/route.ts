@@ -379,26 +379,56 @@ type SnapshotEvidence =
   | { state: "incomplete"; reason: string }
   | { state: "complete"; logs: string };
 
+const snapshotEvidenceCache = new Map<number, SnapshotEvidence>();
+const funnelCache = new Map<number, Map<string, FunnelSnapshot>>();
+const MAX_RUN_CACHE_ENTRIES = 64;
+
+function rememberRunCache<T>(cache: Map<number, T>, runId: number, value: T) {
+  cache.set(runId, value);
+  while (cache.size > MAX_RUN_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+  return value;
+}
+
 async function snapshotEvidenceForRun(
   candidate: SnapshotCandidate,
   token: string,
 ): Promise<SnapshotEvidence> {
+  if (candidate.run.status === "completed") {
+    const cached = snapshotEvidenceCache.get(candidate.run.id);
+    if (cached) return cached;
+  }
+
   try {
     const jobs = await github<{ jobs: GithubJob[] }>(
       `/repos/${owner}/${repo}/actions/runs/${candidate.run.id}/jobs?per_page=100`,
       token,
     );
     const job = jobs.jobs.find((value) => value.name === candidate.jobName);
-    if (!job) return { state: "legacy" };
+    if (!job) {
+      const result: SnapshotEvidence = { state: "legacy" };
+      return candidate.run.status === "completed"
+        ? rememberRunCache(snapshotEvidenceCache, candidate.run.id, result)
+        : result;
+    }
     if (job.status !== "completed") {
-      return { state: "incomplete", reason: "Latest operator state update is still running." };
+      return {
+        state: "incomplete",
+        reason: "Latest operator state update is still running.",
+      };
     }
     try {
       const logs = await githubText(
         `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
         token,
       );
-      return { state: "complete", logs };
+      const result: SnapshotEvidence = { state: "complete", logs };
+      return candidate.run.status === "completed"
+        ? rememberRunCache(snapshotEvidenceCache, candidate.run.id, result)
+        : result;
     } catch {
       return {
         state: "incomplete",
@@ -416,18 +446,27 @@ async function snapshotEvidenceForRun(
 async function latestEvaluationFunnels(inventoryRuns: WorkflowRun[], token: string) {
   for (const run of inventoryRuns) {
     if (run.status !== "completed") continue;
+    const cached = funnelCache.get(run.id);
+    if (cached) {
+      if (cached.size) return cached;
+      continue;
+    }
     try {
       const jobs = await github<{ jobs: GithubJob[] }>(
         `/repos/${owner}/${repo}/actions/runs/${run.id}/jobs?per_page=100`,
         token,
       );
       const persist = jobs.jobs.find((value) => value.name === "persist-and-deliver");
-      if (!persist || persist.conclusion !== "success") continue;
+      if (!persist || persist.conclusion !== "success") {
+        rememberRunCache(funnelCache, run.id, new Map());
+        continue;
+      }
       const logs = await githubText(
         `/repos/${owner}/${repo}/actions/jobs/${persist.id}/logs`,
         token,
       );
       const funnels = parseEvaluationProfiles(logs);
+      rememberRunCache(funnelCache, run.id, funnels);
       if (funnels.size) return funnels;
     } catch {
       continue;
