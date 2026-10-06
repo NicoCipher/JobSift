@@ -87,9 +87,7 @@ type ApiError = { error?: { message?: string } };
 
 export type ManagedProfile = {
   profile_id: string;
-  client_id: string;
   client_name: string;
-  destination_id: string;
   destination_name: string;
 };
 
