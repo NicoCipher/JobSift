@@ -94,13 +94,18 @@ The opaque profile ID is an operator handle, not a client identifier or secret.
 ### Review mode
 
 `review` is the safe default. JobSift prepares a frozen batch and waits for an
-explicit release. While a prepared batch is unresolved, it will not prepare
-another batch for that destination.
+explicit release. Jobs whose deterministic SearchBrief result is `needs_review`
+remain eligible for this frozen review batch instead of being discarded. They
+still require the operator's explicit release; review mode does not silently
+upgrade uncertain evidence into a confirmed match. While a prepared batch is
+unresolved, it will not prepare another batch for that destination.
 
 ### Auto mode
 
 `auto` publishes a valid prepared batch automatically after reconciliation.
-Use this only after the client's SearchBrief and destination mapping are proven.
+Only confirmed `strong_match` and `possible_match` decisions are selectable
+in auto mode; `needs_review` remains excluded from automatic delivery. Use this
+only after the client's SearchBrief and destination mapping are proven.
 
 ## Quota behaviour
 
