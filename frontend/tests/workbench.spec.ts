@@ -438,9 +438,9 @@ test("unverified latest operator state locks state-dependent controls", async ({
   });
 
   await page.goto("/operations");
-  await expect(page.getByRole("alert")).toContainText(
-    "Client state could not be verified",
-  );
+  await expect(
+    page.locator(".operator-command-center").getByRole("alert"),
+  ).toContainText("Client state could not be verified");
   await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run sourcing now" })).toBeDisabled();
 });
