@@ -504,25 +504,45 @@ async function latestOperatorSnapshot(
   token: string,
   requestedControlRequestId: string | null,
 ) {
-  const candidates: SnapshotCandidate[] = [
-    ...inventoryRuns.map((run) => ({
+  const groups = [
+    {
       kind: "inventory" as const,
-      run,
+      runs: inventoryRuns,
       jobName: "operator-snapshot" as const,
-    })),
-    ...deliveryRuns.map((run) => ({
+    },
+    {
       kind: "delivery" as const,
-      run,
+      runs: deliveryRuns,
       jobName: "control" as const,
-    })),
-    ...configureRuns.map((run) => ({
+    },
+    {
       kind: "configure" as const,
-      run,
+      runs: configureRuns,
       jobName: "configure" as const,
-    })),
+    },
   ];
 
   const activeStateChanges: SnapshotCandidate[] = [];
+  for (const group of groups) {
+    for (const run of group.runs.filter((value) => value.status !== "completed")) {
+      const candidate: SnapshotCandidate = {
+        kind: group.kind,
+        run,
+        jobName: group.jobName,
+      };
+      if (await inProgressRunCanChangeState(candidate, token)) {
+        activeStateChanges.push(candidate);
+      }
+    }
+  }
+
+  const primaryCandidates = groups.flatMap((group): SnapshotCandidate[] => {
+    const run = group.runs.find((value) => value.status === "completed");
+    return run
+      ? [{ kind: group.kind, run, jobName: group.jobName }]
+      : [];
+  });
+
   const unreadableCompleted: SnapshotCandidate[] = [];
   const snapshots: Array<{
     candidate: SnapshotCandidate;
@@ -532,33 +552,27 @@ async function latestOperatorSnapshot(
     truncated: boolean;
   }> = [];
 
-  for (const candidate of candidates) {
-    if (candidate.run.status !== "completed") {
-      if (await inProgressRunCanChangeState(candidate, token)) {
-        activeStateChanges.push(candidate);
-      }
-      continue;
-    }
-
+  async function parsedSnapshot(candidate: SnapshotCandidate) {
     const evidence = await snapshotEvidenceForRun(candidate, token);
-    if (evidence.state === "legacy") continue;
-    if (evidence.state === "incomplete") {
-      unreadableCompleted.push(candidate);
-      continue;
-    }
-
+    if (evidence.state !== "complete") return null;
     const parsed = parseAuthoritativeState(evidence.logs);
-    if (!parsed?.observed_at) {
-      unreadableCompleted.push(candidate);
-      continue;
-    }
-    snapshots.push({
+    if (!parsed?.observed_at) return null;
+    return {
       candidate,
       observedAt: parsed.observed_at,
       controlRequestId: parsed.control_request_id,
       profiles: parsed.profiles,
       truncated: parsed.truncated,
-    });
+    };
+  }
+
+  for (const candidate of primaryCandidates) {
+    const parsed = await parsedSnapshot(candidate);
+    if (parsed) {
+      snapshots.push(parsed);
+    } else {
+      unreadableCompleted.push(candidate);
+    }
   }
 
   snapshots.sort((left, right) => {
@@ -568,7 +582,6 @@ async function latestOperatorSnapshot(
   });
 
   const chosenSnapshot = snapshots[0] ?? null;
-  const chosen = chosenSnapshot?.candidate ?? activeStateChanges[0] ?? null;
   const chosenObservedTime = chosenSnapshot
     ? Date.parse(chosenSnapshot.observedAt)
     : Number.NEGATIVE_INFINITY;
@@ -576,6 +589,13 @@ async function latestOperatorSnapshot(
   const unsafeUnreadable = unreadableCompleted.find(
     (candidate) => Date.parse(candidate.run.updated_at) > chosenObservedTime,
   );
+
+  activeStateChanges.sort(
+    (left, right) =>
+      Date.parse(right.run.created_at) - Date.parse(left.run.created_at),
+  );
+  const chosen =
+    activeStateChanges[0] ?? unsafeUnreadable ?? chosenSnapshot?.candidate ?? null;
 
   let profiles = chosenSnapshot?.profiles ?? [];
   const truncated = chosenSnapshot?.truncated ?? false;
@@ -595,18 +615,53 @@ async function latestOperatorSnapshot(
     stateError = "No authoritative JobSift operator state has been reported yet.";
   }
 
-  let confirmedControlRequestId: string | null = null;
-  if (complete && requestedControlRequestId && chosenSnapshot) {
-    const requestedSnapshot = snapshots.find(
-      (snapshot) => snapshot.controlRequestId === requestedControlRequestId,
-    );
-    if (
-      requestedSnapshot &&
-      Date.parse(requestedSnapshot.observedAt) <= chosenObservedTime
-    ) {
-      confirmedControlRequestId = requestedControlRequestId;
+  let requestedSnapshot = requestedControlRequestId
+    ? snapshots.find(
+        (snapshot) => snapshot.controlRequestId === requestedControlRequestId,
+      ) ?? null
+    : null;
+
+  if (
+    complete &&
+    requestedControlRequestId &&
+    !requestedSnapshot
+  ) {
+    const primaryIds = new Set(primaryCandidates.map((candidate) => candidate.run.id));
+    const olderCandidates = groups
+      .flatMap((group) =>
+        group.runs
+          .filter(
+            (run) => run.status === "completed" && !primaryIds.has(run.id),
+          )
+          .map(
+            (run): SnapshotCandidate => ({
+              kind: group.kind,
+              run,
+              jobName: group.jobName,
+            }),
+          ),
+      )
+      .sort(
+        (left, right) =>
+          Date.parse(right.run.created_at) - Date.parse(left.run.created_at),
+      );
+
+    for (const candidate of olderCandidates) {
+      const parsed = await parsedSnapshot(candidate);
+      if (parsed?.controlRequestId === requestedControlRequestId) {
+        requestedSnapshot = parsed;
+        break;
+      }
     }
   }
+
+  const confirmedControlRequestId =
+    complete &&
+    requestedControlRequestId &&
+    requestedSnapshot &&
+    Date.parse(requestedSnapshot.observedAt) <= chosenObservedTime
+      ? requestedControlRequestId
+      : null;
 
   if (complete) {
     const funnels = await latestEvaluationFunnels(inventoryRuns, token);
