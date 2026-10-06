@@ -233,6 +233,7 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
 
     assert captured["request"].destination == destination.logical_uri
     assert captured["request"].requested_quota == 86
+    assert captured["request"].include_needs_review is True
     assert result["requested_quota"] == 86
 
 

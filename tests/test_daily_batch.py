@@ -630,6 +630,41 @@ def test_decisions_counts_and_partial_provenance(repo, tmp_path):
     assert result.request.completeness == "partial"
 
 
+def test_review_batch_can_select_needs_review_without_auto_default(repo, tmp_path):
+    jobs = [posting(10), posting(11)]
+    seed(repo, jobs, ["strong_match", "needs_review"])
+
+    auto_result = prepare(
+        repo,
+        request(repo, tmp_path / "auto.csv", jobs, quota=5),
+    )
+    assert auto_result.selected_count == 1
+    assert auto_result.counts.match_eligible_postings == 1
+    assert auto_result.counts.needs_review_postings == 1
+    assert auto_result.counts.selection_eligible_postings == 1
+
+    review_result = prepare(
+        repo,
+        request(
+            repo,
+            tmp_path / "review.csv",
+            jobs,
+            quota=5,
+            idempotency_key="day-2",
+            include_needs_review=True,
+        ),
+    )
+    assert review_result.selected_count == 2
+    assert review_result.counts.match_eligible_postings == 1
+    assert review_result.counts.needs_review_postings == 1
+    assert review_result.counts.selection_eligible_postings == 2
+    assert review_result.counts.selection_eligible_groups == 2
+
+    delivered = finalize(repo, review_result)
+    assert delivered.status == "delivered"
+    assert len(rows(tmp_path / "review.csv")) == 2
+
+
 @pytest.mark.parametrize("status", ["applied", "not_applied", "unknown"])
 def test_historical_group_suppression_precedes_prior(repo, tmp_path, status):
     jobs = [posting(1), posting(2, canonical_url="https://example.com/jobs/1"), posting(3)]
@@ -701,6 +736,36 @@ def test_canonical_fallback_and_successful_replay(repo, tmp_path):
         ).selected_count
         == 1
     )
+
+
+def test_idempotent_retry_normalizes_legacy_request_defaults(repo, tmp_path):
+    jobs = [posting(1)]
+    seed(repo, jobs)
+    req = request(repo, tmp_path / "out.csv", jobs)
+    prepared = prepare(repo, req)
+
+    with repo.connect() as connection:
+        stored = json.loads(
+            connection.execute(
+                "SELECT request_json FROM daily_batches WHERE batch_id=?",
+                (prepared.batch_id,),
+            ).fetchone()[0]
+        )
+        stored.pop("include_needs_review")
+        connection.execute(
+            "UPDATE daily_batches SET request_json=? WHERE batch_id=?",
+            (
+                json.dumps(stored, sort_keys=True, separators=(",", ":")),
+                prepared.batch_id,
+            ),
+        )
+
+    replayed = prepare(repo, req)
+    assert replayed.batch_id == prepared.batch_id
+    assert replayed.request.include_needs_review is False
+
+    with pytest.raises(BatchConflict, match="incompatible"):
+        prepare(repo, req.model_copy(update={"include_needs_review": True}))
 
 
 def test_input_and_ingestion_order(tmp_path):

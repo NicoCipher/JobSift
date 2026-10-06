@@ -52,9 +52,15 @@ supplied evidence scope, not the total market or vacancy closure.
 
 ## Selection and accounting
 
-Eligibility is exactly `strong_match` or `possible_match`; `needs_review` and
-`reject` never fill quota. Fresh means delivery-fresh for this client/destination,
-not newly discovered, recently posted, or a particular posting lifecycle.
+Base match eligibility is `strong_match` or `possible_match`. By default,
+only those decisions may fill quota. When a request explicitly sets
+`include_needs_review=true` (used by review-mode client delivery),
+`needs_review` postings are also selection-eligible for the frozen batch so an
+operator can inspect and explicitly release them. `reject` never fills quota.
+Auto delivery keeps `include_needs_review=false`, so uncertain jobs cannot be
+selected for automatic publication. Fresh means delivery-fresh for this
+client/destination, not newly discovered, recently posted, or a particular posting
+lifecycle.
 
 Reuse persisted practical groups and the existing historical identity/URL
 predicate. Historical surfacing of any persisted group member suppresses the group,
@@ -94,9 +100,16 @@ same-company roles merely to hit the requested row count.
 Counts use these denominators:
 
 - `candidate_postings = match_eligible_postings + needs_review_postings + rejected_postings`.
-- `match_eligible_postings = match_eligible_groups + duplicate_postings_collapsed`.
-  Duplicate postings are counted across all eligible groups before suppression.
-- `match_eligible_groups = historically_suppressed_groups + previously_delivered_groups + fresh_eligible_groups`.
+- `selection_eligible_postings` is `match_eligible_postings` by default; when
+  `include_needs_review=true`, it is the subset consisting of
+  `match_eligible_postings + needs_review_postings` that remains eligible for
+  review-batch selection.
+- `selection_eligible_postings = selection_eligible_groups + duplicate_postings_collapsed`.
+  Duplicate postings are counted across all selection-eligible groups before suppression.
+- `selection_eligible_groups = historically_suppressed_groups + previously_delivered_groups + fresh_eligible_groups`.
+- `match_eligible_postings` and `match_eligible_groups` remain the confirmed-match
+  metrics and do not absorb `needs_review`; they are retained separately for
+  reporting.
 - `fresh_eligible_employers` counts distinct employers after any configured cooldown.
 - `company_cap_suppressed_groups` counts otherwise-fresh groups beyond the per-employer cap.
 - `employer_cooldown_suppressed_groups` counts otherwise-fresh groups suppressed by cooldown.

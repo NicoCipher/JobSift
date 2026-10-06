@@ -328,6 +328,7 @@ class InventoryEvaluationReport(BaseModel):
     evaluated_at: datetime
     total_evaluated: int
     total_matched: int
+    total_needs_review: int = 0
     total_rejected: int
 
 
@@ -528,6 +529,7 @@ def evaluate_inventory_run(
     )
     cutoff = evaluation_time - timedelta(hours=retention_hours)
     matched = 0
+    needs_review = 0
     rejected = 0
     evaluated = 0
     match_rows: list[tuple[object, ...]] = []
@@ -569,6 +571,8 @@ def evaluate_inventory_run(
                 MatchDecision.POSSIBLE_MATCH,
             }:
                 matched += 1
+            elif match.decision is MatchDecision.NEEDS_REVIEW:
+                needs_review += 1
             else:
                 rejected += 1
         if match_rows:
@@ -589,6 +593,7 @@ def evaluate_inventory_run(
         evaluated_at=evaluation_time,
         total_evaluated=evaluated,
         total_matched=matched,
+        total_needs_review=needs_review,
         total_rejected=rejected,
     )
 
@@ -617,6 +622,7 @@ def evaluate_recent_inventory(
     )
     cutoff = evaluation_time - timedelta(hours=retention_hours)
     matched = 0
+    needs_review = 0
     rejected = 0
     evaluated = 0
     candidate_job_ids: list[str] = []
@@ -658,6 +664,9 @@ def evaluate_recent_inventory(
             }:
                 matched += 1
                 candidate_job_ids.append(job.id)
+            elif match.decision is MatchDecision.NEEDS_REVIEW:
+                needs_review += 1
+                candidate_job_ids.append(job.id)
             else:
                 rejected += 1
         if match_rows:
@@ -680,6 +689,7 @@ def evaluate_recent_inventory(
             evaluated_at=evaluation_time,
             total_evaluated=evaluated,
             total_matched=matched,
+            total_needs_review=needs_review,
             total_rejected=rejected,
         ),
         tuple(candidate_job_ids),

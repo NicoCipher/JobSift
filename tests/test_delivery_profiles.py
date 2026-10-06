@@ -12,9 +12,10 @@ from job_scout.delivery_profiles import (
     ClientDeliveryProfileStore,
     delivery_profile_control_id,
 )
-from job_scout.domain.daily_batch import BatchConflict
-from job_scout.domain.models import Job
+from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
+from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
+from job_scout.orchestration.daily_batch import prepare_daily_batch
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -110,6 +111,64 @@ def test_profile_requires_registered_destination_and_persists_controls(tmp_path)
     assert profile.delivery_mode == "review"
     assert store.get("client-a", "jobs") == profile
     assert store.active() == (profile,)
+
+
+def test_review_batch_cannot_auto_release_after_mode_switch(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    destination = register(repo)
+    profile_store = ClientDeliveryProfileStore(repo)
+    review_profile = profile_store.upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="remote-software-v1",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    posting = make_job("reviewable-job")
+    repo.upsert_job(posting)
+    repo.save_match(
+        JobMatch(
+            job_id=posting.id,
+            client_id="client-a",
+            decision="needs_review",
+            evaluated_at=datetime.now(UTC),
+            matcher_version="test",
+        )
+    )
+    batch_store = DailyBatchStore(repo)
+    candidate_ids = (posting.id,)
+    prepared = prepare_daily_batch(
+        repository=repo,
+        request=DailyBatchRequest(
+            client_id="client-a",
+            destination=destination.logical_uri,
+            destination_id=destination.destination_id,
+            destination_config_sha256=destination.config_sha256,
+            idempotency_key="review-mode-snapshot",
+            requested_quota=1,
+            include_needs_review=True,
+            evidence_scope_id="review-mode-snapshot",
+            evaluation_id="review-mode-snapshot",
+            candidate_job_ids=candidate_ids,
+            evidence_sha256=batch_store.evidence_digest("client-a", candidate_ids),
+        ),
+    )
+    assert prepared.selected_count == 1
+
+    auto_profile = profile_store.update_controls(
+        review_profile,
+        delivery_mode="auto",
+    )
+
+    with pytest.raises(BatchConflict, match="review-mode batch"):
+        profile_store.guard_batch_release(
+            auto_profile,
+            prepared.batch_id,
+            gateway=FakeSheet(),
+        )
 
 
 def test_disabled_destination_cannot_be_activated(tmp_path):
