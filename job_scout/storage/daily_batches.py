@@ -157,54 +157,36 @@ class DailyBatchStore:
         client_id: str,
         destination: str | None,
     ) -> set[str]:
-        """Resolve group-level prior surfacing with bounded set-oriented reads."""
+        """Resolve group-level prior surfacing with one bounded read per chunk."""
         historical: set[str] = set()
         values = sorted(set(group_ids))
         for chunk in _chunks(values):
             placeholders = ",".join("?" for _ in chunk)
-            common = (
+            destination_clause = ""
+            parameters = [*chunk, client_id]
+            if destination is not None:
+                destination_clause = (
+                    " OR EXISTS ("
+                    "SELECT 1 FROM destination_observed_links d "
+                    "WHERE d.client_id=? AND d.destination=? AND ("
+                    "(d.source=j.source AND d.source_board_id=j.source_board_id "
+                    "AND d.source_job_id=j.source_job_id) "
+                    "OR d.normalized_url=j.canonical_url))"
+                )
+                parameters.extend([client_id, destination])
+            rows = c.execute(
                 "SELECT DISTINCT g.group_id "
                 "FROM posting_delivery_groups g JOIN jobs j ON j.id=g.job_id "
-            )
-            identity_rows = c.execute(
-                common
-                + "JOIN historical_job_links h "
-                "ON h.source=j.source AND h.source_board_id=j.source_board_id "
-                "AND h.source_job_id=j.source_job_id "
-                f"WHERE g.group_id IN ({placeholders}) AND h.client_id=?",
-                [*chunk, client_id],
+                f"WHERE g.group_id IN ({placeholders}) AND ("
+                "EXISTS (SELECT 1 FROM historical_job_links h "
+                "WHERE h.client_id=? AND ("
+                "(h.source=j.source AND h.source_board_id=j.source_board_id "
+                "AND h.source_job_id=j.source_job_id) "
+                "OR h.normalized_url=j.canonical_url))"
+                f"{destination_clause})",
+                parameters,
             ).fetchall()
-            historical.update(row["group_id"] for row in identity_rows)
-
-            url_rows = c.execute(
-                common
-                + "JOIN historical_job_links h ON h.normalized_url=j.canonical_url "
-                f"WHERE g.group_id IN ({placeholders}) AND h.client_id=?",
-                [*chunk, client_id],
-            ).fetchall()
-            historical.update(row["group_id"] for row in url_rows)
-
-            if destination is not None:
-                observed_identity = c.execute(
-                    common
-                    + "JOIN destination_observed_links d "
-                    "ON d.source=j.source AND d.source_board_id=j.source_board_id "
-                    "AND d.source_job_id=j.source_job_id "
-                    f"WHERE g.group_id IN ({placeholders}) "
-                    "AND d.client_id=? AND d.destination=?",
-                    [*chunk, client_id, destination],
-                ).fetchall()
-                historical.update(row["group_id"] for row in observed_identity)
-
-                observed_url = c.execute(
-                    common
-                    + "JOIN destination_observed_links d "
-                    "ON d.normalized_url=j.canonical_url "
-                    f"WHERE g.group_id IN ({placeholders}) "
-                    "AND d.client_id=? AND d.destination=?",
-                    [*chunk, client_id, destination],
-                ).fetchall()
-                historical.update(row["group_id"] for row in observed_url)
+            historical.update(row["group_id"] for row in rows)
         return historical
 
     def _candidates(
