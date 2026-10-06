@@ -171,3 +171,7 @@ jobs:
                 --batch-id "$CONTROL_BATCH_ID"
               ;;
           esac
+
+      - name: Emit authoritative operator state
+        if: ${{ always() }}
+        run: python -m job_scout.operator_snapshot
