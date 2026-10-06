@@ -48,6 +48,10 @@ on:
         description: Prepared batch ID for release/discard
         required: false
         type: string
+      control_request_id:
+        description: Opaque correlation ID from the operator interface
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -174,4 +178,6 @@ jobs:
 
       - name: Emit authoritative operator state
         if: ${{ always() }}
+        env:
+          JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
         run: python -m job_scout.operator_snapshot
