@@ -443,6 +443,86 @@ test("unverified latest operator state locks state-dependent controls", async ({
   ).toContainText("Client state could not be verified");
   await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run sourcing now" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Check Sheet", exact: true }).last()).toBeDisabled();
+  await expect(page.getByLabel("What do you want to do?")).toBeDisabled();
+});
+
+test("failed status refresh locks actions from the previous verified snapshot", async ({ page }) => {
+  let requests = 0;
+  await page.route("**/api/control/status", async (route) => {
+    requests += 1;
+    if (requests > 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { message: "Could not load JobSift workflow status." },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            complete: true,
+            state_error: null,
+            run: null,
+            truncated: false,
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 0,
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 1,
+                needs_review_postings: 0,
+                selection_eligible_postings: 1,
+                stale_posting_suppressed_groups: 0,
+                company_cap_suppressed_groups: 0,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  const release = page.getByRole("button", { name: "Release 1 job" });
+  await expect(release).toBeEnabled();
+
+  await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(page.getByText("Could not load JobSift workflow status.")).toBeVisible();
+  await expect(release).toBeDisabled();
 });
 
 test("truncated operator state never claims all clients are clear", async ({ page }) => {
