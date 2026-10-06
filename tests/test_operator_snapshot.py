@@ -21,7 +21,11 @@ class FakeSheet:
         return [["JOB TITLE", "COMPANY NAME", "LINKS", "DESCRIPTION"]]
 
 
-def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path):
+def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "JOBSIFT_CONTROL_REQUEST_ID",
+        "01234567-89ab-4cde-8fab-0123456789ab",
+    )
     repo = SQLiteRepository(tmp_path / "jobs.db")
     destination = ClientSheetDestinationStore(repo).register_google_sheet(
         client_id="client-a",
@@ -101,6 +105,7 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path):
 
     state = snapshot(repo)
     assert state["schema_version"] == "operator-state-v1"
+    assert state["control_request_id"] == "01234567-89ab-4cde-8fab-0123456789ab"
     assert state["truncated"] is False
     row = state["profiles"][0]
     assert row["profile_status"] == "paused"
