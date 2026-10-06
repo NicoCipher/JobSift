@@ -43,6 +43,14 @@ def test_public_profile_result_drops_identifying_and_job_detail_fields():
             "observed_links": 14,
             "newly_recorded_links": 14,
         },
+        "client_funnel": {
+            "overall": {
+                "fresh_0_24h": 42,
+                "confirmed_matches_0_24h": 7,
+            },
+            "by_source": {"greenhouse": {"fresh_0_24h": 20}},
+            "delivery": {"selected_count": 7, "shortfall": 93},
+        },
     }
 
     public = _public_result(profile(), result)
@@ -51,6 +59,7 @@ def test_public_profile_result_drops_identifying_and_job_detail_fields():
     assert public["batch_id"] == "batch-123"
     assert public["selected_count"] == 7
     assert public["delivery_profile"]["remaining_today"] == 86
+    assert public["client_funnel"]["overall"]["fresh_0_24h"] == 42
     assert "secret-client" not in serialized
     assert "private-sheet" not in serialized
     assert "selected_jobs" not in public

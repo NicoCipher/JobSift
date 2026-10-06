@@ -53,6 +53,7 @@ def _public_result(profile, result: dict[str, object]) -> dict[str, object]:
         "completeness",
         "retention",
         "sheet_reconciliation",
+        "client_funnel",
     )
     public = {
         "profile_id": delivery_profile_control_id(

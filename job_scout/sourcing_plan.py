@@ -29,6 +29,7 @@ from job_scout.domain.models import (
     SourceTarget,
     WorkdayTargetConfig,
 )
+from job_scout.funnel_diagnostics import ClientFunnelAccumulator, ClientFunnelDiagnostics
 from job_scout.matching.matcher import match_job
 from job_scout.orchestration.pipeline import PipelineSummary, run_pipeline
 from job_scout.retention import retention_basis
@@ -330,6 +331,7 @@ class InventoryEvaluationReport(BaseModel):
     total_matched: int
     total_needs_review: int = 0
     total_rejected: int
+    funnel: ClientFunnelDiagnostics
 
 
 class _ObservedCollector:
@@ -528,6 +530,7 @@ def evaluate_inventory_run(
         else evaluation_time.astimezone(UTC)
     )
     cutoff = evaluation_time - timedelta(hours=retention_hours)
+    funnel = ClientFunnelAccumulator(evaluation_time)
     matched = 0
     needs_review = 0
     rejected = 0
@@ -562,6 +565,7 @@ def evaluate_inventory_run(
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )
+            funnel.observe(job, match)
             match_rows.append(repository._match_row(match))
             if match_scope_id is not None:
                 scoped_rows.append(repository._scoped_match_row(match, match_scope_id))
@@ -595,6 +599,7 @@ def evaluate_inventory_run(
         total_matched=matched,
         total_needs_review=needs_review,
         total_rejected=rejected,
+        funnel=funnel.snapshot(),
     )
 
 
@@ -621,6 +626,7 @@ def evaluate_recent_inventory(
         else evaluation_time.astimezone(UTC)
     )
     cutoff = evaluation_time - timedelta(hours=retention_hours)
+    funnel = ClientFunnelAccumulator(evaluation_time)
     matched = 0
     needs_review = 0
     rejected = 0
@@ -654,6 +660,7 @@ def evaluate_recent_inventory(
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )
+            funnel.observe(job, match)
             match_rows.append(repository._match_row(match))
             if match_scope_id is not None:
                 scoped_rows.append(repository._scoped_match_row(match, match_scope_id))
@@ -691,6 +698,7 @@ def evaluate_recent_inventory(
             total_matched=matched,
             total_needs_review=needs_review,
             total_rejected=rejected,
+            funnel=funnel.snapshot(),
         ),
         tuple(candidate_job_ids),
     )

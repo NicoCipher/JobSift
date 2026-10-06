@@ -66,6 +66,12 @@ def test_recent_inventory_returns_only_delivery_eligible_candidate_ids(
     assert report.total_evaluated == 2
     assert report.total_matched == 1
     assert report.total_rejected == 1
+    assert report.funnel.overall.retained_evaluated == 2
+    assert report.funnel.overall.fresh_0_24h == 2
+    assert report.funnel.overall.confirmed_matches_0_24h == 1
+    assert report.funnel.overall.rejected_0_24h == 1
+    assert report.funnel.overall.match_age_buckets.age_0_24h == 1
+    assert report.funnel.by_source["greenhouse"].retained_evaluated == 2
     assert candidate_ids == ("eligible",)
 
 

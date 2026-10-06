@@ -281,6 +281,25 @@ def _batch_payload(
     }
     if retention is not None:
         payload["retention"] = retention
+    if evaluation is not None:
+        client_funnel = evaluation.funnel.model_dump(mode="json")
+        client_funnel["delivery"] = {
+            "historically_suppressed_groups": batch.counts.historically_suppressed_groups,
+            "previously_delivered_groups": batch.counts.previously_delivered_groups,
+            "duplicate_postings_collapsed": batch.counts.duplicate_postings_collapsed,
+            "fresh_eligible_groups": batch.counts.fresh_eligible_groups,
+            "fresh_eligible_employers": batch.counts.fresh_eligible_employers,
+            "employer_cooldown_suppressed_groups": (
+                batch.counts.employer_cooldown_suppressed_groups
+            ),
+            "stale_posting_suppressed_groups": batch.counts.stale_posting_suppressed_groups,
+            "unknown_age_suppressed_groups": batch.counts.unknown_age_suppressed_groups,
+            "invalid_time_suppressed_groups": batch.counts.invalid_time_suppressed_groups,
+            "company_cap_suppressed_groups": batch.counts.company_cap_suppressed_groups,
+            "selected_count": batch.selected_count,
+            "shortfall": batch.shortfall,
+        }
+        payload["client_funnel"] = client_funnel
     if sourcing is not None:
         payload["sourcing"] = {
             "status": sourcing.status,
