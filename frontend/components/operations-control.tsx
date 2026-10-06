@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 type Run = {
@@ -94,6 +94,23 @@ export type ManagedProfile = {
 };
 
 type TargetMode = "listed" | "manual";
+
+type StateBaseline = {
+  runId: number | null;
+  updatedAt: string | null;
+};
+
+function hasFreshAuthoritativeState(
+  snapshot: OperatorSnapshot,
+  baseline: StateBaseline,
+) {
+  if (snapshot.complete !== true || snapshot.truncated || !snapshot.run) return false;
+  if (baseline.runId === null) return true;
+  return (
+    snapshot.run.id !== baseline.runId ||
+    snapshot.run.updated_at !== baseline.updatedAt
+  );
+}
 
 function validProfileId(value: string) {
   return /^[0-9a-f]{16}$/.test(value);
@@ -265,11 +282,15 @@ export function OperationsControl({
   const [deliveryOperation, setDeliveryOperation] = useState("status");
   const [sheetProfileOverride, setSheetProfileOverride] = useState("");
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
+  const [awaitingFreshState, setAwaitingFreshState] = useState(false);
+  const pendingStateBaseline = useRef<StateBaseline | null>(null);
+  const statePollTimer = useRef<number | null>(null);
 
   const latestSnapshot = status?.operator_snapshot;
   const stateVerified =
     status !== null &&
     !statusError &&
+    !awaitingFreshState &&
     latestSnapshot?.complete !== false &&
     latestSnapshot?.truncated !== true;
   const pendingBatches =
@@ -287,6 +308,14 @@ export function OperationsControl({
       const body = (await readJson(response)) as { data: ControlStatus };
       setStatus(body.data);
       setStatusError("");
+      const baseline = pendingStateBaseline.current;
+      if (
+        baseline &&
+        hasFreshAuthoritativeState(body.data.operator_snapshot, baseline)
+      ) {
+        pendingStateBaseline.current = null;
+        setAwaitingFreshState(false);
+      }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
     }
@@ -307,8 +336,24 @@ export function OperationsControl({
       });
     return () => {
       cancelled = true;
+      if (statePollTimer.current !== null) {
+        window.clearTimeout(statePollTimer.current);
+      }
     };
   }, []);
+
+  function pollForFreshState(attempt = 0) {
+    if (statePollTimer.current !== null) {
+      window.clearTimeout(statePollTimer.current);
+    }
+    const delay = attempt < 8 ? 1500 : 5000;
+    statePollTimer.current = window.setTimeout(async () => {
+      await loadStatus();
+      if (pendingStateBaseline.current && attempt < 60) {
+        pollForFreshState(attempt + 1);
+      }
+    }, delay);
+  }
 
   async function send(payload: Record<string, string>) {
     const needsVerifiedState =
@@ -329,8 +374,17 @@ export function OperationsControl({
         body: JSON.stringify(payload),
       });
       await readJson(response);
-      setMessage("Command accepted by GitHub Actions.");
-      window.setTimeout(() => void loadStatus(), 1200);
+      if (needsVerifiedState) {
+        pendingStateBaseline.current = {
+          runId: latestSnapshot?.run?.id ?? null,
+          updatedAt: latestSnapshot?.run?.updated_at ?? null,
+        };
+        setAwaitingFreshState(true);
+        setMessage("Command accepted. Waiting for JobSift to confirm the new state…");
+        pollForFreshState();
+      } else {
+        setMessage("Command accepted by GitHub Actions.");
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Command failed.");
     } finally {
