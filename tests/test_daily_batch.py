@@ -630,6 +630,41 @@ def test_decisions_counts_and_partial_provenance(repo, tmp_path):
     assert result.request.completeness == "partial"
 
 
+def test_review_batch_can_select_needs_review_without_auto_default(repo, tmp_path):
+    jobs = [posting(10), posting(11)]
+    seed(repo, jobs, ["strong_match", "needs_review"])
+
+    auto_result = prepare(
+        repo,
+        request(repo, tmp_path / "auto.csv", jobs, quota=5),
+    )
+    assert auto_result.selected_count == 1
+    assert auto_result.counts.match_eligible_postings == 1
+    assert auto_result.counts.needs_review_postings == 1
+    assert auto_result.counts.selection_eligible_postings == 1
+
+    review_result = prepare(
+        repo,
+        request(
+            repo,
+            tmp_path / "review.csv",
+            jobs,
+            quota=5,
+            idempotency_key="day-2",
+            include_needs_review=True,
+        ),
+    )
+    assert review_result.selected_count == 2
+    assert review_result.counts.match_eligible_postings == 1
+    assert review_result.counts.needs_review_postings == 1
+    assert review_result.counts.selection_eligible_postings == 2
+    assert review_result.counts.selection_eligible_groups == 2
+
+    delivered = finalize(repo, review_result)
+    assert delivered.status == "delivered"
+    assert len(rows(tmp_path / "review.csv")) == 2
+
+
 @pytest.mark.parametrize("status", ["applied", "not_applied", "unknown"])
 def test_historical_group_suppression_precedes_prior(repo, tmp_path, status):
     jobs = [posting(1), posting(2, canonical_url="https://example.com/jobs/1"), posting(3)]
