@@ -28,6 +28,14 @@ type FunnelSnapshot = {
   delivery: Record<string, number>;
 };
 
+type PendingItem = {
+  ordinal: number;
+  title: string;
+  company: string;
+  link: string | null;
+  platform: string;
+};
+
 type ProfileSnapshot = {
   action: string;
   profile_id: string;
@@ -48,6 +56,8 @@ type ProfileSnapshot = {
   selection_eligible_postings: number | null;
   stale_posting_suppressed_groups: number | null;
   company_cap_suppressed_groups: number | null;
+  pending_items: PendingItem[];
+  pending_items_truncated: boolean;
   client_funnel: FunnelSnapshot | null;
 };
 
@@ -539,6 +549,33 @@ export function OperationsControl({
                     of the requested limit
                   </p>
                 </div>
+                {profile.pending_items.length ? (
+                  <div className="operator-review-list" aria-label="Jobs waiting for approval">
+                    {profile.pending_items.map((item) => (
+                      <article className="operator-review-item" key={item.ordinal}>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p className="metadata">
+                            {item.company} · {item.platform}
+                          </p>
+                        </div>
+                        {item.link ? (
+                          <a href={item.link} target="_blank" rel="noopener noreferrer">
+                            Open job
+                          </a>
+                        ) : (
+                          <span className="metadata">Job link unavailable</span>
+                        )}
+                      </article>
+                    ))}
+                    {profile.pending_items_truncated ? (
+                      <p className="metadata">
+                        Showing the first {profile.pending_items.length} of{" "}
+                        {countLabel(profile.selected_count)} jobs in this batch.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="operator-decision-actions">
                   <button
                     type="button"
