@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from job_scout.funnel_diagnostics import ClientFunnelAccumulator
 from job_scout.domain.models import (
     Job,
     RemoteStatus,
@@ -11,7 +12,6 @@ from job_scout.domain.models import (
     UnknownEligibilityPolicy,
     WorkModeRule,
 )
-from job_scout.funnel_diagnostics import ClientFunnelAccumulator
 from job_scout.matching.matcher import match_job
 
 
