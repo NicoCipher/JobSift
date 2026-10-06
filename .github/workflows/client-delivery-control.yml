@@ -72,6 +72,7 @@ jobs:
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -178,6 +179,4 @@ jobs:
 
       - name: Emit authoritative operator state
         if: ${{ always() }}
-        env:
-          JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
         run: python -m job_scout.operator_snapshot
