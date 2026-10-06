@@ -43,9 +43,7 @@ class ClientFunnelSlice(FunnelModel):
     fresh_0_24h: int = Field(default=0, ge=0)
     title_matched_0_24h: int = Field(default=0, ge=0)
     target_market_survived_0_24h: int = Field(default=0, ge=0)
-    target_market_review_0_24h: int = Field(default=0, ge=0)
     remote_survived_0_24h: int = Field(default=0, ge=0)
-    remote_review_0_24h: int = Field(default=0, ge=0)
     other_rules_survived_0_24h: int = Field(default=0, ge=0)
     confirmed_matches_0_24h: int = Field(default=0, ge=0)
     needs_review_matches_0_24h: int = Field(default=0, ge=0)
@@ -80,10 +78,6 @@ class ClientFunnelSlice(FunnelModel):
             <= self.fresh_0_24h
         ):
             raise ValueError("fresh funnel stages must be cumulative and monotonic")
-        if self.target_market_review_0_24h > self.target_market_survived_0_24h:
-            raise ValueError("target-market review must be a subset of survivors")
-        if self.remote_review_0_24h > self.remote_survived_0_24h:
-            raise ValueError("remote review must be a subset of survivors")
         return self
 
 
@@ -122,9 +116,7 @@ class _MutableSlice:
     fresh_0_24h: int = 0
     title_matched_0_24h: int = 0
     target_market_survived_0_24h: int = 0
-    target_market_review_0_24h: int = 0
     remote_survived_0_24h: int = 0
-    remote_review_0_24h: int = 0
     other_rules_survived_0_24h: int = 0
     confirmed_matches_0_24h: int = 0
     needs_review_matches_0_24h: int = 0
@@ -143,9 +135,7 @@ class _MutableSlice:
             fresh_0_24h=self.fresh_0_24h,
             title_matched_0_24h=self.title_matched_0_24h,
             target_market_survived_0_24h=self.target_market_survived_0_24h,
-            target_market_review_0_24h=self.target_market_review_0_24h,
             remote_survived_0_24h=self.remote_survived_0_24h,
-            remote_review_0_24h=self.remote_review_0_24h,
             other_rules_survived_0_24h=self.other_rules_survived_0_24h,
             confirmed_matches_0_24h=self.confirmed_matches_0_24h,
             needs_review_matches_0_24h=self.needs_review_matches_0_24h,
@@ -183,10 +173,6 @@ def _has_rejection_prefix(match: JobMatch, prefixes: tuple[str, ...]) -> bool:
     )
 
 
-def _has_review_prefix(match: JobMatch, prefix: str) -> bool:
-    return any(reason.casefold().startswith(prefix) for reason in match.matched_reasons)
-
-
 def _observe(slice_: _MutableSlice, job: Job, match: JobMatch, evaluated_at: datetime) -> None:
     slice_.retained_evaluated += 1
     if match.decision in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}:
@@ -220,14 +206,10 @@ def _observe(slice_: _MutableSlice, job: Job, match: JobMatch, evaluated_at: dat
     if _has_rejection_prefix(match, ("target market ",)):
         return
     slice_.target_market_survived_0_24h += 1
-    if _has_review_prefix(match, "needs review: target market "):
-        slice_.target_market_review_0_24h += 1
 
     if _has_rejection_prefix(match, ("work mode ", "remote status ")):
         return
     slice_.remote_survived_0_24h += 1
-    if _has_review_prefix(match, "needs review: remote status "):
-        slice_.remote_review_0_24h += 1
 
     if match.decision is MatchDecision.REJECT:
         return
