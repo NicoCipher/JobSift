@@ -8,18 +8,28 @@ storage factory when NEON_DATABASE_URL is configured.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
-from job_scout.domain.models import Job
+from job_scout.dedupe.resolver import delivery_keys
+from job_scout.domain.models import Job, JobLifecycle
 from job_scout.storage.sqlite import SQLiteRepository
 
 POSTGRES_SCHEMA_VERSION = "postgres-v1"
 _WRITE_LOCK_KEY = 1246700874
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_POSTGRES_BATCH_ROWS = 500
+
+
+def _chunks(values, size: int = _POSTGRES_BATCH_ROWS):
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
 
 _REPLACE_CONFLICTS = {
     "job_retention_evidence": (
@@ -319,6 +329,374 @@ class PostgresRepository(SQLiteRepository):
                 "FROM exports e JOIN posting_delivery_groups g ON g.job_id=e.job_id "
                 "ORDER BY e.exported_at,e.job_id"
             )
+
+    def _existing_jobs_in_connection(
+        self,
+        connection: PostgresConnection,
+        jobs: list[Job],
+    ) -> dict[tuple[str, str, str], PostgresRow]:
+        """Fetch existing provider identities in bounded set-oriented reads."""
+        identities = list(
+            dict.fromkeys(
+                (job.source, job.source_board_id, job.source_job_id)
+                for job in jobs
+            )
+        )
+        existing: dict[tuple[str, str, str], PostgresRow] = {}
+        for chunk in _chunks(identities):
+            placeholders = ",".join("(?,?,?)" for _ in chunk)
+            rows = connection.execute(
+                "SELECT id,source,source_board_id,source_job_id,content_fingerprint "
+                "FROM jobs WHERE (source,source_board_id,source_job_id) IN "
+                f"({placeholders})",
+                [value for identity in chunk for value in identity],
+            ).fetchall()
+            for row in rows:
+                existing[
+                    (row["source"], row["source_board_id"], row["source_job_id"])
+                ] = row
+        return existing
+
+    def _merge_delivery_groups_bulk_in_connection(
+        self,
+        connection: PostgresConnection,
+        merge_map: dict[str, str],
+    ) -> None:
+        """Merge persisted delivery groups in bounded set-oriented statements.
+
+        The legacy resolver processes losing groups in sorted order. When two
+        losing groups carry delivery history for the same client/destination,
+        the lexicographically first losing group wins unless the canonical
+        target already has history. Process sorted chunks in order and use
+        DISTINCT ON inside each chunk to preserve that precedence.
+        """
+        ordered = sorted(merge_map.items())
+        if not getattr(connection, "is_postgres", False):
+            # The cross-backend semantic regressions intentionally run the
+            # Postgres grouping algorithm against SQLite. Keep that harness
+            # portable while production Postgres uses the bounded set path.
+            for old_group, new_group in ordered:
+                connection.execute(
+                    "INSERT OR IGNORE INTO group_deliveries "
+                    "SELECT ?,client_id,destination,job_id,exported_at "
+                    "FROM group_deliveries WHERE group_id=?",
+                    (new_group, old_group),
+                )
+                connection.execute(
+                    "DELETE FROM group_deliveries WHERE group_id=?",
+                    (old_group,),
+                )
+                connection.execute(
+                    "UPDATE posting_delivery_groups SET group_id=? WHERE group_id=?",
+                    (new_group, old_group),
+                )
+                connection.execute(
+                    "DELETE FROM delivery_groups WHERE id=?",
+                    (old_group,),
+                )
+            return
+
+        for chunk in _chunks(ordered):
+            values_sql = ",".join("(?,?)" for _ in chunk)
+            mapping_parameters = [
+                value
+                for old_group, new_group in chunk
+                for value in (old_group, new_group)
+            ]
+            connection.execute(
+                "WITH mapping(old_group,new_group) AS (VALUES "
+                f"{values_sql}) "
+                "INSERT INTO group_deliveries "
+                "(group_id,client_id,destination,job_id,exported_at) "
+                "SELECT new_group,client_id,destination,job_id,exported_at "
+                "FROM ("
+                "SELECT DISTINCT ON (m.new_group,d.client_id,d.destination) "
+                "m.new_group,d.client_id,d.destination,d.job_id,d.exported_at,"
+                "m.old_group "
+                "FROM mapping m JOIN group_deliveries d "
+                "ON d.group_id=m.old_group "
+                "ORDER BY m.new_group,d.client_id,d.destination,m.old_group"
+                ") winners "
+                "ON CONFLICT DO NOTHING",
+                mapping_parameters,
+            )
+            old_groups = [old_group for old_group, _new_group in chunk]
+            old_placeholders = ",".join("?" for _ in old_groups)
+            connection.execute(
+                f"DELETE FROM group_deliveries WHERE group_id IN ({old_placeholders})",
+                old_groups,
+            )
+            connection.execute(
+                "UPDATE posting_delivery_groups AS p SET group_id=m.new_group "
+                "FROM (VALUES "
+                f"{values_sql}) AS m(old_group,new_group) "
+                "WHERE p.group_id=m.old_group",
+                mapping_parameters,
+            )
+            connection.execute(
+                f"DELETE FROM delivery_groups WHERE id IN ({old_placeholders})",
+                old_groups,
+            )
+
+    def _assign_groups_bulk_in_connection(
+        self,
+        connection: PostgresConnection,
+        jobs: list[Job],
+    ) -> None:
+        """Assign delivery groups with legacy ordering and bounded DB round trips.
+
+        The row-at-a-time resolver intentionally makes delivery-key visibility
+        change as each posting is processed. Preserve that exact behavior in
+        memory: a changed posting's old keys disappear before the next posting
+        is resolved, while group merges remain sticky forever.
+        """
+        if not jobs:
+            return
+
+        ordered_jobs = list(jobs)
+        job_ids = sorted({job.id for job in ordered_jobs})
+        incoming_keys = [
+            (job, sorted(delivery_keys(job)))
+            for job in ordered_jobs
+        ]
+
+        existing_job_groups: dict[str, str] = {}
+        old_keys_by_job: dict[str, set[tuple[str, str]]] = {
+            job_id: set() for job_id in job_ids
+        }
+        for chunk in _chunks(job_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            group_rows = connection.execute(
+                "SELECT job_id,group_id FROM posting_delivery_groups "
+                f"WHERE job_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            existing_job_groups.update(
+                {row["job_id"]: row["group_id"] for row in group_rows}
+            )
+            key_rows = connection.execute(
+                "SELECT job_id,kind,value FROM delivery_keys "
+                f"WHERE job_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in key_rows:
+                old_keys_by_job[row["job_id"]].add(
+                    (row["kind"], row["value"])
+                )
+
+        relevant_keys = sorted(
+            {
+                key
+                for _job, keys in incoming_keys
+                for key in keys
+            }
+        )
+        holders_by_key: dict[
+            tuple[str, str], dict[str, str]
+        ] = {key: {} for key in relevant_keys}
+        for chunk in _chunks(relevant_keys):
+            placeholders = ",".join("(?,?)" for _ in chunk)
+            rows = connection.execute(
+                "SELECT k.kind,k.value,k.job_id,g.group_id "
+                "FROM delivery_keys k JOIN posting_delivery_groups g "
+                "ON g.job_id=k.job_id "
+                f"WHERE (k.kind,k.value) IN ({placeholders})",
+                [value for key in chunk for value in key],
+            ).fetchall()
+            for row in rows:
+                holders_by_key.setdefault(
+                    (row["kind"], row["value"]), {}
+                )[row["job_id"]] = row["group_id"]
+
+        parent: dict[str, str] = {}
+
+        def find(value: str) -> str:
+            parent.setdefault(value, value)
+            while parent[value] != value:
+                parent[value] = parent[parent[value]]
+                value = parent[value]
+            return value
+
+        def union(left: str, right: str) -> str:
+            left_root, right_root = find(left), find(right)
+            if left_root == right_root:
+                return left_root
+            winner, loser = sorted((left_root, right_root))
+            parent[loser] = winner
+            return winner
+
+        database_groups: set[str] = set(existing_job_groups.values())
+        for holders in holders_by_key.values():
+            database_groups.update(holders.values())
+        for group_id in database_groups:
+            find(group_id)
+
+        assigned_group_by_job: dict[str, str] = {}
+        current_keys_by_job = {
+            job_id: set(keys)
+            for job_id, keys in old_keys_by_job.items()
+        }
+        final_keys_by_job: dict[str, list[tuple[str, str]]] = {}
+        for job, new_keys in incoming_keys:
+            own_group = str(
+                uuid5(
+                    NAMESPACE_URL,
+                    json.dumps([job.source, job.source_board_id, job.source_job_id]),
+                )
+            )
+            visible_groups = {find(own_group)}
+            existing_group = existing_job_groups.get(job.id)
+            if existing_group is not None:
+                visible_groups.add(find(existing_group))
+            previous_assignment = assigned_group_by_job.get(job.id)
+            if previous_assignment is not None:
+                visible_groups.add(find(previous_assignment))
+            for key in new_keys:
+                visible_groups.update(
+                    find(group_id)
+                    for group_id in holders_by_key.get(key, {}).values()
+                )
+
+            group_id = min(visible_groups)
+            for other in sorted(visible_groups):
+                group_id = union(group_id, other)
+            assigned_group_by_job[job.id] = find(group_id)
+            existing_job_groups[job.id] = assigned_group_by_job[job.id]
+
+            # Mirror sequential _assign_group exactly, including repeated
+            # provider identities in the same batch: each occurrence sees the
+            # key state left by the previous occurrence of that same posting.
+            for key in current_keys_by_job[job.id]:
+                holders = holders_by_key.get(key)
+                if holders is not None:
+                    holders.pop(job.id, None)
+            for key in new_keys:
+                holders_by_key.setdefault(key, {})[job.id] = assigned_group_by_job[
+                    job.id
+                ]
+            current_keys_by_job[job.id] = set(new_keys)
+            final_keys_by_job[job.id] = new_keys
+
+        final_job_groups = {
+            job_id: find(group_id)
+            for job_id, group_id in assigned_group_by_job.items()
+        }
+        canonical_groups = sorted(set(final_job_groups.values()))
+        if canonical_groups:
+            connection.executemany(
+                "INSERT INTO delivery_groups (id) VALUES (?) ON CONFLICT DO NOTHING",
+                [(group_id,) for group_id in canonical_groups],
+            )
+
+        merge_map = {
+            group_id: find(group_id)
+            for group_id in database_groups
+            if find(group_id) != group_id
+        }
+        self._merge_delivery_groups_bulk_in_connection(
+            connection,
+            merge_map,
+        )
+
+        connection.executemany(
+            "INSERT INTO posting_delivery_groups (job_id,group_id) VALUES (?,?) "
+            "ON CONFLICT(job_id) DO UPDATE SET group_id=excluded.group_id",
+            [(job_id, final_job_groups[job_id]) for job_id in job_ids],
+        )
+        for chunk in _chunks(job_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            connection.execute(
+                f"DELETE FROM delivery_keys WHERE job_id IN ({placeholders})",
+                chunk,
+            )
+        key_rows = [
+            (job_id, kind, value)
+            for job_id in job_ids
+            for kind, value in final_keys_by_job.get(job_id, ())
+        ]
+        if key_rows:
+            connection.executemany(
+                "INSERT INTO delivery_keys (job_id,kind,value) VALUES (?,?,?) "
+                "ON CONFLICT DO NOTHING",
+                key_rows,
+            )
+
+    def _upsert_jobs_in_connection(
+        self,
+        connection: PostgresConnection,
+        jobs: Iterable[Job],
+        now: str,
+    ) -> dict[str, JobLifecycle]:
+        """Set-oriented Postgres upsert sized for 20k-posting fan-in payloads."""
+        values = list(jobs)
+        if not values:
+            return {}
+
+        known = self._existing_jobs_in_connection(connection, values)
+        states: dict[str, JobLifecycle] = {}
+        rows = []
+        for job in values:
+            identity = (job.source, job.source_board_id, job.source_job_id)
+            previous = known.get(identity)
+            if previous is None:
+                state = JobLifecycle.NEW
+                known[identity] = {
+                    "id": job.id,
+                    "content_fingerprint": job.content_fingerprint,
+                }
+            else:
+                job.id = previous["id"]
+                state = (
+                    JobLifecycle.CHANGED
+                    if previous["content_fingerprint"] != job.content_fingerprint
+                    else JobLifecycle.SEEN
+                )
+                known[identity] = {
+                    "id": job.id,
+                    "content_fingerprint": job.content_fingerprint,
+                }
+            states[job.id] = state
+            rows.append(
+                (
+                    job.id,
+                    job.source,
+                    job.source_job_id,
+                    job.source_board_id,
+                    str(job.canonical_url),
+                    job.content_fingerprint,
+                    job.discovered_at.isoformat(),
+                    job.last_seen_at.isoformat(),
+                    now,
+                    state.value,
+                    job.model_dump_json(),
+                )
+            )
+
+        connection.executemany(
+            "INSERT INTO jobs "
+            "(id,source,source_job_id,source_board_id,canonical_url,"
+            "content_fingerprint,first_seen_at,last_seen_at,last_verified_at,"
+            "lifecycle,payload_json) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+            "canonical_url=excluded.canonical_url,"
+            "content_fingerprint=excluded.content_fingerprint,"
+            "last_seen_at=excluded.last_seen_at,"
+            "last_verified_at=excluded.last_verified_at,"
+            "lifecycle=excluded.lifecycle,"
+            "payload_json=excluded.payload_json",
+            rows,
+        )
+
+        job_ids = sorted({job.id for job in values})
+        for chunk in _chunks(job_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            connection.execute(
+                f"DELETE FROM job_retention_evidence WHERE job_id IN ({placeholders})",
+                chunk,
+            )
+
+        self._assign_groups_bulk_in_connection(connection, values)
+        return states
 
     @contextmanager
     def connect(self) -> Iterator[PostgresConnection]:

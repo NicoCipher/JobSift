@@ -1,5 +1,5 @@
 "use client";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 export type Preferences = {
   theme: "system" | "light" | "dark";
   density: "default" | "compact" | "comfortable";
@@ -12,25 +12,28 @@ const defaults: Preferences = {
 };
 let cached: Preferences = defaults;
 let loaded = false;
+function storedPreferences(): Preferences {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem("jobsift-presentation") ?? "{}",
+    );
+    return {
+      theme: ["system", "light", "dark"].includes(saved.theme)
+        ? saved.theme
+        : "system",
+      density: ["default", "compact", "comfortable"].includes(saved.density)
+        ? saved.density
+        : "default",
+      shortcuts: saved.shortcuts !== false,
+    };
+  } catch {
+    return defaults;
+  }
+}
 function read() {
   if (!loaded && typeof window !== "undefined") {
     loaded = true;
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem("jobsift-presentation") ?? "{}",
-      );
-      cached = {
-        theme: ["system", "light", "dark"].includes(saved.theme)
-          ? saved.theme
-          : "system",
-        density: ["default", "compact", "comfortable"].includes(saved.density)
-          ? saved.density
-          : "default",
-        shortcuts: saved.shortcuts !== false,
-      };
-    } catch {
-      /* Local preferences are optional. */
-    }
+    cached = storedPreferences();
   }
   return cached;
 }
@@ -54,6 +57,20 @@ export function savePreferences(patch: Partial<Preferences>) {
 }
 export function PresentationSettings() {
   const preferences = usePreferences();
+  useEffect(() => {
+    // Hydration starts from the server snapshot. Re-read browser storage once
+    // mounted and apply it directly; savePreferences keeps the DOM synchronized
+    // after that. Dispatch on the next task so useSyncExternalStore has attached
+    // its subscriber before we ask React to replace the server snapshot.
+    cached = storedPreferences();
+    loaded = true;
+    document.documentElement.dataset.theme = cached.theme;
+    document.documentElement.dataset.density = cached.density;
+    const notify = window.setTimeout(() => {
+      window.dispatchEvent(new Event("jobsift-preferences"));
+    }, 0);
+    return () => window.clearTimeout(notify);
+  }, []);
   return (
     <>
       <label className="settings-field">

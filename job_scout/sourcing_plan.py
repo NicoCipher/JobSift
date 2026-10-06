@@ -530,6 +530,8 @@ def evaluate_inventory_run(
     matched = 0
     rejected = 0
     evaluated = 0
+    match_rows: list[tuple[object, ...]] = []
+    scoped_rows: list[tuple[object, ...]] = []
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
@@ -558,16 +560,9 @@ def evaluate_inventory_run(
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )
-            connection.execute(
-                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                repository._match_row(match),
-            )
+            match_rows.append(repository._match_row(match))
             if match_scope_id is not None:
-                connection.execute(
-                    "INSERT OR REPLACE INTO scoped_job_matches "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    repository._scoped_match_row(match, match_scope_id),
-                )
+                scoped_rows.append(repository._scoped_match_row(match, match_scope_id))
             evaluated += 1
             if match.decision in {
                 MatchDecision.STRONG_MATCH,
@@ -576,6 +571,17 @@ def evaluate_inventory_run(
                 matched += 1
             else:
                 rejected += 1
+        if match_rows:
+            connection.executemany(
+                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                match_rows,
+            )
+        if scoped_rows:
+            connection.executemany(
+                "INSERT OR REPLACE INTO scoped_job_matches "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                scoped_rows,
+            )
 
     return InventoryEvaluationReport(
         run_id=run_id,
@@ -614,6 +620,8 @@ def evaluate_recent_inventory(
     rejected = 0
     evaluated = 0
     candidate_job_ids: list[str] = []
+    match_rows: list[tuple[object, ...]] = []
+    scoped_rows: list[tuple[object, ...]] = []
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         cursor = connection.execute(
@@ -640,16 +648,9 @@ def evaluate_recent_inventory(
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )
-            connection.execute(
-                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                repository._match_row(match),
-            )
+            match_rows.append(repository._match_row(match))
             if match_scope_id is not None:
-                connection.execute(
-                    "INSERT OR REPLACE INTO scoped_job_matches "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    repository._scoped_match_row(match, match_scope_id),
-                )
+                scoped_rows.append(repository._scoped_match_row(match, match_scope_id))
             evaluated += 1
             if match.decision in {
                 MatchDecision.STRONG_MATCH,
@@ -659,6 +660,17 @@ def evaluate_recent_inventory(
                 candidate_job_ids.append(job.id)
             else:
                 rejected += 1
+        if match_rows:
+            connection.executemany(
+                "INSERT OR REPLACE INTO job_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                match_rows,
+            )
+        if scoped_rows:
+            connection.executemany(
+                "INSERT OR REPLACE INTO scoped_job_matches "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                scoped_rows,
+            )
 
     scope_id = f"shared-inventory:{cutoff.isoformat()}:{evaluation_time.isoformat()}"
     return (

@@ -962,3 +962,48 @@ def test_missing_match_and_malformed_destination_fail_closed(repo, tmp_path):
     result = prepare(repo, request(repo, tmp_path / "out.csv", [job]))
     assert finalize(repo, result).status == "failed"
     assert (tmp_path / "out.csv").read_text() == "wrong,header\n"
+
+
+
+class _EmptyBatchCursor:
+    def fetchall(self):
+        return []
+
+
+class _RecordingBatchConnection:
+    def __init__(self):
+        self.calls = []
+
+    def execute(self, statement, parameters=()):
+        self.calls.append((statement, tuple(parameters)))
+        return _EmptyBatchCursor()
+
+
+def test_delivery_lookup_helpers_bound_20k_candidate_scope():
+    jobs = tuple(f"job-{index}" for index in range(20_000))
+    groups = tuple(f"group-{index}" for index in range(20_000))
+
+    group_connection = _RecordingBatchConnection()
+    DailyBatchStore._groups_for_jobs(group_connection, jobs)
+    assert len(group_connection.calls) == 40
+    assert max(len(parameters) for _, parameters in group_connection.calls) <= 500
+
+    delivery_connection = _RecordingBatchConnection()
+    DailyBatchStore._delivered_groups(
+        delivery_connection,
+        groups,
+        CLIENT,
+        "client-sheet:jobs",
+    )
+    assert len(delivery_connection.calls) == 40
+    assert max(len(parameters) for _, parameters in delivery_connection.calls) <= 502
+
+    history_connection = _RecordingBatchConnection()
+    DailyBatchStore._historical_groups(
+        history_connection,
+        groups,
+        CLIENT,
+        "client-sheet:jobs",
+    )
+    assert len(history_connection.calls) == 40
+    assert max(len(parameters) for _, parameters in history_connection.calls) <= 503

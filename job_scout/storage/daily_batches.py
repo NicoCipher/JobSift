@@ -65,6 +65,11 @@ def digest(value) -> str:
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
+def _chunks(values, size: int = 500):
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
 @dataclass(frozen=True)
 class BatchCandidate:
     job: Job
@@ -116,6 +121,74 @@ class DailyBatchStore:
                     (str(uuid4()), row["batch_id"]),
                 )
 
+    @staticmethod
+    def _groups_for_jobs(c, job_ids: tuple[str, ...] | list[str]) -> dict[str, str]:
+        groups: dict[str, str] = {}
+        values = sorted(set(job_ids))
+        for chunk in _chunks(values):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = c.execute(
+                "SELECT job_id,group_id FROM posting_delivery_groups "
+                f"WHERE job_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            groups.update({row["job_id"]: row["group_id"] for row in rows})
+        return groups
+
+    @staticmethod
+    def _delivered_groups(c, group_ids, client_id: str, destination: str) -> set[str]:
+        delivered: set[str] = set()
+        values = sorted(set(group_ids))
+        for chunk in _chunks(values):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = c.execute(
+                "SELECT DISTINCT group_id FROM group_deliveries "
+                f"WHERE group_id IN ({placeholders}) "
+                "AND client_id=? AND destination=?",
+                [*chunk, client_id, destination],
+            ).fetchall()
+            delivered.update(row["group_id"] for row in rows)
+        return delivered
+
+    @staticmethod
+    def _historical_groups(
+        c,
+        group_ids,
+        client_id: str,
+        destination: str | None,
+    ) -> set[str]:
+        """Resolve group-level prior surfacing with one bounded read per chunk."""
+        historical: set[str] = set()
+        values = sorted(set(group_ids))
+        for chunk in _chunks(values):
+            placeholders = ",".join("?" for _ in chunk)
+            destination_clause = ""
+            parameters = [*chunk, client_id]
+            if destination is not None:
+                destination_clause = (
+                    " OR EXISTS ("
+                    "SELECT 1 FROM destination_observed_links d "
+                    "WHERE d.client_id=? AND d.destination=? AND ("
+                    "(d.source=j.source AND d.source_board_id=j.source_board_id "
+                    "AND d.source_job_id=j.source_job_id) "
+                    "OR d.normalized_url=j.canonical_url))"
+                )
+                parameters.extend([client_id, destination])
+            rows = c.execute(
+                "SELECT DISTINCT g.group_id "
+                "FROM posting_delivery_groups g JOIN jobs j ON j.id=g.job_id "
+                f"WHERE g.group_id IN ({placeholders}) AND ("
+                "EXISTS (SELECT 1 FROM historical_job_links h "
+                "WHERE h.client_id=? AND ("
+                "(h.source=j.source AND h.source_board_id=j.source_board_id "
+                "AND h.source_job_id=j.source_job_id) "
+                "OR h.normalized_url=j.canonical_url))"
+                f"{destination_clause})",
+                parameters,
+            ).fetchall()
+            historical.update(row["group_id"] for row in rows)
+        return historical
+
     def _candidates(
         self,
         c,
@@ -124,27 +197,50 @@ class DailyBatchStore:
         destination=None,
         match_scope_id: str | None = None,
     ):
-        candidates = []
-        group_states = {}
-        for job_id in sorted(job_ids):
+        """Load candidate evidence in bounded batches instead of N+1 reads."""
+        ordered_ids = sorted(job_ids)
+        rows_by_job = {}
+        for chunk in _chunks(ordered_ids):
+            placeholders = ",".join("?" for _ in chunk)
             if match_scope_id is None:
-                row = c.execute(
-                    "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
-                    "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                rows = c.execute(
+                    "SELECT j.id AS job_id,j.payload_json,g.group_id,"
+                    "m.decision,m.score,m.matched_reasons_json,"
+                    "m.rejection_reasons_json,m.evaluated_at,m.matcher_version "
+                    "FROM jobs j JOIN posting_delivery_groups g ON g.job_id=j.id "
                     "JOIN job_matches m ON m.job_id=j.id "
-                    "WHERE j.id=? AND m.client_id=?",
-                    (job_id, client_id),
-                ).fetchone()
+                    f"WHERE j.id IN ({placeholders}) AND m.client_id=?",
+                    [*chunk, client_id],
+                ).fetchall()
             else:
-                row = c.execute(
-                    "SELECT j.payload_json,g.group_id,m.* FROM jobs j "
-                    "JOIN posting_delivery_groups g ON g.job_id=j.id "
+                rows = c.execute(
+                    "SELECT j.id AS job_id,j.payload_json,g.group_id,"
+                    "m.decision,m.score,m.matched_reasons_json,"
+                    "m.rejection_reasons_json,m.evaluated_at,m.matcher_version "
+                    "FROM jobs j JOIN posting_delivery_groups g ON g.job_id=j.id "
                     "JOIN scoped_job_matches m ON m.job_id=j.id "
-                    "WHERE j.id=? AND m.client_id=? AND m.match_scope_id=?",
-                    (job_id, client_id, match_scope_id),
-                ).fetchone()
-            if row is None:
-                raise BatchConflict(f"missing authoritative posting/match: {job_id}")
+                    f"WHERE j.id IN ({placeholders}) "
+                    "AND m.client_id=? AND m.match_scope_id=?",
+                    [*chunk, client_id, match_scope_id],
+                ).fetchall()
+            rows_by_job.update({row["job_id"]: row for row in rows})
+
+        missing = [job_id for job_id in ordered_ids if job_id not in rows_by_job]
+        if missing:
+            raise BatchConflict(
+                f"missing authoritative posting/match: {missing[0]}"
+            )
+
+        group_ids = [rows_by_job[job_id]["group_id"] for job_id in ordered_ids]
+        historical_groups = self._historical_groups(
+            c,
+            group_ids,
+            client_id,
+            destination,
+        )
+        candidates = []
+        for job_id in ordered_ids:
+            row = rows_by_job[job_id]
             job = Job.model_validate_json(row["payload_json"])
             match = JobMatch(
                 job_id=job_id,
@@ -157,22 +253,6 @@ class DailyBatchStore:
                 matcher_version=row["matcher_version"],
             )
             group = row["group_id"]
-            if group not in group_states:
-                # Historical surfacing of any persisted member suppresses the practical group.
-                members = c.execute(
-                    "SELECT j.payload_json FROM jobs j JOIN posting_delivery_groups g "
-                    "ON g.job_id=j.id WHERE g.group_id=? ORDER BY j.id",
-                    (group,),
-                ).fetchall()
-                group_states[group] = any(
-                    self.repository._is_historically_surfaced(
-                        c,
-                        Job.model_validate_json(member[0]),
-                        client_id,
-                        destination,
-                    )
-                    for member in members
-                )
             candidates.append(
                 BatchCandidate(
                     job=job,
@@ -180,7 +260,7 @@ class DailyBatchStore:
                     group_id=group,
                     evidence_sha256=posting_evidence(job, match),
                     employer_key=employer_key(job),
-                    historical=group_states[group],
+                    historical=group in historical_groups,
                     delivered=False,
                 )
             )
@@ -449,6 +529,12 @@ class DailyBatchStore:
                     employer_key(Job.model_validate_json(row[0])) for row in delivered_jobs
                 }
 
+            delivered_groups = self._delivered_groups(
+                c,
+                (v.group_id for v in candidates),
+                request.client_id,
+                request.destination,
+            )
             scoped = [
                 BatchCandidate(
                     job=v.job,
@@ -457,12 +543,7 @@ class DailyBatchStore:
                     evidence_sha256=v.evidence_sha256,
                     employer_key=v.employer_key,
                     historical=v.historical,
-                    delivered=c.execute(
-                        "SELECT 1 FROM group_deliveries WHERE group_id=? AND client_id=? "
-                        "AND destination=?",
-                        (v.group_id, request.client_id, request.destination),
-                    ).fetchone()
-                    is not None,
+                    delivered=v.group_id in delivered_groups,
                     employer_recently_delivered=v.employer_key in recent_employers,
                 )
                 for v in candidates
@@ -542,6 +623,12 @@ class DailyBatchStore:
         expected = {i.representative_job_id: i.evidence_sha256 for i in result.items}
         if len({v.group_id for v in candidates}) != len(candidates):
             raise BatchConflict("prepared groups merged; selection cannot be silently changed")
+        delivered_groups = self._delivered_groups(
+            c,
+            (v.group_id for v in candidates),
+            result.request.client_id,
+            result.request.destination,
+        )
         for v in candidates:
             freshness = posting_freshness_disposition(
                 posted_at=v.job.posted_at,
@@ -558,11 +645,7 @@ class DailyBatchStore:
                 or v.historical
                 or v.match.decision
                 not in {MatchDecision.STRONG_MATCH, MatchDecision.POSSIBLE_MATCH}
-                or c.execute(
-                    "SELECT 1 FROM group_deliveries WHERE group_id=? "
-                    "AND client_id=? AND destination=?",
-                    (v.group_id, result.request.client_id, result.request.destination),
-                ).fetchone()
+                or v.group_id in delivered_groups
             ):
                 raise BatchConflict("prepared evidence or delivery state changed")
 
@@ -665,30 +748,42 @@ class DailyBatchStore:
                 ]
                 publish(rows, before, after)
                 now = datetime.now(UTC).isoformat()
-                for item in result.items:
-                    group = c.execute(
-                        "SELECT group_id FROM posting_delivery_groups WHERE job_id=?",
-                        (item.representative_job_id,),
-                    ).fetchone()[0]
-                    c.execute(
-                        "INSERT OR IGNORE INTO group_deliveries VALUES (?,?,?,?,?)",
+                selected_ids = [
+                    item.representative_job_id for item in result.items
+                ]
+                current_groups = self._groups_for_jobs(c, selected_ids)
+                missing_groups = [
+                    job_id for job_id in selected_ids if job_id not in current_groups
+                ]
+                if missing_groups:
+                    raise BatchConflict(
+                        f"posting has no delivery group: {missing_groups[0]}"
+                    )
+                c.executemany(
+                    "INSERT OR IGNORE INTO group_deliveries VALUES (?,?,?,?,?)",
+                    [
                         (
-                            group,
+                            current_groups[item.representative_job_id],
                             result.request.client_id,
                             result.request.destination,
                             item.representative_job_id,
                             now,
-                        ),
-                    )
-                    c.execute(
-                        "INSERT OR IGNORE INTO exports VALUES (?,?,?,?)",
+                        )
+                        for item in result.items
+                    ],
+                )
+                c.executemany(
+                    "INSERT OR IGNORE INTO exports VALUES (?,?,?,?)",
+                    [
                         (
                             item.representative_job_id,
                             result.request.client_id,
                             result.request.destination,
                             now,
-                        ),
-                    )
+                        )
+                        for item in result.items
+                    ],
+                )
                 c.execute(
                     "UPDATE daily_batches SET status='delivered',delivered_at=?,error=NULL "
                     "WHERE batch_id=?",

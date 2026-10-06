@@ -127,7 +127,8 @@ def run_active_profiles(
                     inventory_retention_hours=retention_hours,
                     profile_managed=True,
                     source_before_delivery=False,
-                )
+                ),
+                repository=repository,
             )
             result["sheet_reconciliation"] = reconciliation
             results.append(_public_result(profile, result))

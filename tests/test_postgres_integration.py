@@ -8,6 +8,7 @@ import pytest
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import DailyBatchCounts, DailyBatchRequest
+from job_scout.domain.models import Job, JobLifecycle
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.migrate_to_postgres import migrate
@@ -70,6 +71,141 @@ def test_postgres_repository_preserves_scheduler_and_run_idempotency(repository)
     ) is False
     runs.finish(run_id="postgres-ci-run", status="success", completed_at=now)
     assert runs.get("postgres-ci-run").status == "success"
+
+
+
+def test_postgres_repository_persists_20k_jobs_in_one_batch(repository):
+    now = datetime(2026, 10, 6, 2, 0, tzinfo=UTC)
+    jobs = [
+        Job(
+            id=f"capacity-20k-{index}",
+            source="greenhouse",
+            source_job_id=f"capacity-20k-{index}",
+            source_board_id="capacity-20k-board",
+            title="Software Engineer",
+            company="Capacity Test",
+            description_text="Build reliable production software.",
+            job_url=f"https://capacity.example.com/jobs/{index}",
+            canonical_url=f"https://capacity.example.com/jobs/{index}",
+            discovered_at=now,
+            last_seen_at=now,
+            content_fingerprint=f"capacity-fingerprint-{index}",
+        )
+        for index in range(20_000)
+    ]
+
+    states = repository.upsert_jobs(jobs)
+
+    assert len(states) == 20_000
+    assert set(states.values()) == {JobLifecycle.NEW}
+    with repository.connect() as connection:
+        jobs_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM jobs WHERE source_board_id=?",
+            ("capacity-20k-board",),
+        ).fetchone()["count"]
+        groups_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM posting_delivery_groups g "
+            "JOIN jobs j ON j.id=g.job_id WHERE j.source_board_id=?",
+            ("capacity-20k-board",),
+        ).fetchone()["count"]
+        keys_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM delivery_keys k "
+            "JOIN jobs j ON j.id=k.job_id WHERE j.source_board_id=?",
+            ("capacity-20k-board",),
+        ).fetchone()["count"]
+
+    assert int(jobs_count) == 20_000
+    assert int(groups_count) == 20_000
+    assert int(keys_count) == 20_000
+
+def test_postgres_bulk_group_merge_preserves_sorted_delivery_precedence(repository):
+    now = datetime(2026, 10, 6, 3, 0, tzinfo=UTC)
+    jobs = [
+        Job(
+            id=f"capacity-merge-{suffix}",
+            source="greenhouse",
+            source_job_id=f"capacity-merge-{suffix}",
+            source_board_id="capacity-merge-board",
+            title="Software Engineer",
+            company="Capacity Merge",
+            description_text="Build reliable production software.",
+            job_url=f"https://capacity.example.com/merge/{suffix}",
+            canonical_url=f"https://capacity.example.com/merge/{suffix}",
+            discovered_at=now,
+            last_seen_at=now,
+            content_fingerprint=f"capacity-merge-fingerprint-{suffix}",
+        )
+        for suffix in ("a", "b")
+    ]
+    repository.upsert_jobs(jobs)
+
+    with repository.connect() as connection:
+        rows = connection.execute(
+            "SELECT job_id,group_id FROM posting_delivery_groups "
+            "WHERE job_id IN (?,?) ORDER BY job_id",
+            tuple(job.id for job in jobs),
+        ).fetchall()
+        groups = {row["job_id"]: row["group_id"] for row in rows}
+        assert len(set(groups.values())) == 2
+
+        root_group = "capacity-merge-root"
+        connection.execute(
+            "INSERT OR IGNORE INTO delivery_groups (id) VALUES (?)",
+            (root_group,),
+        )
+        connection.executemany(
+            "INSERT OR IGNORE INTO group_deliveries "
+            "(group_id,client_id,destination,job_id,exported_at) "
+            "VALUES (?,?,?,?,?)",
+            [
+                (
+                    groups[job.id],
+                    "capacity-merge-client",
+                    "capacity-merge-destination",
+                    job.id,
+                    now.isoformat(),
+                )
+                for job in jobs
+            ],
+        )
+        expected_old_group = min(groups.values())
+        expected_job_id = next(
+            job_id
+            for job_id, group_id in groups.items()
+            if group_id == expected_old_group
+        )
+
+        repository._merge_delivery_groups_bulk_in_connection(
+            connection,
+            {
+                group_id: root_group
+                for group_id in groups.values()
+            },
+        )
+
+        delivery = connection.execute(
+            "SELECT job_id FROM group_deliveries "
+            "WHERE group_id=? AND client_id=? AND destination=?",
+            (
+                root_group,
+                "capacity-merge-client",
+                "capacity-merge-destination",
+            ),
+        ).fetchone()
+        assert delivery is not None
+        assert delivery["job_id"] == expected_job_id
+
+        posting_groups = connection.execute(
+            "SELECT DISTINCT group_id FROM posting_delivery_groups "
+            "WHERE job_id IN (?,?)",
+            tuple(job.id for job in jobs),
+        ).fetchall()
+        assert [row["group_id"] for row in posting_groups] == [root_group]
+        old_groups = connection.execute(
+            "SELECT COUNT(*) AS count FROM delivery_groups WHERE id IN (?,?)",
+            tuple(groups.values()),
+        ).fetchone()
+        assert int(old_groups["count"]) == 0
 
 
 def test_postgres_adapter_supports_parameterized_table_detection(repository):

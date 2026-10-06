@@ -37,7 +37,8 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
         lambda _plan_dir, _plan_id: tmp_path / "plan.json",
     )
 
-    def run_once_after_reconciliation(_config):
+    def run_once_after_reconciliation(_config, *, repository=None):
+        assert repository is not None
         assert events == ["reconcile"]
         events.append("run")
         return {"action": "quota_reached"}
