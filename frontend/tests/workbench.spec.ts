@@ -639,6 +639,7 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
 });
 
 test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {
+  let stateVersion = 0;
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -648,6 +649,22 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
           control_ready: true,
           inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
           delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            complete: true,
+            state_error: null,
+            run: {
+              id: 100 + stateVersion,
+              run_number: 100 + stateVersion,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T20:00:00Z",
+              updated_at: `2026-10-06T20:00:0${stateVersion}Z`,
+              url: "https://example.invalid/state",
+              kind: "delivery",
+            },
+            truncated: false,
+            profiles: [],
+          },
         },
       }),
     });
@@ -656,6 +673,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   const dispatched: Record<string, unknown>[] = [];
   await page.route("**/api/control/dispatch", async (route) => {
     dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    stateVersion += 1;
     await route.fulfill({
       status: 202,
       contentType: "application/json",
@@ -687,6 +705,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   const sheetBlock = page
     .locator(".operations-client-block")
@@ -697,12 +716,14 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("listed");
   await expect(sheetBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
   expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   const deliveryBlock = page
     .locator(".operations-client-block")
@@ -714,6 +735,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(4);
   expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("listed");
   await expect(deliveryBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
