@@ -822,14 +822,17 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     .locator(".operations-client-block")
     .filter({ has: page.getByRole("heading", { name: "Google Sheet" }) });
   await sheetBlock.getByText("Advanced target", { exact: true }).click();
-  await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("manual");
+  const sheetTarget = sheetBlock.getByRole("combobox", { name: "Target by" });
+  await expect(sheetTarget).toBeEnabled();
+  await sheetTarget.selectOption("manual");
   await sheetBlock.getByRole("textbox", { name: "Profile ID" }).fill("0123456789abcdef");
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
   await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(sheetTarget).toBeEnabled();
 
-  await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("listed");
+  await sheetTarget.selectOption("listed");
   await expect(sheetBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
@@ -840,15 +843,18 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     .locator(".operations-client-block")
     .filter({ has: page.getByRole("heading", { name: "Delivery" }) });
   await deliveryBlock.getByText("Advanced target", { exact: true }).click();
-  await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("manual");
+  const deliveryTarget = deliveryBlock.getByRole("combobox", { name: "Target client by" });
+  await expect(deliveryTarget).toBeEnabled();
+  await deliveryTarget.selectOption("manual");
   await deliveryBlock.getByRole("textbox", { name: "Profile ID" }).fill("fedcba9876543210");
   await deliveryBlock.getByRole("combobox", { name: "What do you want to do?" }).selectOption("set-quota");
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(4);
   expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
   await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(deliveryTarget).toBeEnabled();
 
-  await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("listed");
+  await deliveryTarget.selectOption("listed");
   await expect(deliveryBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(5);
