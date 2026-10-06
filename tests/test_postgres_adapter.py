@@ -93,6 +93,8 @@ class _EmptyCursor:
 
 
 class _RecordingConnection:
+    is_postgres = True
+
     def __init__(self):
         self.execute_calls = []
         self.executemany_calls = []
