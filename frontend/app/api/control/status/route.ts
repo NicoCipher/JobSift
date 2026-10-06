@@ -419,6 +419,28 @@ async function latestEvaluationFunnels(inventoryRuns: WorkflowRun[], token: stri
   return new Map<string, FunnelSnapshot>();
 }
 
+async function inProgressRunCanChangeState(
+  candidate: SnapshotCandidate,
+  token: string,
+) {
+  if (candidate.kind !== "inventory") return true;
+  if (candidate.run.status === "queued") return false;
+  try {
+    const jobs = await github<{ jobs: GithubJob[] }>(
+      `/repos/${owner}/${repo}/actions/runs/${candidate.run.id}/jobs?per_page=100`,
+      token,
+    );
+    const mutation = jobs.jobs.find((value) => value.name === "persist-and-deliver");
+    if (!mutation) return false;
+    if (mutation.status === "completed" && mutation.conclusion === "skipped") {
+      return false;
+    }
+    return mutation.status === "in_progress" || mutation.status === "completed";
+  } catch {
+    return true;
+  }
+}
+
 async function latestOperatorSnapshot(
   inventoryRuns: WorkflowRun[],
   deliveryRuns: WorkflowRun[],
@@ -452,7 +474,15 @@ async function latestOperatorSnapshot(
   let stateError: string | null = null;
 
   for (const candidate of candidates) {
-    if (candidate.run.status !== "completed") continue;
+    if (candidate.run.status !== "completed") {
+      if (await inProgressRunCanChangeState(candidate, token)) {
+        chosen = candidate;
+        stateError =
+          "A newer JobSift operation is still changing client state. Controls stay locked until its authoritative snapshot completes.";
+        break;
+      }
+      continue;
+    }
     const evidence = await snapshotEvidenceForRun(candidate, token);
     if (evidence.state === "legacy") continue;
     chosen = candidate;
