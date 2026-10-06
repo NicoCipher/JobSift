@@ -338,6 +338,108 @@ test("pending batch actions fail closed when the client label is unavailable", a
   await expect(page.getByText(/Batch actions are locked/)).toBeVisible();
 });
 
+test("journaled delivery recovery is visible and cannot be discarded", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            run: null,
+            truncated: false,
+            profiles: [
+              {
+                action: "reconciliation_required",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 0,
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "failed",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 1,
+                needs_review_postings: 0,
+                selection_eligible_postings: 1,
+                stale_posting_suppressed_groups: 0,
+                company_cap_suppressed_groups: 0,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: true,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(page.getByText("A Sheet delivery needs safe recovery")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry safe delivery" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Discard" })).toBeDisabled();
+  await expect(page.getByText(/Discard is locked because this batch has a delivery journal/)).toBeVisible();
+});
+
+test("truncated operator state never claims all clients are clear", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            run: null,
+            truncated: true,
+            profiles: [
+              {
+                action: "ready",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 0,
+                batch_id: null,
+                batch_status: null,
+                requested_quota: null,
+                selected_count: null,
+                shortfall: null,
+                fresh_eligible_employers: null,
+                match_eligible_postings: null,
+                needs_review_postings: null,
+                selection_eligible_postings: null,
+                stale_posting_suppressed_groups: null,
+                company_cap_suppressed_groups: null,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(page.getByText(/Client state is incomplete/)).toBeVisible();
+  await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
+});
+
 test("yield-aware scheduling is visible and dispatches guarded bonus capacity", async ({ page }) => {
   await page.route("**/api/control/status", async (route) => {
     await route.fulfill({
