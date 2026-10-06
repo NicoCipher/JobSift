@@ -594,6 +594,7 @@ def evaluate_inventory_run(
         evaluated_at=evaluation_time,
         total_evaluated=evaluated,
         total_matched=matched,
+        total_needs_review=needs_review,
         total_rejected=rejected,
     )
 
