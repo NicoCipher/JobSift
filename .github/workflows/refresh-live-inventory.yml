@@ -34,6 +34,10 @@ on:
           - "50"
           - "75"
           - "100"
+      control_request_id:
+        description: "Opaque correlation ID from the operator interface"
+        required: false
+        type: string
   schedule:
     # GitHub scheduled workflows are best-effort. Four staggered trigger
     # opportunities per hour let the persistent logical scheduler recover
@@ -294,6 +298,7 @@ jobs:
       JOBSIFT_DATABASE: /tmp/jobsift-operator-state.sqlite3
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      JOBSIFT_CONTROL_REQUEST_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.control_request_id || '' }}
 
     steps:
       - uses: actions/checkout@v4
