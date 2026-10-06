@@ -362,55 +362,73 @@ class PostgresRepository(SQLiteRepository):
         connection: PostgresConnection,
         jobs: list[Job],
     ) -> None:
-        """Assign delivery groups without per-posting Neon round trips.
+        """Assign delivery groups with legacy ordering and bounded DB round trips.
 
-        The plan is equivalent to the SQLite row-at-a-time resolver: existing
-        historical groups are sticky, shared delivery keys merge groups, and the
-        lexicographically smallest deterministic group ID wins.
+        The row-at-a-time resolver intentionally makes delivery-key visibility
+        change as each posting is processed. Preserve that exact behavior in
+        memory: a changed posting's old keys disappear before the next posting
+        is resolved, while group merges remain sticky forever.
         """
         if not jobs:
             return
 
-        jobs_by_id = {job.id: job for job in jobs}
+        ordered_jobs = list(jobs)
+        jobs_by_id = {job.id: job for job in ordered_jobs}
+        if len(jobs_by_id) != len(ordered_jobs):
+            raise ValueError("bulk group assignment requires unique job IDs")
         job_ids = sorted(jobs_by_id)
-        keys_by_job = {
-            job_id: sorted(delivery_keys(jobs_by_id[job_id]))
-            for job_id in job_ids
+        new_keys_by_job = {
+            job.id: sorted(delivery_keys(job))
+            for job in ordered_jobs
         }
 
         existing_job_groups: dict[str, str] = {}
+        old_keys_by_job: dict[str, set[tuple[str, str]]] = {
+            job_id: set() for job_id in job_ids
+        }
         for chunk in _chunks(job_ids):
             placeholders = ",".join("?" for _ in chunk)
-            rows = connection.execute(
+            group_rows = connection.execute(
                 "SELECT job_id,group_id FROM posting_delivery_groups "
                 f"WHERE job_id IN ({placeholders})",
                 chunk,
             ).fetchall()
             existing_job_groups.update(
-                {row["job_id"]: row["group_id"] for row in rows}
+                {row["job_id"]: row["group_id"] for row in group_rows}
             )
+            key_rows = connection.execute(
+                "SELECT job_id,kind,value FROM delivery_keys "
+                f"WHERE job_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in key_rows:
+                old_keys_by_job[row["job_id"]].add(
+                    (row["kind"], row["value"])
+                )
 
-        all_keys = sorted(
+        relevant_keys = sorted(
             {
                 key
-                for job_keys in keys_by_job.values()
-                for key in job_keys
+                for keys in new_keys_by_job.values()
+                for key in keys
             }
         )
-        groups_by_key: dict[tuple[str, str], set[str]] = {}
-        for chunk in _chunks(all_keys):
+        holders_by_key: dict[
+            tuple[str, str], dict[str, str]
+        ] = {key: {} for key in relevant_keys}
+        for chunk in _chunks(relevant_keys):
             placeholders = ",".join("(?,?)" for _ in chunk)
             rows = connection.execute(
-                "SELECT k.kind,k.value,g.group_id "
+                "SELECT k.kind,k.value,k.job_id,g.group_id "
                 "FROM delivery_keys k JOIN posting_delivery_groups g "
                 "ON g.job_id=k.job_id "
                 f"WHERE (k.kind,k.value) IN ({placeholders})",
                 [value for key in chunk for value in key],
             ).fetchall()
             for row in rows:
-                groups_by_key.setdefault(
-                    (row["kind"], row["value"]), set()
-                ).add(row["group_id"])
+                holders_by_key.setdefault(
+                    (row["kind"], row["value"]), {}
+                )[row["job_id"]] = row["group_id"]
 
         parent: dict[str, str] = {}
 
@@ -429,39 +447,52 @@ class PostgresRepository(SQLiteRepository):
             parent[loser] = winner
             return winner
 
-        own_groups: dict[str, str] = {}
-        first_group_by_key: dict[tuple[str, str], str] = {}
         database_groups: set[str] = set(existing_job_groups.values())
-        for values in groups_by_key.values():
-            database_groups.update(values)
+        for holders in holders_by_key.values():
+            database_groups.update(holders.values())
+        for group_id in database_groups:
+            find(group_id)
 
-        for job_id in job_ids:
-            job = jobs_by_id[job_id]
+        assigned_group_by_job: dict[str, str] = {}
+        for job in ordered_jobs:
             own_group = str(
                 uuid5(
                     NAMESPACE_URL,
                     json.dumps([job.source, job.source_board_id, job.source_job_id]),
                 )
             )
-            own_groups[job_id] = own_group
-            find(own_group)
-            existing_group = existing_job_groups.get(job_id)
+            visible_groups = {find(own_group)}
+            existing_group = existing_job_groups.get(job.id)
             if existing_group is not None:
-                union(own_group, existing_group)
-            for key in keys_by_job[job_id]:
-                for group_id in sorted(groups_by_key.get(key, ())):
-                    union(own_group, group_id)
-                previous = first_group_by_key.get(key)
-                if previous is None:
-                    first_group_by_key[key] = own_group
-                else:
-                    union(own_group, previous)
+                visible_groups.add(find(existing_group))
+            for key in new_keys_by_job[job.id]:
+                visible_groups.update(
+                    find(group_id)
+                    for group_id in holders_by_key.get(key, {}).values()
+                )
 
-        job_groups = {
-            job_id: find(own_group)
-            for job_id, own_group in own_groups.items()
+            group_id = min(visible_groups)
+            for other in sorted(visible_groups):
+                group_id = union(group_id, other)
+            assigned_group_by_job[job.id] = find(group_id)
+
+            # This mirrors legacy _assign_group ordering: resolve against the
+            # current key index, then remove this posting's previous evidence,
+            # then expose its newly computed evidence to later postings.
+            for key in old_keys_by_job[job.id]:
+                holders = holders_by_key.get(key)
+                if holders is not None:
+                    holders.pop(job.id, None)
+            for key in new_keys_by_job[job.id]:
+                holders_by_key.setdefault(key, {})[job.id] = assigned_group_by_job[
+                    job.id
+                ]
+
+        final_job_groups = {
+            job_id: find(group_id)
+            for job_id, group_id in assigned_group_by_job.items()
         }
-        canonical_groups = sorted(set(job_groups.values()))
+        canonical_groups = sorted(set(final_job_groups.values()))
         if canonical_groups:
             connection.executemany(
                 "INSERT INTO delivery_groups (id) VALUES (?) ON CONFLICT DO NOTHING",
@@ -498,7 +529,7 @@ class PostgresRepository(SQLiteRepository):
         connection.executemany(
             "INSERT INTO posting_delivery_groups (job_id,group_id) VALUES (?,?) "
             "ON CONFLICT(job_id) DO UPDATE SET group_id=excluded.group_id",
-            [(job_id, job_groups[job_id]) for job_id in job_ids],
+            [(job_id, final_job_groups[job_id]) for job_id in job_ids],
         )
         for chunk in _chunks(job_ids):
             placeholders = ",".join("?" for _ in chunk)
@@ -507,9 +538,9 @@ class PostgresRepository(SQLiteRepository):
                 chunk,
             )
         key_rows = [
-            (job_id, kind, value)
-            for job_id in job_ids
-            for kind, value in keys_by_job[job_id]
+            (job.id, kind, value)
+            for job in ordered_jobs
+            for kind, value in new_keys_by_job[job.id]
         ]
         if key_rows:
             connection.executemany(
