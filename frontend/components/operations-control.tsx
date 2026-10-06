@@ -326,6 +326,32 @@ export function OperationsControl({
     }
   }
 
+  async function actOnProfile(
+    profile: ProfileSnapshot,
+    operation: "run-now" | "pause" | "resume" | "sheet-check",
+  ) {
+    const label = profileLabel(profile.profile_id, profile.destination_name);
+    if (!label) {
+      setMessage("Client name is unavailable, so JobSift will not run this client action.");
+      return;
+    }
+    if (
+      operation === "pause" &&
+      !window.confirm(`Pause ${label}? New deliveries will stop until you resume them.`)
+    ) {
+      return;
+    }
+    await send({
+      command: "client-control",
+      operation,
+      profile_id: profile.profile_id,
+      daily_quota: String(profile.daily_quota ?? 100),
+      delivery_mode: profile.delivery_mode ?? "review",
+      timezone: "Africa/Lagos",
+      batch_id: "",
+    });
+  }
+
   async function actOnPending(profile: ProfileSnapshot, operation: "release-batch" | "discard-batch") {
     if (!profile.batch_id) return;
     const label = profileLabel(profile.profile_id, profile.destination_name);
@@ -634,6 +660,84 @@ export function OperationsControl({
             <span>
               Sheet <strong>{latestProfile.sheet_status ?? "Unknown"}</strong>
             </span>
+          </div>
+        ) : null}
+
+        {latestSnapshot?.profiles.length ? (
+          <div className="operator-client-list" aria-label="Client delivery controls">
+            <div className="control-heading">
+              <div>
+                <h3>Clients</h3>
+                <p className="metadata">Normal daily controls without profile IDs.</p>
+              </div>
+            </div>
+            {latestSnapshot.profiles.map((profile) => {
+              const label = profileLabel(profile.profile_id, profile.destination_name);
+              const locked = !label || busy || !status?.control_ready;
+              return (
+                <article className="operator-client-card" key={profile.profile_id}>
+                  <div className="operator-client-summary">
+                    <div>
+                      <strong>{label ?? "Client name unavailable"}</strong>
+                      <p className="metadata">
+                        {profile.profile_status ?? "Unknown"} · {profile.delivery_mode ?? "Unknown"} mode
+                      </p>
+                    </div>
+                    <strong>
+                      {countLabel(profile.delivered_today)}/{countLabel(profile.daily_quota)} sent today
+                    </strong>
+                  </div>
+                  <div className="operator-mini-grid">
+                    <span>Sheet <strong>{profile.sheet_status ?? "Unknown"}</strong></span>
+                    <span>
+                      Pending{" "}
+                      <strong>{profile.batch_id ? countLabel(profile.selected_count) : "0"}</strong>
+                    </span>
+                  </div>
+                  <div className="operator-decision-actions">
+                    <button
+                      type="button"
+                      disabled={locked || profile.profile_status !== "active" || Boolean(profile.batch_id)}
+                      onClick={() => void actOnProfile(profile, "run-now")}
+                    >
+                      Find matches for client
+                    </button>
+                    {profile.profile_status === "paused" ? (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={locked}
+                        onClick={() => void actOnProfile(profile, "resume")}
+                      >
+                        Resume
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={locked}
+                        onClick={() => void actOnProfile(profile, "pause")}
+                      >
+                        Pause
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={locked}
+                      onClick={() => void actOnProfile(profile, "sheet-check")}
+                    >
+                      Check Sheet
+                    </button>
+                  </div>
+                  {!label ? (
+                    <p className="notice">
+                      Client controls are locked until JobSift has a trustworthy display name.
+                    </p>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         ) : null}
 
