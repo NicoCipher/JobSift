@@ -223,57 +223,109 @@ function parseProfileSnapshots(logs: string): ProfileSnapshot[] {
   const ansi = /\u001b\[[0-9;]*m/g;
   const lines = logs.replace(ansi, "").split("\n").reverse();
   for (const line of lines) {
-    const marker = '{"profiles":';
-    const start = line.indexOf(marker);
-    if (start < 0) continue;
-    const candidate = line.slice(start).trim();
-    const end = candidate.lastIndexOf("}");
-    if (end < 0) continue;
-    try {
-      const parsed = JSON.parse(candidate.slice(0, end + 1)) as { profiles?: unknown[] };
-      if (!Array.isArray(parsed.profiles)) continue;
-      return parsed.profiles.flatMap((value) => {
-        const profile = sanitizeProfile(value);
-        return profile ? [profile] : [];
-      });
-    } catch {
-      continue;
+    for (const marker of ['{"profiles":', '{"profile_id":']) {
+      const start = line.indexOf(marker);
+      if (start < 0) continue;
+      const candidate = line.slice(start).trim();
+      const end = candidate.lastIndexOf("}");
+      if (end < 0) continue;
+      try {
+        const parsed = JSON.parse(candidate.slice(0, end + 1)) as Record<string, unknown>;
+        if (Array.isArray(parsed.profiles)) {
+          const profiles = parsed.profiles.flatMap((value) => {
+            const profile = sanitizeProfile(value);
+            return profile ? [profile] : [];
+          });
+          if (profiles.length) return profiles;
+          continue;
+        }
+        if (
+          typeof parsed.profile_id === "string" &&
+          typeof parsed.batch_id === "string" &&
+          typeof parsed.status === "string"
+        ) {
+          const status = parsed.status;
+          const profile = sanitizeProfile({
+            ...parsed,
+            action: status === "prepared" ? "awaiting_release" : status,
+            batch_status: status,
+          });
+          if (profile) return [profile];
+        }
+      } catch {
+        continue;
+      }
     }
   }
   return [];
 }
 
-async function latestOperatorSnapshot(runs: WorkflowRun[], token: string) {
-  const latest = runs[0];
-  if (!latest) return { run: null, profiles: [] as ProfileSnapshot[] };
-  const run = {
-    id: latest.id,
-    run_number: latest.run_number,
-    status: latest.status,
-    conclusion: latest.conclusion,
-    created_at: latest.created_at,
-    updated_at: latest.updated_at,
-    url: latest.url,
-  };
-  if (latest.status !== "completed") return { run, profiles: [] as ProfileSnapshot[] };
+type RunCandidate = {
+  run: WorkflowRun;
+  jobName: "persist-and-deliver" | "control";
+};
 
+async function profileEventsForRun(candidate: RunCandidate, token: string) {
+  if (candidate.run.status !== "completed") return [] as ProfileSnapshot[];
   try {
     const jobs = await github<{ jobs: GithubJob[] }>(
-      `/repos/${owner}/${repo}/actions/runs/${latest.id}/jobs?per_page=100`,
+      `/repos/${owner}/${repo}/actions/runs/${candidate.run.id}/jobs?per_page=100`,
       token,
     );
-    const persist = jobs.jobs.find((job) => job.name === "persist-and-deliver");
-    if (!persist || persist.conclusion !== "success") {
-      return { run, profiles: [] as ProfileSnapshot[] };
-    }
+    const job = jobs.jobs.find((value) => value.name === candidate.jobName);
+    if (!job || job.conclusion !== "success") return [] as ProfileSnapshot[];
     const logs = await githubText(
-      `/repos/${owner}/${repo}/actions/jobs/${persist.id}/logs`,
+      `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
       token,
     );
-    return { run, profiles: parseProfileSnapshots(logs) };
+    return parseProfileSnapshots(logs);
   } catch {
-    return { run, profiles: [] as ProfileSnapshot[] };
+    return [] as ProfileSnapshot[];
   }
+}
+
+async function latestOperatorSnapshot(
+  inventoryRuns: WorkflowRun[],
+  deliveryRuns: WorkflowRun[],
+  token: string,
+) {
+  const candidates: RunCandidate[] = [
+    ...inventoryRuns.map((run) => ({ run, jobName: "persist-and-deliver" as const })),
+    ...deliveryRuns.map((run) => ({ run, jobName: "control" as const })),
+  ]
+    .sort(
+      (left, right) =>
+        Date.parse(right.run.updated_at) - Date.parse(left.run.updated_at),
+    )
+    .slice(0, 16);
+
+  const byProfile = new Map<string, ProfileSnapshot>();
+  let latestMeaningfulRun: WorkflowRun | null = null;
+
+  for (const candidate of candidates) {
+    const profiles = await profileEventsForRun(candidate, token);
+    if (!profiles.length) continue;
+    latestMeaningfulRun ??= candidate.run;
+    for (const profile of profiles) {
+      if (!byProfile.has(profile.profile_id)) {
+        byProfile.set(profile.profile_id, profile);
+      }
+    }
+  }
+
+  const run = latestMeaningfulRun
+    ? {
+        id: latestMeaningfulRun.id,
+        run_number: latestMeaningfulRun.run_number,
+        status: latestMeaningfulRun.status,
+        conclusion: latestMeaningfulRun.conclusion,
+        created_at: latestMeaningfulRun.created_at,
+        updated_at: latestMeaningfulRun.updated_at,
+        url: latestMeaningfulRun.url,
+      }
+    : null;
+
+  return { run, profiles: [...byProfile.values()] };
 }
 
 export async function GET() {
@@ -302,7 +354,11 @@ export async function GET() {
       workflowStatus(workflows.inventory, token),
       workflowStatus(workflows.delivery, token),
     ]);
-    const operatorSnapshot = await latestOperatorSnapshot(inventory.runs, token);
+    const operatorSnapshot = await latestOperatorSnapshot(
+      inventory.runs,
+      delivery.runs,
+      token,
+    );
     return NextResponse.json(
       {
         data: {
