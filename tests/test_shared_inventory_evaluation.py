@@ -68,6 +68,45 @@ def test_recent_inventory_returns_only_delivery_eligible_candidate_ids(
     assert candidate_ids == ("eligible",)
 
 
+def test_recent_inventory_retains_needs_review_candidate_ids(tmp_path, monkeypatch):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    confirmed = posting("confirmed", "Software Engineer")
+    reviewable = posting("reviewable", "Backend Engineer")
+    rejected = posting("rejected", "Sales Manager")
+    repo.upsert_jobs([confirmed, reviewable, rejected])
+    brief = SimpleNamespace(client_id="client-a")
+
+    decisions = {
+        "confirmed": "strong_match",
+        "reviewable": "needs_review",
+        "rejected": "reject",
+    }
+
+    monkeypatch.setattr(
+        sourcing_plan,
+        "match_job",
+        lambda job, _brief: JobMatch(
+            job_id=job.id,
+            client_id="client-a",
+            decision=decisions[job.id],
+            evaluated_at=datetime.now(UTC),
+            matcher_version="test",
+        ),
+    )
+
+    report, candidate_ids = sourcing_plan.evaluate_recent_inventory(
+        repository=repo,
+        brief=brief,
+        retention_hours=72,
+    )
+
+    assert report.total_evaluated == 3
+    assert report.total_matched == 1
+    assert report.total_needs_review == 1
+    assert report.total_rejected == 1
+    assert candidate_ids == ("confirmed", "reviewable")
+
+
 def test_recent_inventory_rejects_old_posting_reverified_now(tmp_path, monkeypatch):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     now = datetime.now(UTC)
