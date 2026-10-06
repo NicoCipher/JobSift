@@ -326,7 +326,7 @@ async function jobLogsForRun(candidate: SnapshotCandidate, token: string) {
       token,
     );
     const job = jobs.jobs.find((value) => value.name === candidate.jobName);
-    if (!job || job.conclusion !== "success") return null;
+    if (!job || job.status !== "completed") return null;
     return await githubText(
       `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
       token,
