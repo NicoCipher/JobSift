@@ -971,6 +971,29 @@ summary {
   padding-top: var(--s12);
   border-top: 1px solid var(--border);
 }
+.operator-review-list {
+  display: grid;
+  gap: var(--s8);
+}
+.operator-review-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s12);
+  min-width: 0;
+  padding: var(--s12);
+  border: 1px solid var(--border);
+  background: var(--subtle);
+}
+.operator-review-item > div {
+  min-width: 0;
+}
+.operator-review-item p {
+  margin: var(--s4) 0 0;
+}
+.operator-review-item a {
+  flex: 0 0 auto;
+}
 .operator-decision-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1080,6 +1103,15 @@ summary {
   .operator-command-center .control-heading button,
   .operator-decision-actions button {
     width: 100%;
+  }
+  .operator-review-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .operator-review-item a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
   }
   .operations-jump {
     flex-direction: column;
