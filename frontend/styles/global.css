@@ -930,6 +930,16 @@ summary {
 .operator-command-center .control-heading button {
   min-height: 40px;
 }
+.operator-state-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s12);
+}
+.operator-state-recovery button {
+  flex: 0 0 auto;
+  min-height: 40px;
+}
 .operator-run-strip,
 .operator-funnel,
 .operator-age-grid,
@@ -1122,8 +1132,13 @@ summary {
     gap: var(--s8);
   }
   .operator-command-center .control-heading button,
-  .operator-decision-actions button {
+  .operator-decision-actions button,
+  .operator-state-recovery button {
     width: 100%;
+  }
+  .operator-state-recovery {
+    align-items: stretch;
+    flex-direction: column;
   }
   .operator-review-item,
   .operator-client-summary {
