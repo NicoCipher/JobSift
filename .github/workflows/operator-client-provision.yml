@@ -15,8 +15,8 @@ on:
         options:
           - inspect_sheet
           - create_client
-      payload_b64:
-        description: Server-encoded provisioning payload
+      payload_ciphertext:
+        description: Server-encrypted provisioning payload
         required: true
         type: string
       control_request_id:
@@ -43,7 +43,8 @@ jobs:
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       JOBSIFT_PROVISION_REQUEST_ID: ${{ inputs.request_id }}
       JOBSIFT_PROVISION_OPERATION: ${{ inputs.operation }}
-      JOBSIFT_PROVISION_PAYLOAD_B64: ${{ inputs.payload_b64 }}
+      JOBSIFT_PROVISIONING_KEY: ${{ secrets.JOBSIFT_PROVISIONING_KEY }}
+      JOBSIFT_PROVISION_PAYLOAD_CIPHERTEXT: ${{ inputs.payload_ciphertext }}
       JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
 
     steps:
@@ -61,12 +62,42 @@ jobs:
         run: |
           test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+          test -n "$JOBSIFT_PROVISIONING_KEY" || { echo "Missing JOBSIFT_PROVISIONING_KEY secret"; exit 1; }
 
       - name: Configure Google credentials
         run: |
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
           chmod 600 "$RUNNER_TEMP/google-service-account.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Decrypt operator provisioning payload
+        run: |
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const rawKey = process.env.JOBSIFT_PROVISIONING_KEY || "";
+          const key = Buffer.from(rawKey.trim(), "base64url");
+          if (key.length !== 32) throw new Error("Invalid provisioning key");
+          const parts = (process.env.JOBSIFT_PROVISION_PAYLOAD_CIPHERTEXT || "").split(".");
+          if (parts.length !== 4 || parts[0] !== "v1") {
+            throw new Error("Invalid provisioning envelope");
+          }
+          const iv = Buffer.from(parts[1], "base64url");
+          const ciphertext = Buffer.from(parts[2], "base64url");
+          const tag = Buffer.from(parts[3], "base64url");
+          if (iv.length !== 12 || tag.length !== 16) {
+            throw new Error("Invalid provisioning envelope");
+          }
+          const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+          decipher.setAuthTag(tag);
+          const plaintext = Buffer.concat([
+            decipher.update(ciphertext),
+            decipher.final(),
+          ]);
+          const target = process.env.RUNNER_TEMP + "/jobsift-provision-payload.json";
+          fs.writeFileSync(target, plaintext, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_ENV, "JOBSIFT_PROVISION_PAYLOAD_FILE=" + target + "\n");
+          NODE
 
       - name: Process operator provisioning request
         run: python -m job_scout.operator_provisioning
