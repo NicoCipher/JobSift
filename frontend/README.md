@@ -38,7 +38,7 @@ The variable contains no Sheet URL, spreadsheet ID, client ID, or credentials.
 When it is absent in production, JobSift may still show opaque backend state but
 client-specific mutations remain locked because no trusted human-readable target
 is configured. Development retains the authored fixture catalogue for tests.
-
+The same catalogue is enforced again inside the server-side dispatch route, so an\nauthenticated browser cannot bypass the UI by posting an unlisted opaque profile\nhandle directly.\n
 Manual inventory refreshes preserve the existing workflow contract: choices are
 limited to Workday targets 1/5/10/20/25, detail concurrency 4/6/8, and a
 yield-aware bonus budget of 0/25/50/75/100 targets. The bonus is applied only
