@@ -82,6 +82,7 @@ jobs:
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
+      JOBSIFT_PROVISIONING_KEY: ${{ secrets.JOBSIFT_PROVISIONING_KEY }}
 
     steps:
       - uses: actions/checkout@v4
