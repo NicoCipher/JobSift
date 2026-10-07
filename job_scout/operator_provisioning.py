@@ -16,15 +16,15 @@ from job_scout.delivery_destinations import (
     spreadsheet_id_from_value,
 )
 from job_scout.delivery_profiles import (
-    ClientDeliveryProfileStore,
+    ClientDeliveryProfile,
     delivery_profile_control_id,
 )
 from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.models import SearchBrief
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.operator_clients import (
-    OperatorClientStore,
     OperatorProvisioningStore,
+    brief_sha256,
 )
 from job_scout.storage.factory import create_repository
 
@@ -221,6 +221,161 @@ def inspect_sheet(
     }
 
 
+def _activate_operator_client(
+    repository,
+    *,
+    request_id: str,
+    client_id: str,
+    client_name: str,
+    destination,
+    sourcing_plan_id: str,
+    brief: SearchBrief,
+    daily_limit: int,
+    delivery_mode: str,
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    digest = brief_sha256(brief)
+    with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        request_row = connection.execute(
+            "SELECT state FROM operator_provisioning_requests WHERE request_id=?",
+            (request_id,),
+        ).fetchone()
+        if request_row is None or request_row["state"] != "running":
+            raise ValueError("provisioning request is not running")
+
+        destination_row = connection.execute(
+            "SELECT status,spreadsheet_id,sheet_id FROM client_sheet_destinations "
+            "WHERE client_id=? AND destination_id=?",
+            (client_id, destination.destination_id),
+        ).fetchone()
+        if destination_row is None or destination_row["status"] != "ready":
+            raise BatchConflict("verified client Sheet destination is not ready")
+
+        existing_client = connection.execute(
+            "SELECT created_at,brief_revision FROM operator_clients WHERE client_id=?",
+            (client_id,),
+        ).fetchone()
+        client_created_at = (
+            existing_client["created_at"]
+            if existing_client is not None
+            else now.isoformat()
+        )
+        brief_revision = (
+            int(existing_client["brief_revision"]) + 1
+            if existing_client is not None
+            else 1
+        )
+        connection.execute(
+            "INSERT INTO operator_clients "
+            "(client_id,display_name,destination_id,destination_name,sourcing_plan_id,"
+            "search_brief_json,brief_sha256,brief_revision,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(client_id) DO UPDATE SET "
+            "display_name=excluded.display_name,"
+            "destination_id=excluded.destination_id,"
+            "destination_name=excluded.destination_name,"
+            "sourcing_plan_id=excluded.sourcing_plan_id,"
+            "search_brief_json=excluded.search_brief_json,"
+            "brief_sha256=excluded.brief_sha256,"
+            "brief_revision=excluded.brief_revision,"
+            "updated_at=excluded.updated_at",
+            (
+                client_id,
+                client_name,
+                destination.destination_id,
+                destination.display_name,
+                sourcing_plan_id,
+                brief.model_dump_json(),
+                digest,
+                brief_revision,
+                client_created_at,
+                now.isoformat(),
+            ),
+        )
+
+        existing_profile = connection.execute(
+            "SELECT created_at FROM client_delivery_profiles "
+            "WHERE client_id=? AND destination_id=?",
+            (client_id, destination.destination_id),
+        ).fetchone()
+        profile_created_at = (
+            datetime.fromisoformat(existing_profile["created_at"])
+            if existing_profile is not None
+            else now
+        )
+        profile = ClientDeliveryProfile(
+            client_id=client_id,
+            destination_id=destination.destination_id,
+            sourcing_plan_id=sourcing_plan_id,
+            daily_quota=daily_limit,
+            status="active",
+            delivery_mode=delivery_mode,
+            timezone="Africa/Lagos",
+            created_at=profile_created_at,
+            updated_at=now,
+        )
+        connection.execute(
+            "INSERT INTO client_delivery_profiles "
+            "(client_id,destination_id,sourcing_plan_id,daily_quota,status,"
+            "delivery_mode,timezone,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(client_id,destination_id) DO UPDATE SET "
+            "sourcing_plan_id=excluded.sourcing_plan_id,"
+            "daily_quota=excluded.daily_quota,"
+            "status=excluded.status,"
+            "delivery_mode=excluded.delivery_mode,"
+            "timezone=excluded.timezone,"
+            "updated_at=excluded.updated_at",
+            (
+                profile.client_id,
+                profile.destination_id,
+                profile.sourcing_plan_id,
+                profile.daily_quota,
+                profile.status,
+                profile.delivery_mode,
+                profile.timezone,
+                profile.created_at.isoformat(),
+                profile.updated_at.isoformat(),
+            ),
+        )
+
+        result = {
+            "client_name": client_name,
+            "destination_name": destination.display_name,
+            "profile_id": delivery_profile_control_id(
+                profile.client_id,
+                profile.destination_id,
+            ),
+            "delivery_mode": profile.delivery_mode,
+            "daily_limit": profile.daily_quota,
+            "sheet_status": destination.status,
+            "sheet_url": (
+                f"https://docs.google.com/spreadsheets/d/"
+                f"{destination.spreadsheet_id}/edit#gid={destination.sheet_id}"
+            ),
+            "brief_revision": brief_revision,
+        }
+        completed = connection.execute(
+            "UPDATE operator_provisioning_requests "
+            "SET state='completed',result_json=?,error_code=NULL,error_message=NULL,"
+            "updated_at=? WHERE request_id=? AND state='running'",
+            (
+                json.dumps(
+                    result,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ),
+                now.isoformat(),
+                request_id,
+            ),
+        )
+        if completed.rowcount != 1:
+            raise ValueError("provisioning request state changed before activation")
+    return result
+
+
 def process_request(
     repository,
     *,
@@ -276,39 +431,17 @@ def process_request(
                 column_mapping={str(k): str(v) for k, v in mapping.items()},
                 gateway=gateway,
             )
-            managed = OperatorClientStore(repository).upsert(
+            result = _activate_operator_client(
+                repository,
+                request_id=request_id,
                 client_id=client_id,
-                display_name=value.client_name,
-                destination_id=destination_id,
-                destination_name=destination_name,
+                client_name=value.client_name,
+                destination=destination,
                 sourcing_plan_id=sourcing_plan_id,
                 brief=brief,
-            )
-            profile = ClientDeliveryProfileStore(repository).upsert(
-                client_id=client_id,
-                destination_id=destination_id,
-                sourcing_plan_id=sourcing_plan_id,
-                daily_quota=value.daily_limit,
-                status="active",
+                daily_limit=value.daily_limit,
                 delivery_mode=value.delivery_mode,
-                timezone="Africa/Lagos",
             )
-            result = {
-                "client_name": managed.display_name,
-                "destination_name": managed.destination_name,
-                "profile_id": delivery_profile_control_id(
-                    profile.client_id,
-                    profile.destination_id,
-                ),
-                "delivery_mode": profile.delivery_mode,
-                "daily_limit": profile.daily_quota,
-                "sheet_status": destination.status,
-                "sheet_url": (
-                    f"https://docs.google.com/spreadsheets/d/"
-                    f"{destination.spreadsheet_id}/edit#gid={destination.sheet_id}"
-                ),
-                "brief_revision": managed.brief_revision,
-            }
         else:
             raise ValueError("provisioning operation is not implemented yet")
     except Exception as exc:
@@ -319,7 +452,8 @@ def process_request(
         )
         raise
 
-    requests.complete(request_id, result)
+    if operation != "create_client":
+        requests.complete(request_id, result)
     return result
 
 
