@@ -53,10 +53,9 @@ export function parseOperatorProfiles(
 export function isOperatorProfileAllowed(
   raw: string | null | undefined,
   profileId: string,
-  allowUnconfigured = false,
 ): boolean {
   const source = raw?.trim();
-  if (!source) return allowUnconfigured;
+  if (!source) return false;
   return parseOperatorProfiles(source).some(
     (profile) => profile.profile_id === profileId.trim().toLowerCase(),
   );
