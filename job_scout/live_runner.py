@@ -357,7 +357,7 @@ def run_once(
         brief = load_search_brief(brief_path)
         plan_id = plan.plan_id
         brief_revision_id = brief_path.stem
-        brief_sha = sha256(brief_path.read_bytes()).hexdigest()
+        brief_sha = None
     if repository is None:
         repository = create_repository(config.database_path)
     if config.validation_only and repository.remote_url:
@@ -640,6 +640,9 @@ def run_once(
         if today is not None:
             return _batch_payload(store, today, action="already_ran_today")
 
+    if brief_sha is None:
+        assert brief_path is not None
+        brief_sha = sha256(brief_path.read_bytes()).hexdigest()
     match_scope_id = brief_sha if profile is not None else None
 
     report = None
