@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { canonicalTimeZone, validBatchId, validGenerationId } from "../../../../lib/control-validation";
+import { canonicalTimeZone, validBatchId, validGenerationId, validRemovedOrdinals } from "../../../../lib/control-validation";
 import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
@@ -231,8 +231,7 @@ export async function POST(request: NextRequest) {
     }
     if (
       operation === "release-selection" &&
-      removedOrdinals &&
-      !/^\d+(?:,\d+)*$/.test(removedOrdinals)
+      !validRemovedOrdinals(removedOrdinals)
     ) {
       return invalid("Removed review rows must be comma-separated positive integers.");
     }
