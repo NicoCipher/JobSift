@@ -140,6 +140,8 @@ def test_review_selection_removes_only_requested_rows_and_changes_generation(tmp
         [make_job("job-1", "Acme"), make_job("job-2", "Beta")],
     )
     original_generation = batch.generation_id
+    original_order = [item.representative_job_id for item in batch.items]
+    removed_job_id = original_order[0]
 
     updated = DailyBatchStore(repo).remove_prepared_items(
         batch.batch_id,
@@ -150,13 +152,13 @@ def test_review_selection_removes_only_requested_rows_and_changes_generation(tmp
     assert updated.generation_id != original_generation
     assert updated.selected_count == 1
     assert updated.shortfall == 1
-    assert [item.representative_job_id for item in updated.items] == ["job-2"]
+    assert [item.representative_job_id for item in updated.items] == original_order[1:]
     assert [item.ordinal for item in updated.items] == [1]
     with repo.connect() as connection:
         disposition = connection.execute(
             "SELECT disposition FROM daily_batch_candidates "
-            "WHERE batch_id=? AND job_id='job-1'",
-            (batch.batch_id,),
+            "WHERE batch_id=? AND job_id=?",
+            (batch.batch_id, removed_job_id),
         ).fetchone()[0]
     assert disposition == "operator_removed"
 
@@ -399,6 +401,7 @@ def test_profile_cli_release_selection_rejects_replayed_review_generation(
     )
     reviewed_generation = batch.generation_id
     assert reviewed_generation is not None
+    reviewed_order = [item.representative_job_id for item in batch.items]
 
     def fake_finalize(*, repository, batch_id, expected_generation_id):
         current = DailyBatchStore(repository).get(batch_id)
@@ -430,10 +433,7 @@ def test_profile_cli_release_selection_rejects_replayed_review_generation(
 
     after_first = DailyBatchStore(repo).get(batch.batch_id)
     assert after_first.generation_id != reviewed_generation
-    assert [item.representative_job_id for item in after_first.items] == [
-        "job-2",
-        "job-3",
-    ]
+    assert [item.representative_job_id for item in after_first.items] == reviewed_order[1:]
 
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit) as exit_info:
@@ -442,10 +442,7 @@ def test_profile_cli_release_selection_rejects_replayed_review_generation(
     assert exit_info.value.code != 0
     after_retry = DailyBatchStore(repo).get(batch.batch_id)
     assert after_retry.generation_id == after_first.generation_id
-    assert [item.representative_job_id for item in after_retry.items] == [
-        "job-2",
-        "job-3",
-    ]
+    assert [item.representative_job_id for item in after_retry.items] == reviewed_order[1:]
 
 
 def test_profile_cli_discard_binds_loaded_generation(tmp_path, monkeypatch):
