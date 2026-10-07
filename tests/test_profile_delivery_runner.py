@@ -31,7 +31,7 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
     monkeypatch.setattr(
         profile_delivery_runner,
         "OperatorClientStore",
-        lambda _repo: SimpleNamespace(get_for_profile=lambda *_args: None),
+        lambda _repo: SimpleNamespace(list=lambda: ()),
     )
     monkeypatch.setattr(
         profile_delivery_runner, "GoogleSheetsGateway", lambda: object()
@@ -130,7 +130,7 @@ def test_profile_runner_uses_durable_operator_brief_without_repo_plan(tmp_path, 
     monkeypatch.setattr(
         profile_delivery_runner,
         "OperatorClientStore",
-        lambda _repo: SimpleNamespace(get_for_profile=lambda *_args: managed),
+        lambda _repo: SimpleNamespace(list=lambda: (managed,)),
     )
     monkeypatch.setattr(
         profile_delivery_runner, "GoogleSheetsGateway", lambda: object()
