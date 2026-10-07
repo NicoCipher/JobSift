@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from uuid import uuid4
 
 import pytest
@@ -184,8 +185,10 @@ def test_create_client_rolls_back_activation_if_request_completion_loses_race(
                 return LostRace()
             return self.inner.execute(sql, params)
 
+    @contextmanager
     def connect():
-        return WrappedConnection(original_connect())
+        with original_connect() as connection:
+            yield WrappedConnection(connection)
 
     monkeypatch.setattr(repo, "connect", connect)
 
