@@ -52,7 +52,7 @@ type OperatorSnapshot = {
     status: string;
     conclusion: string | null;
     updated_at: string;
-    kind?: "inventory" | "delivery" | "configure";
+    kind?: "inventory" | "delivery" | "configure" | "provision";
   } | null;
   profiles: ProfileSnapshot[];
   truncated: boolean;
@@ -512,7 +512,7 @@ export function ClientWorkspace({
         command: "client-control",
         operation: "release-selection",
         profile_id: state.profile_id,
-      profile_capability: state.control_capability ?? "",
+        profile_capability: state.control_capability ?? "",
         daily_quota: String(state.daily_quota ?? 100),
         delivery_mode: state.delivery_mode ?? "review",
         timezone: "Africa/Lagos",
