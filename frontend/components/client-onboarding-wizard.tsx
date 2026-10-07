@@ -41,6 +41,17 @@ function splitTerms(value: string) {
     .filter(Boolean);
 }
 
+function validTimeZone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value.trim() }).format(
+      new Date(0),
+    );
+    return Boolean(value.trim());
+  } catch {
+    return false;
+  }
+}
+
 async function readJson(response: Response) {
   const body = (await response.json()) as ApiError & { data?: unknown };
   if (!response.ok) {
@@ -82,6 +93,7 @@ export function ClientOnboardingWizard() {
   const roleTitles = useMemo(() => splitTerms(roles), [roles]);
   const excludedTerms = useMemo(() => splitTerms(exclusions), [exclusions]);
   const preferredTerms = useMemo(() => splitTerms(preferred), [preferred]);
+  const timezoneValid = validTimeZone(timezone);
 
   const requiredMapped = mappingFields
     .filter((field) => field.required)
@@ -96,7 +108,8 @@ export function ClientOnboardingWizard() {
     (step === 3 &&
       Number.isInteger(Number(dailyLimit)) &&
       Number(dailyLimit) >= 1 &&
-      Number(dailyLimit) <= 2000) ||
+      Number(dailyLimit) <= 2000 &&
+      timezoneValid) ||
     (step === 4 && inspection !== null && requiredMapped);
 
   function toggleMode(mode: string) {
@@ -391,21 +404,38 @@ export function ClientOnboardingWizard() {
           </label>
           <label>
             Daily reset timezone
-            <select
+            <input
               value={timezone}
               onChange={(event) => setTimezone(event.target.value)}
-            >
-              <option value="America/New_York">US Eastern (New York)</option>
-              <option value="America/Chicago">US Central (Chicago)</option>
-              <option value="America/Denver">US Mountain (Denver)</option>
-              <option value="America/Los_Angeles">US Pacific (Los Angeles)</option>
-              <option value="Africa/Lagos">West Africa (Lagos)</option>
-              <option value="Europe/London">UK (London)</option>
-              <option value="UTC">UTC</option>
-            </select>
+              list="jobsift-timezones"
+              placeholder="America/New_York"
+              spellCheck={false}
+            />
+            <datalist id="jobsift-timezones">
+              <option value="America/New_York" />
+              <option value="America/Chicago" />
+              <option value="America/Denver" />
+              <option value="America/Los_Angeles" />
+              <option value="America/Toronto" />
+              <option value="America/Sao_Paulo" />
+              <option value="Europe/London" />
+              <option value="Europe/Paris" />
+              <option value="Europe/Berlin" />
+              <option value="Africa/Lagos" />
+              <option value="Africa/Johannesburg" />
+              <option value="Asia/Kolkata" />
+              <option value="Asia/Singapore" />
+              <option value="Asia/Tokyo" />
+              <option value="Australia/Sydney" />
+              <option value="UTC" />
+            </datalist>
             <span className="metadata">
-              The daily sent limit resets at midnight in this timezone.
+              Enter the client&apos;s IANA timezone. The daily sent limit resets at
+              midnight there.
             </span>
+            {!timezoneValid ? (
+              <span className="error">Enter a valid IANA timezone, such as Asia/Kolkata.</span>
+            ) : null}
           </label>
           <fieldset>
             <legend>Delivery mode</legend>
