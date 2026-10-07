@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { issueOperatorCapability } from "../../../../lib/operator-capability";
+import { decryptProvisioningPayload } from "../../../../lib/provisioning-crypto";
 import { issueSheetHandle } from "../../../../lib/sheet-handle";
 
 export const dynamic = "force-dynamic";
@@ -91,7 +92,7 @@ type ProfileSnapshot = {
   operator_managed: boolean;
   client_name: string | null;
   destination_name: string | null;
-  sheet_url: string | null;
+  sheet_ciphertext: string | null;
   control_capability: string | null;
 };
 
@@ -319,12 +320,7 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
     operator_managed: source.operator_managed === true,
     client_name: textValue(source.client_name, 120),
     destination_name: textValue(source.destination_name, 120),
-    sheet_url: (() => {
-      const value = textValue(source.sheet_url, 2048);
-      return value && /^https:\/\/docs\.google\.com\/spreadsheets\//i.test(value)
-        ? value
-        : null;
-    })(),
+    sheet_ciphertext: textValue(source.sheet_ciphertext, 6000),
     control_capability: null,
   };
 }
@@ -794,8 +790,37 @@ export async function GET(request: NextRequest) {
       token,
       requestedControlRequestId,
     );
+    const provisioningKey = process.env.JOBSIFT_PROVISIONING_KEY?.trim() ?? "";
     const profilesWithCapabilities = operatorSnapshot.profiles.map((profile) => {
-      const { sheet_url: sheetUrl, ...safeProfile } = profile;
+      const { sheet_ciphertext: sheetCiphertext, ...safeProfile } = profile;
+      let sheetUrl: string | null = null;
+      if (profile.operator_managed && provisioningKey && sheetCiphertext) {
+        const plaintext = decryptProvisioningPayload(
+          provisioningKey,
+          sheetCiphertext,
+        );
+        if (plaintext) {
+          try {
+            const parsed = JSON.parse(plaintext) as Record<string, unknown>;
+            const profileId =
+              typeof parsed.profile_id === "string"
+                ? parsed.profile_id.trim().toLowerCase()
+                : "";
+            const candidate =
+              typeof parsed.sheet_url === "string"
+                ? parsed.sheet_url.trim()
+                : "";
+            if (
+              profileId === profile.profile_id &&
+              /^https:\/\/docs\.google\.com\/spreadsheets\//i.test(candidate)
+            ) {
+              sheetUrl = candidate;
+            }
+          } catch {
+            sheetUrl = null;
+          }
+        }
+      }
       return {
         ...safeProfile,
         control_capability: profile.operator_managed
