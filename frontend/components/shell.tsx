@@ -1,9 +1,11 @@
 "use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
+import { liveMode, operatorMode } from "@/lib/api/client";
 import type { Client, Session } from "@/lib/contracts/service";
-import { liveMode } from "@/lib/api/client";
+
 const navigation = [
   ["Dashboard", "/dashboard"],
   ["Clients", "/clients"],
@@ -16,38 +18,65 @@ const navigation = [
   ["Diagnostics", "/diagnostics"],
   ["Settings", "/settings"],
 ];
+
+const operatorNavigation = navigation.filter(([, path]) =>
+  ["/clients", "/review", "/operations", "/settings"].includes(path),
+);
+
+const localServiceNavigation = navigation.filter(([, path]) =>
+  ["/clients", "/review", "/operations", "/jobs", "/settings"].includes(path),
+);
+
 export function Shell({
   children,
   client,
   session,
 }: {
   children: React.ReactNode;
-  client: Client;
-  session: Session;
+  client: Client | null;
+  session: Session | null;
 }) {
   const pathname = usePathname();
   const dialog = useRef<HTMLDialogElement>(null);
   const menu = useRef<HTMLButtonElement>(null);
+  const focusedMode = operatorMode || liveMode;
+
   const close = () => {
     dialog.current?.close();
     menu.current?.focus();
   };
-  const links = (mobile = false) => (
-    <nav
-      aria-label={mobile ? "Mobile primary navigation" : "Primary navigation"}
-    >
-      {(liveMode ? navigation.filter(([, path]) => ["/clients", "/review", "/operations", "/jobs", "/settings"].includes(path)) : navigation).map(([name, path]) => (
-        <Link
-          key={path}
-          href={path}
-          aria-current={pathname === path ? "page" : undefined}
-          onClick={mobile ? close : undefined}
-        >
-          {name}
-        </Link>
-      ))}
-    </nav>
-  );
+
+  const links = (mobile = false) => {
+    const items = operatorMode
+      ? operatorNavigation
+      : liveMode
+        ? localServiceNavigation
+        : navigation;
+    return (
+      <nav
+        aria-label={mobile ? "Mobile primary navigation" : "Primary navigation"}
+      >
+        {items.map(([name, path]) => (
+          <Link
+            key={path}
+            href={path}
+            aria-current={pathname === path ? "page" : undefined}
+            onClick={mobile ? close : undefined}
+          >
+            {name}
+          </Link>
+        ))}
+      </nav>
+    );
+  };
+
+  const clientScope = operatorMode
+    ? "Clients: production"
+    : `Client: ${client?.display_name ?? "Unavailable"}`;
+  const operatorLabel = operatorMode
+    ? "Production workspace"
+    : `${session?.display_name ?? "Operator"} · ${liveMode ? "trusted local session" : "fixture session"}`;
+
   return (
     <>
       <a className="skip" href="#main">
@@ -62,13 +91,11 @@ export function Shell({
         >
           Menu
         </button>
-        <Link href={liveMode ? "/clients" : "/jobs"} className="wordmark">
+        <Link href={focusedMode ? "/clients" : "/jobs"} className="wordmark">
           JobSift
         </Link>
-        <span className="client-scope">Client: {client.display_name}</span>
-        <span className="operator">
-          {session.display_name} · {liveMode ? "trusted local session" : "fixture session"}
-        </span>
+        <span className="client-scope">{clientScope}</span>
+        <span className="operator">{operatorLabel}</span>
       </header>
       <div className="shell">
         <aside className="sidebar">
@@ -81,8 +108,20 @@ export function Shell({
         </aside>
         <main id="main" tabIndex={-1}>
           <div className="evidence-label">
-            <span className="fixture-tag">{liveMode ? "Local service" : "Development fixtures"}</span>
-            <span>{liveMode ? "Production operator workspace" : "Development fixtures · production commands stay server-side"}</span>
+            <span className="fixture-tag">
+              {operatorMode
+                ? "Production"
+                : liveMode
+                  ? "Local service"
+                  : "Development fixtures"}
+            </span>
+            <span>
+              {operatorMode
+                ? "Live operator controls · backend remains authoritative"
+                : liveMode
+                  ? "Registered local-service evidence"
+                  : "Development fixtures · production commands stay server-side"}
+            </span>
           </div>
           {children}
         </main>
@@ -97,7 +136,11 @@ export function Shell({
           <strong>JobSift</strong>
           <button onClick={close}>Close menu</button>
         </div>
-        <p className="secondary">{client.display_name} · {liveMode ? "local service" : "fixture"}</p>
+        <p className="secondary">
+          {operatorMode
+            ? "Production operator workspace"
+            : `${client?.display_name ?? "Unavailable"} · ${liveMode ? "local service" : "fixture"}`}
+        </p>
         {links(true)}
       </dialog>
     </>

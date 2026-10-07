@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createHash } from "node:crypto";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api/client";
-import { liveMode } from "@/lib/api/client";
+import { liveMode, operatorMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
 import { configuredOperatorProfilesRaw, parseOperatorProfiles } from "@/lib/operator-profiles";
 import { PresentationSettings } from "@/components/preferences";
@@ -47,11 +47,28 @@ export default async function SectionPage({
 }) {
   const { section } = await params;
   if (!titles[section]) notFound();
-  if (liveMode && !["operations", "clients", "review", "settings"].includes(section)) {
-    return <div className="section-content"><h1>{titles[section]}</h1><p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p><Link href="/jobs">Open Jobs</Link></div>;
+  const focusedSections = ["operations", "clients", "review", "settings"];
+  if (operatorMode && !focusedSections.includes(section)) {
+    return (
+      <div className="section-content">
+        <h1>{titles[section]}</h1>
+        <p>This view is not connected to the production operator workspace yet.</p>
+        <Link href="/clients">Open Clients</Link>
+      </div>
+    );
+  }
+  if (liveMode && !focusedSections.includes(section)) {
+    return (
+      <div className="section-content">
+        <h1>{titles[section]}</h1>
+        <p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p>
+        <Link href="/jobs">Open Jobs</Link>
+      </div>
+    );
   }
   const operatorSurface = ["operations", "clients", "review"].includes(section);
-  const session = operatorSurface ? null : await api.getSession();
+  const needsEvidenceSession = !operatorSurface && section !== "settings";
+  const session = needsEvidenceSession ? await api.getSession() : null;
   const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
   if (operatorSurface) {
@@ -392,9 +409,13 @@ export default async function SectionPage({
       <header className="page-head">
         <h1>{titles[section]}</h1>
         <p className="scope-line">
-          {section === "operations"
-            ? "Production workflows · explicit operator commands"
-            : "Example client · Read-only development evidence"}
+          {operatorMode
+            ? "Production operator workspace · backend-authoritative controls"
+            : section === "operations"
+              ? "Production workflows · explicit operator commands"
+              : liveMode
+                ? "Registered local-service evidence"
+                : "Example client · Read-only development evidence"}
         </p>
       </header>
       {content}

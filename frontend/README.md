@@ -99,6 +99,23 @@ operator workflow. GitHub Actions are transitional server-side machinery and are
 not modeled in the normal UI.
 
 
+## Production operator mode
+
+Vercel production uses `NEXT_PUBLIC_JOBSIFT_OPERATOR=1` and keeps
+`NEXT_PUBLIC_JOBSIFT_LIVE=0`. Operator mode is a presentation/routing switch
+only; it is not an authorization mechanism. Vercel Authentication remains the
+outer authenticated boundary, and all mutations still pass through the
+same-origin server routes and backend guards.
+
+Operator mode does not create or depend on a fictional session/client. The shell
+shows only Clients, Review, Operations and Settings. Direct access to the legacy
+fixture Jobs route redirects to Clients so development evidence cannot be
+mistaken for production data.
+
+`NEXT_PUBLIC_JOBSIFT_LIVE=1` has a different meaning: it is reserved for the
+loopback Python operator-service workflow described below and requires
+`JOBSIFT_SERVICE_URL=http://127.0.0.1:<port>`.
+
 ## Local service connection
 
 The Jobs view can read registered evidence from the Python operator service. Start
@@ -125,8 +142,8 @@ requires a provisioned database and explicit private catalogue before the live
 view can show jobs.
 
 The default development mode still uses explicitly fictional evidence for the
-legacy Jobs views. In production live mode, `/` redirects to `/clients`; in
-fixture development mode it redirects to `/jobs`. Production mutation routes
+legacy Jobs views. In production operator mode and local-service mode, `/`
+redirects to `/clients`; in fixture development mode it redirects to `/jobs`. Production mutation routes
 remain server-side and fail closed when their credentials/catalogue are absent.
 
 ## Run and verify
