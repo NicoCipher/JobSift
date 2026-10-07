@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { issueOperatorCapability } from "../../../../lib/operator-capability";
+import { issueSheetHandle } from "../../../../lib/sheet-handle";
 
 export const dynamic = "force-dynamic";
 
@@ -793,12 +794,19 @@ export async function GET(request: NextRequest) {
       token,
       requestedControlRequestId,
     );
-    const profilesWithCapabilities = operatorSnapshot.profiles.map((profile) => ({
-      ...profile,
-      control_capability: profile.operator_managed
-        ? issueOperatorCapability(token, profile.profile_id)
-        : null,
-    }));
+    const profilesWithCapabilities = operatorSnapshot.profiles.map((profile) => {
+      const { sheet_url: sheetUrl, ...safeProfile } = profile;
+      return {
+        ...safeProfile,
+        control_capability: profile.operator_managed
+          ? issueOperatorCapability(token, profile.profile_id)
+          : null,
+        sheet_handle:
+          profile.operator_managed && sheetUrl
+            ? issueSheetHandle(token, profile.profile_id, sheetUrl)
+            : null,
+      };
+    });
     return NextResponse.json(
       {
         data: {
