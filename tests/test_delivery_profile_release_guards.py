@@ -382,6 +382,72 @@ def test_profile_cli_release_binds_guarded_generation(tmp_path, monkeypatch):
 
     assert called == [(batch.batch_id, batch.generation_id)]
 
+def test_profile_cli_release_selection_rejects_replayed_review_generation(
+    tmp_path, monkeypatch
+):
+    database = tmp_path / "jobs.db"
+    repo = SQLiteRepository(database)
+    gateway, destination, _store, _profile = setup_profile(repo, quota=3)
+    batch = prepare(
+        repo,
+        destination,
+        [
+            make_job("job-1", "Acme"),
+            make_job("job-2", "Beta"),
+            make_job("job-3", "Gamma"),
+        ],
+    )
+    reviewed_generation = batch.generation_id
+    assert reviewed_generation is not None
+
+    def fake_finalize(*, repository, batch_id, expected_generation_id):
+        current = DailyBatchStore(repository).get(batch_id)
+        assert expected_generation_id == current.generation_id
+        return current.model_copy(update={"status": "delivered"})
+
+    monkeypatch.setattr("job_scout.cli.GoogleSheetsGateway", lambda: gateway)
+    monkeypatch.setattr("job_scout.cli.finalize_daily_batch", fake_finalize)
+
+    argv = [
+        "job-scout",
+        "delivery-profile",
+        "release-selection",
+        "--database",
+        str(database),
+        "--profile-id",
+        delivery_profile_control_id("client-a", "jobs"),
+        "--batch-id",
+        batch.batch_id,
+        "--expected-generation-id",
+        reviewed_generation,
+        "--removed-ordinals",
+        "1",
+        "--confirm-batch-id",
+        batch.batch_id,
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    main()
+
+    after_first = DailyBatchStore(repo).get(batch.batch_id)
+    assert after_first.generation_id != reviewed_generation
+    assert [item.representative_job_id for item in after_first.items] == [
+        "job-2",
+        "job-3",
+    ]
+
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert exit_info.value.code != 0
+    after_retry = DailyBatchStore(repo).get(batch.batch_id)
+    assert after_retry.generation_id == after_first.generation_id
+    assert [item.representative_job_id for item in after_retry.items] == [
+        "job-2",
+        "job-3",
+    ]
+
+
 def test_profile_cli_discard_binds_loaded_generation(tmp_path, monkeypatch):
     database = tmp_path / "jobs.db"
     repo = SQLiteRepository(database)
