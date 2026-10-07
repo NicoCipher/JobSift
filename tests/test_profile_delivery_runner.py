@@ -36,11 +36,11 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
     monkeypatch.setattr(
         profile_delivery_runner, "GoogleSheetsGateway", lambda: object()
     )
-    snapshot = object()
+    loads = []
     monkeypatch.setattr(
         profile_delivery_runner,
         "load_recent_inventory_snapshot",
-        lambda **_kwargs: snapshot,
+        lambda **kwargs: loads.append(kwargs) or object(),
     )
     monkeypatch.setattr(
         profile_delivery_runner,
@@ -49,10 +49,10 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
     )
 
     def run_once_after_reconciliation(
-        _config, *, repository=None, recent_inventory_snapshot=None
+        _config, *, repository=None, recent_inventory_snapshot_loader=None
     ):
         assert repository is not None
-        assert recent_inventory_snapshot is snapshot
+        assert callable(recent_inventory_snapshot_loader)
         assert events == ["reconcile"]
         events.append("run")
         return {"action": "quota_reached"}
@@ -68,6 +68,7 @@ def test_profile_runner_reconciles_sheet_before_quota_run(tmp_path, monkeypatch)
     )
 
     assert events == ["reconcile", "run"]
+    assert loads == []
     assert result[0]["action"] == "quota_reached"
 
 
@@ -161,12 +162,12 @@ def test_profile_runner_uses_durable_operator_brief_without_repo_plan(tmp_path, 
     captured = {}
 
     def fake_run_once(
-        config, *, repository=None, recent_inventory_snapshot=None, **kwargs
+        config, *, repository=None, recent_inventory_snapshot_loader=None, **kwargs
     ):
         captured.update(kwargs)
         assert config.source_before_delivery is False
         assert repository is not None
-        assert recent_inventory_snapshot is snapshot
+        assert recent_inventory_snapshot_loader() is snapshot
         return {"action": "prepared"}
 
     monkeypatch.setattr(profile_delivery_runner, "run_once", fake_run_once)
@@ -238,11 +239,11 @@ def test_profile_runner_loads_inventory_payloads_once_for_many_clients(
     )
 
     def fake_run_once(
-        _config, *, repository=None, recent_inventory_snapshot=None, **_kwargs
+        _config, *, repository=None, recent_inventory_snapshot_loader=None, **_kwargs
     ):
         assert repository is not None
-        seen_snapshots.append(recent_inventory_snapshot)
-        return {"action": "prepared"}
+        seen_snapshots.append(recent_inventory_snapshot_loader())
+        return {"action": "prepared"
 
     monkeypatch.setattr(profile_delivery_runner, "run_once", fake_run_once)
 
