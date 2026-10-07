@@ -43,10 +43,37 @@ def review_snapshot(repository, *, profile_id: str, batch_id: str) -> dict[str, 
     ):
         raise BatchConflict("batch does not belong to the selected delivery profile")
 
-    observed_at = datetime.now(UTC)
     with repository.connect() as connection:
-        connection.execute("BEGIN")
+        if getattr(connection, "is_postgres", False):
+            connection.execute(
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+            )
+            observation = connection.execute(
+                "SELECT clock_timestamp()::text AS observed_at FROM daily_batches "
+                "WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+        else:
+            connection.execute("BEGIN")
+            observation = connection.execute(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%f+00:00','now') AS observed_at "
+                "FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+        if observation is None:
+            raise BatchConflict("batch not found")
+        observed_at = datetime.fromisoformat(str(observation["observed_at"]))
         result = DailyBatchStore._load(connection, batch_id)
+        if (
+            result.request.client_id != profile.client_id
+            or result.request.destination_id != profile.destination_id
+            or delivery_profile_control_id(
+                result.request.client_id,
+                result.request.destination_id or "",
+            )
+            != profile_id.strip().casefold()
+        ):
+            raise BatchConflict("batch does not belong to the selected delivery profile")
         item_rows = connection.execute(
             "SELECT ordinal,representative_job_id,evidence_sha256,export_row_json "
             "FROM daily_batch_items WHERE batch_id=? ORDER BY ordinal",
