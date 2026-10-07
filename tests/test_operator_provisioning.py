@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.operator_clients import OperatorClientStore, OperatorProvisioningStore
@@ -144,3 +146,74 @@ def test_create_client_retry_returns_same_completed_result(tmp_path):
 
     assert second == first
     assert len(OperatorClientStore(repo).list()) == 1
+
+
+def test_create_client_rolls_back_activation_if_request_completion_loses_race(
+    tmp_path,
+    monkeypatch,
+):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    request_id = str(uuid4())
+
+    original_connect = repo.connect
+
+    class WrappedConnection:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+        def __enter__(self):
+            self.inner.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.inner.__exit__(*args)
+
+        def execute(self, sql, params=()):
+            if (
+                "UPDATE operator_provisioning_requests" in sql
+                and "state='completed'" in sql
+            ):
+                result = self.inner.execute(sql, params)
+
+                class LostRace:
+                    rowcount = 0
+
+                return LostRace()
+            return self.inner.execute(sql, params)
+
+    def connect():
+        return WrappedConnection(original_connect())
+
+    monkeypatch.setattr(repo, "connect", connect)
+
+    with pytest.raises(ValueError, match="state changed before activation"):
+        process_request(
+            repo,
+            request_id=request_id,
+            operation="create_client",
+            payload=create_payload(),
+            gateway=FakeSheet(),
+        )
+
+    with original_connect() as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM operator_clients"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM client_delivery_profiles"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM client_sheet_destinations"
+            ).fetchone()[0]
+            == 1
+        )
