@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import base64
 from contextlib import contextmanager
 from uuid import uuid4
 
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.operator_clients import OperatorClientStore, OperatorProvisioningStore
-from job_scout.operator_provisioning import inspect_sheet, process_request, propose_mapping
+from job_scout.operator_provisioning import (
+    _encrypt_result,
+    inspect_sheet,
+    process_request,
+    propose_mapping,
+)
 from job_scout.storage.sqlite import SQLiteRepository
 
 
@@ -220,7 +227,7 @@ def test_create_client_rolls_back_activation_if_request_completion_loses_race(
             connection.execute(
                 "SELECT COUNT(*) FROM client_sheet_destinations"
             ).fetchone()[0]
-            == 1
+            == 0
         )
 
 
@@ -261,3 +268,37 @@ def test_create_client_rejects_daily_limit_above_product_ceiling(tmp_path):
             payload=payload,
             gateway=FakeSheet(),
         )
+
+
+def test_provisioning_result_envelope_hides_private_result_fields(monkeypatch):
+    raw_key = bytes(range(32))
+    encoded_key = base64.urlsafe_b64encode(raw_key).rstrip(b"=").decode()
+    monkeypatch.setenv("JOBSIFT_PROVISIONING_KEY", encoded_key)
+    private_result = {
+        "request_id": str(uuid4()),
+        "operation": "inspect_sheet",
+        "result": {
+            "tabs": ["Private Jobs"],
+            "headers": ["Secret Role", "Private Company"],
+            "selected_tab": "Private Jobs",
+        },
+    }
+
+    envelope = _encrypt_result(private_result)
+
+    assert envelope.startswith("v1.")
+    assert "Private Jobs" not in envelope
+    assert "Secret Role" not in envelope
+    version, iv_raw, ciphertext_raw, tag_raw = envelope.split(".")
+    assert version == "v1"
+
+    def decode(value):
+        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+    plaintext = AESGCM(raw_key).decrypt(
+        decode(iv_raw),
+        decode(ciphertext_raw) + decode(tag_raw),
+        None,
+    )
+    assert b"Private Jobs" in plaintext
+    assert b"Secret Role" in plaintext
