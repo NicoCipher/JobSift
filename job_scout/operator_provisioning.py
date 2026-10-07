@@ -365,10 +365,6 @@ def _activate_operator_client(
             "delivery_mode": profile.delivery_mode,
             "daily_limit": profile.daily_quota,
             "sheet_status": destination.status,
-            "sheet_url": (
-                f"https://docs.google.com/spreadsheets/d/"
-                f"{destination.spreadsheet_id}/edit#gid={destination.sheet_id}"
-            ),
             "brief_revision": brief_revision,
         }
         completed = connection.execute(
