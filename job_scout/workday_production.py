@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
-from job_scout.operator_clients import OperatorClientStore
 from job_scout.domain.models import (
     CollectionResult,
     CollectionStatus,
@@ -25,6 +24,7 @@ from job_scout.domain.models import (
     SearchBrief,
     SourceTarget,
 )
+from job_scout.operator_clients import OperatorClientStore
 from job_scout.production_registry import ProductionSourceRegistry, ProductionTarget
 from job_scout.search_brief import load_search_brief
 from job_scout.sourcing_plan import load_sourcing_plan
