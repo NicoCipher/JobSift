@@ -81,6 +81,7 @@ type ReviewSnapshot = {
   observed_at: string;
   profile_id: string;
   batch_id: string;
+  generation_id: string;
   batch_status: string;
   selected_count: number;
   requested_quota: number;
@@ -494,6 +495,7 @@ export function ClientWorkspace({
         timezone: "Africa/Lagos",
         batch_id: state.batch_id,
         removed_ordinals: removedOrdinals.join(","),
+        expected_generation_id: review.generation_id,
       },
       {
         profileId: state.profile_id,
