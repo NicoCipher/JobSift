@@ -45,8 +45,8 @@ class CriteriaPayload(BaseModel):
     role_titles: list[str]
     country: str
     work_modes: list[str]
-    exclusions: list[str] = []
-    preferred_terms: list[str] = []
+    exclusions: list[str] = Field(default_factory=list)
+    preferred_terms: list[str] = Field(default_factory=list)
     freshness_hours: int = Field(default=24, ge=1, le=24)
 
     @field_validator("role_titles", "work_modes")
@@ -79,7 +79,7 @@ class SheetPayload(BaseModel):
 
     url: str
     tab: str
-    column_mapping: dict[str, str] = {}
+    column_mapping: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("url", "tab")
     @classmethod
