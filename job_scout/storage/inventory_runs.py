@@ -350,7 +350,7 @@ class InventoryRunStore:
         retention_hours: int,
         evaluated_at: datetime | None = None,
     ) -> tuple[str, ...]:
-        """Return full active payloads inside the shared retention window."""
+        """Return active job IDs inside the shared retention window."""
         if retention_hours < 1:
             raise ValueError("retention_hours must be at least 1")
         evaluation_time = evaluated_at or datetime.now(UTC)
@@ -362,6 +362,23 @@ class InventoryRunStore:
         cutoff = evaluation_time - timedelta(hours=retention_hours)
         active: list[str] = []
         with self.repository.connect() as connection:
+            if getattr(connection, "is_postgres", False):
+                # Production only needs IDs here. Apply retention inside Neon so
+                # candidate selection does not download the same job JSON again
+                # after evaluation already consumed it.
+                rows = connection.execute(
+                    "SELECT DISTINCT r.job_id FROM inventory_run_jobs r "
+                    "JOIN jobs j ON j.id=r.job_id "
+                    "LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                    "WHERE r.run_id=? AND j.lifecycle!='closed' AND "
+                    "COALESCE(NULLIF(e.posted_at,''), "
+                    "NULLIF(j.payload_json::jsonb->>'posted_at',''), "
+                    "j.first_seen_at)::timestamptz >= ?::timestamptz "
+                    "ORDER BY r.job_id",
+                    (run_id, cutoff.isoformat()),
+                ).fetchall()
+                return tuple(row["job_id"] for row in rows)
+
             rows = connection.execute(
                 "SELECT DISTINCT r.job_id,j.payload_json,j.first_seen_at,"
                 "e.posted_at AS retention_posted_at FROM inventory_run_jobs r "
