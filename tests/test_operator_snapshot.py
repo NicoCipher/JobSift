@@ -226,6 +226,7 @@ def test_review_snapshot_exposes_only_current_frozen_evidence(tmp_path):
 
     review = review_snapshot(repo, profile_id=profile_id, batch_id=prepared.batch_id)
     assert review["safe_to_release"] is True
+    assert review["generation_id"] == prepared.generation_id
     assert review["items"][0]["evidence_verified"] is True
     assert review["items"][0]["release_ready"] is True
     assert review["items"][0]["remote_status"] == "remote"
