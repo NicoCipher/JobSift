@@ -561,13 +561,16 @@ export function ClientWorkspace({
               backend.
             </p>
           </div>
-          <button
-            type="button"
-            disabled={busy || !status?.control_ready || !stateVerified}
-            onClick={() => void findJobs()}
-          >
-            {busy ? "Starting…" : "Find jobs now"}
-          </button>
+          <div className="client-page-actions">
+            <Link href="/clients/new" className="secondary-link">Add client</Link>
+            <button
+              type="button"
+              disabled={busy || !status?.control_ready || !stateVerified}
+              onClick={() => void findJobs()}
+            >
+              {busy ? "Starting…" : "Find jobs now"}
+            </button>
+          </div>
         </section>
 
         {!status?.control_ready ? (
@@ -664,6 +667,11 @@ export function ClientWorkspace({
                     >
                       Check Sheet
                     </button>
+                    {state?.sheet_url ? (
+                      <a href={state.sheet_url} target="_blank" rel="noreferrer">
+                        Open Sheet
+                      </a>
+                    ) : null}
                     <button
                       type="button"
                       disabled={busy || !stateVerified || !state || state.profile_status !== "active"}
