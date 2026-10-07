@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from job_scout.delivery_destinations import (
     ClientSheetDestinationStore,
@@ -31,6 +31,25 @@ from job_scout.operator_clients import (
     provisioning_payload_sha256,
 )
 from job_scout.storage.factory import create_repository
+
+class ProvisioningFailure(ValueError):
+    """Safe operator-facing provisioning failure with no private payload values."""
+
+
+def _safe_failure(error: Exception) -> tuple[str, str]:
+    if isinstance(error, ProvisioningFailure):
+        return "PROVISIONING_ERROR", str(error)
+    if isinstance(error, ValidationError):
+        return "VALIDATION_ERROR", "Some client setup fields are invalid."
+    if isinstance(error, BatchConflict):
+        return "SHEET_OR_STATE_ERROR", str(error)[:500]
+    if isinstance(error, ValueError):
+        return "VALIDATION_ERROR", "Client setup could not be validated."
+    return (
+        "PROVISIONING_ERROR",
+        "JobSift could not verify the Google Sheet or save the client.",
+    )
+
 
 _REQUIRED_MAPPING = ("Job Title", "Company Name", "Job Link")
 _HEADER_ALIASES = {
@@ -464,12 +483,13 @@ def process_request(
         else:
             raise ValueError("provisioning operation is not implemented yet")
     except Exception as exc:
+        code, message = _safe_failure(exc)
         requests.fail(
             request_id,
-            code=type(exc).__name__.upper(),
-            message=str(exc),
+            code=code,
+            message=message,
         )
-        raise
+        raise ProvisioningFailure(message) from exc
 
     if operation != "create_client":
         requests.complete(request_id, result)
@@ -497,7 +517,7 @@ def main() -> None:
             payload=_read_payload(Path(payload_file)),
             gateway=GoogleSheetsGateway(),
         )
-    except (BatchConflict, ValueError) as exc:
+    except ProvisioningFailure as exc:
         print(
             "JOBSIFT_PROVISION_ERROR="
             + json.dumps(
