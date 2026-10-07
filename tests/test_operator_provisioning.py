@@ -179,7 +179,7 @@ def test_create_client_rolls_back_activation_if_request_completion_loses_race(
                 "UPDATE operator_provisioning_requests" in sql
                 and "state='completed'" in sql
             ):
-                result = self.inner.execute(sql, params)
+                self.inner.execute(sql, params)
 
                 class LostRace:
                     rowcount = 0
