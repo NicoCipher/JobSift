@@ -338,13 +338,45 @@ def main() -> None:
     repository = create_repository(
         Path(os.getenv("JOBSIFT_DATABASE", "/tmp/jobsift-provision.sqlite3"))
     )
-    result = process_request(
-        repository,
-        request_id=request_id,
-        operation=operation,
-        payload=_decode_payload(payload_raw),
-        gateway=GoogleSheetsGateway(),
-    )
+    try:
+        result = process_request(
+            repository,
+            request_id=request_id,
+            operation=operation,
+            payload=_decode_payload(payload_raw),
+            gateway=GoogleSheetsGateway(),
+        )
+    except (BatchConflict, ValueError) as exc:
+        print(
+            "JOBSIFT_PROVISION_ERROR="
+            + json.dumps(
+                {
+                    "request_id": request_id,
+                    "operation": operation,
+                    "message": str(exc)[:500],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        print(
+            "JOBSIFT_PROVISION_ERROR="
+            + json.dumps(
+                {
+                    "request_id": request_id,
+                    "operation": operation,
+                    "message": (
+                        "JobSift could not verify the Google Sheet or save the client."
+                    ),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        raise SystemExit(1) from exc
+
     print(
         "JOBSIFT_PROVISION_RESULT="
         + json.dumps(
