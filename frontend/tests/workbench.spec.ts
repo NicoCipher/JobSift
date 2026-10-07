@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
+import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
 }) => {
@@ -117,6 +118,37 @@ test("control validation canonicalizes timezones and generated batch IDs", () =>
   expect(canonicalTimeZone("\"; echo pwned; #")).toBeNull();
   expect(validBatchId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(true);
   expect(validBatchId("\"; echo pwned; #")).toBe(false);
+});
+
+test("operator profile catalogue rejects unlisted production controls", () => {
+  const raw = JSON.stringify([
+    {
+      profile_id: "AD763A0336D92204",
+      client_name: "Paying Client",
+      destination_name: "Client Jobs",
+    },
+    {
+      profile_id: "ad763a0336d92204",
+      client_name: "Duplicate",
+      destination_name: "Ignored",
+    },
+    {
+      profile_id: "not-a-profile",
+      client_name: "Invalid",
+      destination_name: "Ignored",
+    },
+  ]);
+  expect(parseOperatorProfiles(raw)).toEqual([
+    {
+      profile_id: "ad763a0336d92204",
+      client_name: "Paying Client",
+      destination_name: "Client Jobs",
+    },
+  ]);
+  expect(isOperatorProfileAllowed(raw, "ad763a0336d92204")).toBe(true);
+  expect(isOperatorProfileAllowed(raw, "0123456789abcdef")).toBe(false);
+  expect(isOperatorProfileAllowed(undefined, "0123456789abcdef")).toBe(false);
+  expect(isOperatorProfileAllowed(undefined, "0123456789abcdef", true)).toBe(true);
 });
 
 test("control API rejects unconfigured, invalid, and cross-origin mutations", async ({ request }) => {
