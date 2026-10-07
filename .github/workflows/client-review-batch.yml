@@ -1,0 +1,55 @@
+name: Review Client Batch
+run-name: Review client batch · ${{ inputs.control_request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile_id:
+        description: Opaque delivery profile ID
+        required: true
+        type: string
+      batch_id:
+        description: Prepared batch ID
+        required: true
+        type: string
+      control_request_id:
+        description: Opaque correlation ID from the operator interface
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Review reads the same durable state that mutations change. Queue behind delivery
+# mutations so the snapshot never races a release/discard/profile update.
+concurrency:
+  group: jobsift-client-delivery-mutation
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift-review.sqlite3
+      JOBSIFT_PERSISTENCE_BACKEND: postgres
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      JOBSIFT_PROFILE_CONTROL_ID: ${{ inputs.profile_id }}
+      JOBSIFT_REVIEW_BATCH_ID: ${{ inputs.batch_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[postgres]'
+
+      - name: Emit authoritative review evidence
+        run: |
+          test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
+          python -m job_scout.review_snapshot
