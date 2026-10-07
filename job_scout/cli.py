@@ -205,16 +205,22 @@ def main() -> None:
     delivery_profile_timezone.add_argument("--profile-id", required=True)
     delivery_profile_timezone.add_argument("--timezone", required=True)
 
-    for name in ("release-batch", "discard-batch"):
+    for name in ("release-batch", "release-selection", "discard-batch"):
         command = delivery_profile_commands.add_parser(name)
         command.add_argument("--database", default="jobs.sqlite3")
         command.add_argument("--profile-id", required=True)
         command.add_argument("--batch-id", required=True)
-        if name == "release-batch":
+        if name in {"release-batch", "release-selection"}:
             command.add_argument(
                 "--confirm-batch-id",
                 required=True,
                 help="Repeat the reviewed batch ID to authorize Sheet delivery",
+            )
+        if name == "release-selection":
+            command.add_argument(
+                "--removed-ordinals",
+                default="",
+                help="Comma-separated prepared-row ordinals the operator removed before release",
             )
 
     profile = commands.add_parser("profile")
@@ -517,9 +523,36 @@ def main() -> None:
             else:
                 profile = _profile_for_control_id()
                 batch_store = DailyBatchStore(repository)
-                if args.delivery_profile_command == "release-batch":
+                if args.delivery_profile_command in {"release-batch", "release-selection"}:
                     if args.confirm_batch_id != args.batch_id:
                         parser.error("confirmation must match the reviewed batch ID")
+                    if args.delivery_profile_command == "release-selection":
+                        current = batch_store.get(args.batch_id)
+                        expected_control_id = delivery_profile_control_id(
+                            current.request.client_id,
+                            current.request.destination_id or "",
+                        )
+                        if expected_control_id != args.profile_id.casefold():
+                            parser.error(
+                                "batch does not belong to the selected delivery profile"
+                            )
+                        raw_ordinals = [
+                            value.strip()
+                            for value in args.removed_ordinals.split(",")
+                            if value.strip()
+                        ]
+                        try:
+                            removed_ordinals = tuple(int(value) for value in raw_ordinals)
+                        except ValueError:
+                            parser.error("removed ordinals must be comma-separated integers")
+                        if len(set(removed_ordinals)) != len(removed_ordinals):
+                            parser.error("removed ordinals must be unique")
+                        if removed_ordinals:
+                            current = batch_store.remove_prepared_items(
+                                current.batch_id,
+                                removed_ordinals,
+                                expected_generation_id=current.generation_id,
+                            )
                     result, reconciliation, _remaining = store.guard_batch_release(
                         profile,
                         args.batch_id,
@@ -559,7 +592,7 @@ def main() -> None:
                     payload["sheet_reconciliation"] = reconciliation
                 print(json.dumps(payload, sort_keys=True))
                 if (
-                    args.delivery_profile_command == "release-batch"
+                    args.delivery_profile_command in {"release-batch", "release-selection"}
                     and result.status != "delivered"
                 ):
                     parser.exit(1)
