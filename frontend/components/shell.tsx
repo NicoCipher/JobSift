@@ -6,9 +6,10 @@ import type { Client, Session } from "@/lib/contracts/service";
 import { liveMode } from "@/lib/api/client";
 const navigation = [
   ["Dashboard", "/dashboard"],
+  ["Clients", "/clients"],
+  ["Review", "/review"],
   ["Operations", "/operations"],
   ["Jobs", "/jobs"],
-  ["Review", "/review"],
   ["Search Briefs", "/briefs"],
   ["Runs", "/runs"],
   ["History", "/history"],
@@ -35,7 +36,7 @@ export function Shell({
     <nav
       aria-label={mobile ? "Mobile primary navigation" : "Primary navigation"}
     >
-      {(liveMode ? navigation.filter(([, path]) => ["/jobs", "/operations", "/settings"].includes(path)) : navigation).map(([name, path]) => (
+      {(liveMode ? navigation.filter(([, path]) => ["/clients", "/review", "/operations", "/jobs", "/settings"].includes(path)) : navigation).map(([name, path]) => (
         <Link
           key={path}
           href={path}
@@ -61,7 +62,7 @@ export function Shell({
         >
           Menu
         </button>
-        <Link href="/jobs" className="wordmark">
+        <Link href={liveMode ? "/clients" : "/jobs"} className="wordmark">
           JobSift
         </Link>
         <span className="client-scope">Client: {client.display_name}</span>
@@ -73,15 +74,15 @@ export function Shell({
         <aside className="sidebar">
           {links()}
           <p className="sidebar-note metadata">
-            Evidence views are read-only
+            Clients and Review are the normal workflow
             <br />
-            Operations uses explicit production commands
+            Operations keeps advanced controls
           </p>
         </aside>
         <main id="main" tabIndex={-1}>
           <div className="evidence-label">
             <span className="fixture-tag">{liveMode ? "Local service" : "Development fixtures"}</span>
-            <span>{liveMode ? "Registered evidence · production commands only in Operations" : "Fictional evidence · production commands only in Operations"}</span>
+            <span>{liveMode ? "Production operator workspace" : "Development fixtures · production commands stay server-side"}</span>
           </div>
           {children}
         </main>
