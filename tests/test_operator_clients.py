@@ -89,7 +89,8 @@ def test_provisioning_request_is_idempotent_after_completion(tmp_path):
         payload=payload,
     )
     assert created.state == "queued"
-    assert created.payload == payload
+    assert created.payload == {}
+    assert created.request_sha256 == provisioning_payload_sha256(payload)
 
     claimed = store.claim(request_id)
     assert claimed.state == "running"
