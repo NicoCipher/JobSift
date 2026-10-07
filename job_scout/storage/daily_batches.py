@@ -429,7 +429,7 @@ class DailyBatchStore:
             )
             counts = result.counts.model_copy(update={"selected_groups": len(kept)})
             new_generation = str(uuid4())
-            c.execute(
+            updated = c.execute(
                 "UPDATE daily_batches SET generation_id=?,selected_count=?,shortfall=?,"
                 "counts_json=? WHERE batch_id=? AND generation_id=?",
                 (
@@ -441,7 +441,7 @@ class DailyBatchStore:
                     expected_generation_id,
                 ),
             )
-            if c.rowcount != 1:
+            if updated.rowcount != 1:
                 raise BatchConflict("batch revision changed")
             return self._load(c, batch_id)
 
