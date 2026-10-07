@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
@@ -131,10 +130,9 @@ class InspectSheetPayload(BaseModel):
         return value
 
 
-def _decode_payload(raw: str) -> dict[str, object]:
+def _read_payload(path: Path) -> dict[str, object]:
     try:
-        decoded = base64.urlsafe_b64decode(raw.encode()).decode()
-        value = json.loads(decoded)
+        value = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise ValueError("invalid provisioning payload") from exc
     if not isinstance(value, dict):
@@ -328,8 +326,8 @@ def process_request(
 def main() -> None:
     request_id = os.getenv("JOBSIFT_PROVISION_REQUEST_ID", "").strip().casefold()
     operation = os.getenv("JOBSIFT_PROVISION_OPERATION", "").strip()
-    payload_raw = os.getenv("JOBSIFT_PROVISION_PAYLOAD_B64", "").strip()
-    if not request_id or not operation or not payload_raw:
+    payload_file = os.getenv("JOBSIFT_PROVISION_PAYLOAD_FILE", "").strip()
+    if not request_id or not operation or not payload_file:
         raise SystemExit("provisioning request ID, operation and payload are required")
     parsed = UUID(request_id)
     if str(parsed) != request_id:
@@ -343,7 +341,7 @@ def main() -> None:
             repository,
             request_id=request_id,
             operation=operation,
-            payload=_decode_payload(payload_raw),
+            payload=_read_payload(Path(payload_file)),
             gateway=GoogleSheetsGateway(),
         )
     except (BatchConflict, ValueError) as exc:
