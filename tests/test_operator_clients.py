@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
+
+import pytest
 
 from job_scout.domain.models import SearchBrief
 from job_scout.operator_clients import (
@@ -90,12 +93,14 @@ def test_provisioning_request_is_idempotent_after_completion(tmp_path):
 
     claimed = store.claim(request_id)
     assert claimed.state == "running"
+    assert claimed.payload == {}
 
     completed = store.complete(
         request_id,
         {"tabs": ["Jobs"], "headers": ["Role", "Company", "URL"]},
     )
     assert completed.state == "completed"
+    assert completed.payload == {}
     assert store.claim(request_id) == completed
 
 
@@ -116,7 +121,30 @@ def test_failed_provisioning_request_can_be_retried(tmp_path):
     )
     assert failed.state == "failed"
     assert failed.error_code == "SHEET_NOT_READY"
+    assert failed.payload == {}
 
     retried = store.claim(request_id)
     assert retried.state == "running"
     assert retried.error_code is None
+
+
+def test_stale_running_provisioning_request_can_be_reclaimed(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    store = OperatorProvisioningStore(repo)
+    request_id = str(uuid4())
+    start = datetime(2026, 10, 7, 5, 0, tzinfo=UTC)
+    store.create(
+        request_id=request_id,
+        operation="inspect_sheet",
+        payload={"sheet_url": "https://example.invalid", "tab": "Jobs"},
+    )
+    running = store.claim(request_id, now=start)
+    assert running.state == "running"
+    assert running.payload == {}
+
+    with pytest.raises(ValueError, match="already running"):
+        store.claim(request_id, now=start + timedelta(minutes=10))
+
+    reclaimed = store.claim(request_id, now=start + timedelta(minutes=16))
+    assert reclaimed.state == "running"
+    assert reclaimed.updated_at == start + timedelta(minutes=16)
