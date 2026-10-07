@@ -377,3 +377,49 @@ def test_retained_candidate_snapshot_keeps_only_titles_matching_active_briefs(tm
             source_job_ids=["R-match"],
         )
     ]
+
+
+def test_active_profile_binding_supports_durable_operator_brief(tmp_path):
+    from job_scout.delivery_profiles import ClientDeliveryProfileStore
+    from job_scout.operator_clients import OperatorClientStore
+    from job_scout.storage.sqlite import SQLiteRepository
+
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    brief = SearchBrief(
+        client_id="client-a",
+        target_roles=["Platform Engineer"],
+    )
+    OperatorClientStore(repository).upsert(
+        client_id="client-a",
+        display_name="Acme",
+        destination_id="jobs",
+        destination_name="Acme Jobs",
+        sourcing_plan_id="operator-client-a",
+        brief=brief,
+    )
+    ClientDeliveryProfileStore(repository).upsert(
+        client_id="client-a",
+        destination_id="jobs",
+        sourcing_plan_id="operator-client-a",
+        daily_quota=100,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+
+    plan_dir = tmp_path / "config" / "sourcing_plans"
+    plan_dir.mkdir(parents=True)
+    bindings = workday_production.resolve_active_workday_brief_bindings(
+        repository=repository,
+        plan_dir=plan_dir,
+        repo_root=tmp_path,
+    )
+
+    assert len(bindings) == 1
+    assert bindings[0].path is None
+    assert bindings[0].brief_json is not None
+    loaded = workday_production.load_bound_workday_briefs(
+        bindings,
+        repo_root=tmp_path,
+    )
+    assert loaded == [brief]
