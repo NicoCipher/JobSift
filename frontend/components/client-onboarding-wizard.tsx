@@ -17,7 +17,6 @@ type CreatedClient = {
   delivery_mode: string;
   daily_limit: number | null;
   sheet_status: string;
-  sheet_url: string | null;
   brief_revision: number | null;
 };
 
@@ -246,9 +245,6 @@ export function ClientOnboardingWizard() {
         </div>
         <div className="onboarding-actions">
           <Link href="/clients">Open client</Link>
-          {created.sheet_url ? (
-            <a href={created.sheet_url} target="_blank" rel="noreferrer">Open client Sheet</a>
-          ) : null}
         </div>
       </section>
     );
