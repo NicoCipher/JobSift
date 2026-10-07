@@ -62,7 +62,7 @@ type ProfileSnapshot = {
   operator_managed: boolean;
   client_name: string | null;
   destination_name: string | null;
-  sheet_url: string | null;
+  sheet_handle: string | null;
   control_capability: string | null;
 };
 
