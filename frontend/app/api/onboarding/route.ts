@@ -183,15 +183,12 @@ function publicResult(value: unknown): Record<string, unknown> | null {
       missing_required_fields: missing,
     };
   }
-  const sheetUrl = clean(source.sheet_url, 2048);
   return {
     client_name: clean(source.client_name, 120),
     destination_name: clean(source.destination_name, 120),
     delivery_mode: clean(source.delivery_mode, 20),
     daily_limit: Number.isInteger(source.daily_limit) ? source.daily_limit : null,
     sheet_status: clean(source.sheet_status, 32),
-    sheet_url:
-      /^https:\/\/docs\.google\.com\/spreadsheets\//i.test(sheetUrl) ? sheetUrl : null,
     brief_revision: Number.isInteger(source.brief_revision) ? source.brief_revision : null,
   };
 }
