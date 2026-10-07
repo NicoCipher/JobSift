@@ -1677,6 +1677,9 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await page.getByRole("button", { name: "Continue" }).click();
 
   await page.getByLabel("Daily limit").fill("250");
+  await expect(page.getByLabel("Daily reset timezone")).toHaveValue(
+    "America/New_York",
+  );
   await expect(page.getByText("Review first", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
 
@@ -1710,6 +1713,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
     },
     daily_limit: 250,
     delivery_mode: "review",
+    timezone: "America/New_York",
     sheet: {
       tab: "Jobs",
       column_mapping: {
