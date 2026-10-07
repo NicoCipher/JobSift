@@ -38,7 +38,7 @@ type ProfileSnapshot = {
   operator_managed: boolean;
   client_name: string | null;
   destination_name: string | null;
-  sheet_url: string | null;
+  sheet_handle: string | null;
   control_capability: string | null;
 };
 
@@ -667,8 +667,12 @@ export function ClientWorkspace({
                     >
                       Check Sheet
                     </button>
-                    {state?.sheet_url ? (
-                      <a href={state.sheet_url} target="_blank" rel="noreferrer">
+                    {state?.sheet_handle ? (
+                      <a
+                        href={`/api/control/sheet?handle=${encodeURIComponent(state.sheet_handle)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         Open Sheet
                       </a>
                     ) : null}
