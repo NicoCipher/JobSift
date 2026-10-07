@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { encryptProvisioningPayload, validProvisioningKey } from "../../../lib/provisioning-crypto";
+import {
+  decryptProvisioningPayload,
+  encryptProvisioningPayload,
+  validProvisioningKey,
+} from "../../../lib/provisioning-crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -221,6 +225,17 @@ function parseMarker(logs: string, marker: string) {
   }
 }
 
+function parseTextMarker(logs: string, marker: string) {
+  const ansi = /\u001b\[[0-9;]*m/g;
+  const line = logs
+    .replace(ansi, "")
+    .split("\n")
+    .reverse()
+    .find((candidate) => candidate.includes(marker));
+  if (!line) return "";
+  return line.slice(line.indexOf(marker) + marker.length).trim();
+}
+
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) {
     return response(
@@ -307,6 +322,17 @@ export async function GET(request: NextRequest) {
       503,
     );
   }
+  if (!validProvisioningKey(provisioningKey())) {
+    return response(
+      {
+        error: {
+          code: "PROVISIONING_NOT_CONFIGURED",
+          message: "Secure client onboarding is not configured on this deployment.",
+        },
+      },
+      503,
+    );
+  }
   const controlRequestId =
     request.nextUrl.searchParams.get("control_request_id")?.trim().toLowerCase() ?? "";
   if (!validRequestId(controlRequestId)) return invalid("A valid onboarding request is required.");
@@ -337,8 +363,17 @@ export async function GET(request: NextRequest) {
     const logs = await logsResponse.text();
 
     if (run.conclusion === "success") {
-      const marker = parseMarker(logs, "JOBSIFT_PROVISION_RESULT=");
-      const result = publicResult(marker?.result);
+      const ciphertext = parseTextMarker(
+        logs,
+        "JOBSIFT_PROVISION_RESULT_CIPHERTEXT=",
+      );
+      const plaintext = decryptProvisioningPayload(
+        provisioningKey(),
+        ciphertext,
+      );
+      if (!plaintext) throw new Error("result");
+      const marker = JSON.parse(plaintext) as Record<string, unknown>;
+      const result = publicResult(marker.result);
       if (!result) throw new Error("result");
       return response({ data: { state: "ready", result } });
     }
