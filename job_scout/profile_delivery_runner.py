@@ -114,16 +114,18 @@ def run_active_profiles(
     gateway = GoogleSheetsGateway() if profiles else None
 
     # The retained job payloads are the largest recurring Neon read. Load them
-    # once per profile-delivery invocation, then match every active client
-    # against the same immutable in-memory snapshot.
-    recent_inventory_snapshot = (
-        load_recent_inventory_snapshot(
-            repository=repository,
-            retention_hours=retention_hours,
-        )
-        if profiles
-        else None
-    )
+    # only when a profile actually reaches matching, then reuse the same
+    # immutable snapshot for every later client in this invocation.
+    recent_inventory_snapshot = None
+
+    def shared_inventory_snapshot():
+        nonlocal recent_inventory_snapshot
+        if recent_inventory_snapshot is None:
+            recent_inventory_snapshot = load_recent_inventory_snapshot(
+                repository=repository,
+                retention_hours=retention_hours,
+            )
+        return recent_inventory_snapshot
 
     for profile in profiles:
         try:
@@ -171,7 +173,7 @@ def run_active_profiles(
                     source_before_delivery=False,
                 ),
                 repository=repository,
-                recent_inventory_snapshot=recent_inventory_snapshot,
+                recent_inventory_snapshot_loader=shared_inventory_snapshot,
                 **runtime_kwargs,
             )
             result["sheet_reconciliation"] = reconciliation
