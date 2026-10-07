@@ -71,22 +71,50 @@ def resolve_retained_workday_candidate_bindings(
 
     grouped: dict[str, set[str]] = defaultdict(set)
     with repository.connect() as connection:
-        rows = connection.execute(
-            "SELECT source_board_id,source_job_id,payload_json FROM jobs "
-            "WHERE source='workday' AND lifecycle!='closed' "
-            "ORDER BY source_board_id,source_job_id"
-        ).fetchall()
-
-    for row in rows:
-        job = Job.model_validate_json(row["payload_json"])
-        if (
-            job.source != "workday"
-            or job.source_board_id != row["source_board_id"]
-            or job.source_job_id != row["source_job_id"]
-        ):
-            raise ValueError("retained Workday job provenance is inconsistent")
-        if any(role_title_candidate(job.title, brief) for brief in briefs):
-            grouped[job.source_board_id].add(job.source_job_id)
+        if getattr(connection, "is_postgres", False):
+            # Planning only needs provenance plus title. Keep large descriptions
+            # and provider metadata inside Neon instead of transferring full JSON.
+            rows = connection.execute(
+                "SELECT source_board_id,source_job_id,"
+                "payload_json::jsonb->>'source' AS payload_source,"
+                "payload_json::jsonb->>'source_board_id' AS payload_board_id,"
+                "payload_json::jsonb->>'source_job_id' AS payload_source_job_id,"
+                "payload_json::jsonb->>'title' AS title "
+                "FROM jobs WHERE source='workday' AND lifecycle!='closed' "
+                "ORDER BY source_board_id,source_job_id"
+            ).fetchall()
+            for row in rows:
+                if (
+                    row["payload_source"] != "workday"
+                    or row["payload_board_id"] != row["source_board_id"]
+                    or row["payload_source_job_id"] != row["source_job_id"]
+                    or not row["title"]
+                ):
+                    raise ValueError(
+                        "retained Workday job provenance is inconsistent"
+                    )
+                if any(
+                    role_title_candidate(row["title"], brief) for brief in briefs
+                ):
+                    grouped[row["source_board_id"]].add(row["source_job_id"])
+        else:
+            rows = connection.execute(
+                "SELECT source_board_id,source_job_id,payload_json FROM jobs "
+                "WHERE source='workday' AND lifecycle!='closed' "
+                "ORDER BY source_board_id,source_job_id"
+            ).fetchall()
+            for row in rows:
+                job = Job.model_validate_json(row["payload_json"])
+                if (
+                    job.source != "workday"
+                    or job.source_board_id != row["source_board_id"]
+                    or job.source_job_id != row["source_job_id"]
+                ):
+                    raise ValueError(
+                        "retained Workday job provenance is inconsistent"
+                    )
+                if any(role_title_candidate(job.title, brief) for brief in briefs):
+                    grouped[job.source_board_id].add(job.source_job_id)
 
     return [
         WorkdayRetainedCandidateBinding(
