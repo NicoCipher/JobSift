@@ -187,7 +187,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
       timezone: "\"; echo pwned; #",
     },
   });
-  expect(maliciousTimezone.status()).toBe(400);
+  expect(maliciousTimezone.status()).toBe(403);
 
   const maliciousBatch = await request.post("/api/control/dispatch", {
     data: {
@@ -197,7 +197,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
       batch_id: "\"; echo pwned; #",
     },
   });
-  expect(maliciousBatch.status()).toBe(400);
+  expect(maliciousBatch.status()).toBe(403);
 
   const crossOrigin = await request.post("/api/control/dispatch", {
     headers: { Origin: "https://example.invalid" },
