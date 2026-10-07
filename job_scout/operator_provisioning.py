@@ -9,6 +9,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -27,6 +28,7 @@ from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.operator_clients import (
     OperatorProvisioningStore,
     brief_sha256,
+    provisioning_payload_sha256,
 )
 from job_scout.storage.factory import create_repository
 
@@ -96,8 +98,9 @@ class CreateClientPayload(BaseModel):
 
     client_name: str
     criteria: CriteriaPayload
-    daily_limit: int = Field(ge=1, le=5000)
+    daily_limit: int = Field(ge=1, le=2000)
     delivery_mode: str
+    timezone: str
     sheet: SheetPayload
 
     @field_validator("client_name")
@@ -114,6 +117,15 @@ class CreateClientPayload(BaseModel):
         value = value.strip().casefold()
         if value not in {"review", "auto"}:
             raise ValueError("delivery mode must be review or auto")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("client timezone is required")
+        ZoneInfo(value)
         return value
 
 
@@ -234,6 +246,7 @@ def _activate_operator_client(
     brief: SearchBrief,
     daily_limit: int,
     delivery_mode: str,
+    timezone: str,
 ) -> dict[str, object]:
     now = datetime.now(UTC)
     digest = brief_sha256(brief)
@@ -313,7 +326,7 @@ def _activate_operator_client(
             daily_quota=daily_limit,
             status="active",
             delivery_mode=delivery_mode,
-            timezone="Africa/Lagos",
+            timezone=timezone,
             created_at=profile_created_at,
             updated_at=now,
         )
@@ -360,7 +373,8 @@ def _activate_operator_client(
         }
         completed = connection.execute(
             "UPDATE operator_provisioning_requests "
-            "SET state='completed',result_json=?,error_code=NULL,error_message=NULL,"
+            "SET state='completed',payload_json='{}',result_json=?,"
+            "error_code=NULL,error_message=NULL,"
             "updated_at=? WHERE request_id=? AND state='running'",
             (
                 json.dumps(
@@ -388,8 +402,11 @@ def process_request(
 ) -> dict[str, object]:
     requests = OperatorProvisioningStore(repository)
     existing = requests.get(request_id)
+    payload_sha = provisioning_payload_sha256(payload)
     if existing is None:
         requests.create(request_id=request_id, operation=operation, payload=payload)
+    elif existing.request_sha256 != payload_sha:
+        raise ValueError("provisioning request payload changed")
     current = requests.claim(request_id)
     if current.state == "completed":
         return current.result or {}
@@ -446,6 +463,7 @@ def process_request(
                 brief=brief,
                 daily_limit=value.daily_limit,
                 delivery_mode=value.delivery_mode,
+                timezone=value.timezone,
             )
         else:
             raise ValueError("provisioning operation is not implemented yet")
