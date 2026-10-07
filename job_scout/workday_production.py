@@ -13,10 +13,11 @@ from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from job_scout.collectors.workday import WorkdayCollector
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.operator_clients import OperatorClientStore
 from job_scout.domain.models import (
     CollectionResult,
     CollectionStatus,
@@ -35,12 +36,19 @@ from job_scout.workday_index import (
 
 
 class WorkdayBriefBinding(BaseModel):
-    """Immutable repository binding for one active profile SearchBrief."""
+    """Immutable binding for one active profile SearchBrief."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    path: str
+    path: str | None = None
+    brief_json: str | None = None
     sha256: str
+
+    @model_validator(mode="after")
+    def exactly_one_source(self) -> WorkdayBriefBinding:
+        if (self.path is None) == (self.brief_json is None):
+            raise ValueError("Workday SearchBrief binding needs exactly one source")
+        return self
 
 
 
@@ -110,6 +118,7 @@ def resolve_active_workday_brief_bindings(
     if not profiles:
         return []
 
+    operator_clients = OperatorClientStore(repository)
     plans_by_id: dict[str, list[tuple[Path, object]]] = {}
     for path in sorted(plan_dir.glob("*.json")):
         plan = load_sourcing_plan(path)
@@ -117,28 +126,47 @@ def resolve_active_workday_brief_bindings(
 
     bindings: dict[str, WorkdayBriefBinding] = {}
     for profile in profiles:
-        matches = plans_by_id.get(profile.sourcing_plan_id, [])
-        if len(matches) != 1:
-            raise ValueError(
-                "expected exactly one sourcing plan for active profile "
-                f"{profile.sourcing_plan_id!r}; found {len(matches)}"
+        managed = operator_clients.get_for_profile(
+            profile.client_id,
+            profile.destination_id,
+        )
+        if managed is not None:
+            if managed.sourcing_plan_id != profile.sourcing_plan_id:
+                raise ValueError(
+                    "operator client sourcing identity does not match active profile"
+                )
+            inline = managed.brief.model_dump_json()
+            digest = hashlib.sha256(inline.encode()).hexdigest()
+            binding_key = f"operator:{profile.client_id}"
+            binding = WorkdayBriefBinding(
+                brief_json=inline,
+                sha256=digest,
             )
-        plan_path, plan = matches[0]
-        brief_path = (plan_path.parent / plan.search_brief).resolve()
-        brief = load_search_brief(brief_path)
-        if brief.client_id != profile.client_id:
-            raise ValueError(
-                "active delivery profile client does not match its sourcing-plan SearchBrief"
-            )
-        relative = _repo_relative(brief_path, repo_root)
-        digest = hashlib.sha256(brief_path.read_bytes()).hexdigest()
-        binding = WorkdayBriefBinding(path=relative, sha256=digest)
-        existing = bindings.get(relative)
-        if existing is not None and existing != binding:
-            raise ValueError("active SearchBrief path resolved to conflicting bytes")
-        bindings[relative] = binding
+        else:
+            matches = plans_by_id.get(profile.sourcing_plan_id, [])
+            if len(matches) != 1:
+                raise ValueError(
+                    "expected exactly one sourcing plan for active profile "
+                    f"{profile.sourcing_plan_id!r}; found {len(matches)}"
+                )
+            plan_path, plan = matches[0]
+            brief_path = (plan_path.parent / plan.search_brief).resolve()
+            brief = load_search_brief(brief_path)
+            if brief.client_id != profile.client_id:
+                raise ValueError(
+                    "active delivery profile client does not match its sourcing-plan SearchBrief"
+                )
+            relative = _repo_relative(brief_path, repo_root)
+            digest = hashlib.sha256(brief_path.read_bytes()).hexdigest()
+            binding_key = relative
+            binding = WorkdayBriefBinding(path=relative, sha256=digest)
 
-    return [bindings[path] for path in sorted(bindings)]
+        existing = bindings.get(binding_key)
+        if existing is not None and existing != binding:
+            raise ValueError("active SearchBrief binding resolved to conflicting bytes")
+        bindings[binding_key] = binding
+
+    return [bindings[key] for key in sorted(bindings)]
 
 
 def verify_active_workday_brief_bindings(
@@ -171,6 +199,14 @@ def load_bound_workday_briefs(
     briefs: list[SearchBrief] = []
     root = repo_root.resolve()
     for binding in bindings:
+        if binding.brief_json is not None:
+            digest = hashlib.sha256(binding.brief_json.encode()).hexdigest()
+            if digest != binding.sha256:
+                raise ValueError("inline Workday SearchBrief changed after planning")
+            briefs.append(SearchBrief.model_validate_json(binding.brief_json))
+            continue
+
+        assert binding.path is not None
         path = (root / binding.path).resolve()
         try:
             path.relative_to(root)
