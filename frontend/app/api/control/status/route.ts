@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueOperatorCapability } from "../../../../lib/operator-capability";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,11 @@ type ProfileSnapshot = {
   pending_items_truncated: boolean;
   recovery_required: boolean;
   client_funnel: FunnelSnapshot | null;
+  operator_managed: boolean;
+  client_name: string | null;
+  destination_name: string | null;
+  sheet_url: string | null;
+  control_capability: string | null;
 };
 
 type OperatorState = {
@@ -308,6 +314,16 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
     pending_items_truncated: pending?.preview_truncated === true,
     recovery_required: pending?.recovery_required === true,
     client_funnel: null,
+    operator_managed: source.operator_managed === true,
+    client_name: textValue(source.client_name, 120),
+    destination_name: textValue(source.destination_name, 120),
+    sheet_url: (() => {
+      const value = textValue(source.sheet_url, 2048);
+      return value && /^https:\/\/docs\.google\.com\/spreadsheets\//i.test(value)
+        ? value
+        : null;
+    })(),
+    control_capability: null,
   };
 }
 
@@ -768,13 +784,22 @@ export async function GET(request: NextRequest) {
       token,
       requestedControlRequestId,
     );
+    const profilesWithCapabilities = operatorSnapshot.profiles.map((profile) => ({
+      ...profile,
+      control_capability: profile.operator_managed
+        ? issueOperatorCapability(token, profile.profile_id)
+        : null,
+    }));
     return NextResponse.json(
       {
         data: {
           control_ready: true,
           inventory,
           delivery,
-          operator_snapshot: operatorSnapshot,
+          operator_snapshot: {
+            ...operatorSnapshot,
+            profiles: profilesWithCapabilities,
+          },
         },
       },
       { headers: { "Cache-Control": "no-store" } },
