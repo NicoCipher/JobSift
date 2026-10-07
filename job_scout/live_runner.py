@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -338,6 +339,7 @@ def run_once(
     brief_revision_id_override: str | None = None,
     brief_sha256_override: str | None = None,
     recent_inventory_snapshot: RecentInventorySnapshot | None = None,
+    recent_inventory_snapshot_loader: Callable[[], RecentInventorySnapshot] | None = None,
 ) -> dict[str, object]:
     config.database_path.parent.mkdir(parents=True, exist_ok=True)
     config.csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -694,6 +696,11 @@ def run_once(
         failures = _source_failures(report)
         completeness = "complete" if report.status == "success" else "partial"
     else:
+        if (
+            recent_inventory_snapshot is None
+            and recent_inventory_snapshot_loader is not None
+        ):
+            recent_inventory_snapshot = recent_inventory_snapshot_loader()
         evaluation, candidate_ids = evaluate_recent_inventory(
             repository=repository,
             brief=brief,
