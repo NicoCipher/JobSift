@@ -90,6 +90,10 @@ def run_active_profiles(
     repository = create_repository(database_path)
     profile_store = ClientDeliveryProfileStore(repository)
     operator_clients = OperatorClientStore(repository)
+    operator_clients_by_profile = {
+        (client.client_id, client.destination_id): client
+        for client in operator_clients.list()
+    }
     if control_id is None:
         profiles = profile_store.active()
     else:
@@ -114,9 +118,8 @@ def run_active_profiles(
             reconciliation = profile_store.reconcile_destination_sheet(
                 profile, gateway=gateway
             )
-            managed = operator_clients.get_for_profile(
-                profile.client_id,
-                profile.destination_id,
+            managed = operator_clients_by_profile.get(
+                (profile.client_id, profile.destination_id)
             )
             runtime_kwargs: dict[str, object] = {}
             if managed is not None:
