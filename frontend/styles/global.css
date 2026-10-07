@@ -920,6 +920,168 @@ summary {
   background: var(--subtle);
   border-left: 2px solid var(--border-strong);
 }
+.operator-command-center {
+  display: grid;
+  gap: var(--s16);
+}
+.operator-command-center .control-heading {
+  align-items: flex-start;
+}
+.operator-command-center .control-heading button {
+  min-height: 40px;
+}
+.operator-state-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s12);
+}
+.operator-state-recovery button {
+  flex: 0 0 auto;
+  min-height: 40px;
+}
+.operator-run-strip,
+.operator-funnel,
+.operator-age-grid,
+.operator-mini-grid {
+  display: grid;
+  gap: var(--s8);
+}
+.operator-run-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: var(--s12);
+  background: var(--subtle);
+  border: 1px solid var(--border);
+}
+.operator-run-strip > div {
+  display: grid;
+  gap: var(--s4);
+}
+.operator-attention {
+  display: grid;
+  gap: var(--s12);
+  padding: var(--s16);
+  border: 2px solid var(--border-strong);
+  background: var(--base);
+}
+.operator-eyebrow {
+  margin: 0 0 var(--s4);
+  font-size: var(--metadata);
+  font-weight: var(--semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.operator-attention h3,
+.operator-batch-card p {
+  margin: 0;
+}
+.operator-batch-card {
+  display: grid;
+  gap: var(--s12);
+  padding-top: var(--s12);
+  border-top: 1px solid var(--border);
+}
+.operator-review-list {
+  display: grid;
+  gap: var(--s8);
+}
+.operator-review-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s12);
+  min-width: 0;
+  padding: var(--s12);
+  border: 1px solid var(--border);
+  background: var(--subtle);
+}
+.operator-review-item > div {
+  min-width: 0;
+}
+.operator-review-item p {
+  margin: var(--s4) 0 0;
+}
+.operator-review-item a {
+  flex: 0 0 auto;
+}
+.operator-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s8);
+}
+.operator-decision-actions button {
+  min-height: 44px;
+  font-weight: var(--semibold);
+}
+.operator-decision-actions .secondary-action {
+  background: var(--base);
+}
+.operator-mini-grid,
+.operator-age-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: var(--s8);
+}
+.operator-mini-grid span,
+.operator-age-grid span {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s12);
+  padding: var(--s8) var(--s12);
+  background: var(--subtle);
+}
+.operator-clear {
+  display: grid;
+  gap: var(--s4);
+  padding: var(--s12);
+  border-left: 3px solid var(--border-strong);
+  background: var(--subtle);
+}
+.operator-client-list {
+  display: grid;
+  gap: var(--s12);
+  border-top: 1px solid var(--border);
+  padding-top: var(--s16);
+}
+.operator-client-card {
+  display: grid;
+  gap: var(--s12);
+  padding: var(--s16);
+  border: 1px solid var(--border);
+}
+.operator-client-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s16);
+  align-items: flex-start;
+}
+.operator-client-summary p {
+  margin: var(--s4) 0 0;
+}
+.operator-diagnostics {
+  display: grid;
+  gap: var(--s12);
+  border-top: 1px solid var(--border);
+  padding-top: var(--s16);
+}
+.operator-funnel {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.operator-metric {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+  padding: var(--s12);
+  background: var(--subtle);
+}
+.operator-metric strong {
+  font-size: 1.35rem;
+}
+.operator-metric span {
+  color: var(--secondary);
+  font-size: var(--metadata);
+  line-height: var(--metadata-line);
+}
+
 .operations-primary-action {
   margin: var(--s16) 0;
 }
@@ -960,6 +1122,34 @@ summary {
 }
 
 @media (max-width: 639px) {
+  .operator-run-strip,
+  .operator-funnel,
+  .operator-age-grid,
+  .operator-mini-grid {
+    grid-template-columns: 1fr;
+  }
+  .operator-command-center .control-heading {
+    gap: var(--s8);
+  }
+  .operator-command-center .control-heading button,
+  .operator-decision-actions button,
+  .operator-state-recovery button {
+    width: 100%;
+  }
+  .operator-state-recovery {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .operator-review-item,
+  .operator-client-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .operator-review-item a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
   .operations-jump {
     flex-direction: column;
   }

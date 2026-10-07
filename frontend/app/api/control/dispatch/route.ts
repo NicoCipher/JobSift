@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalTimeZone, validBatchId } from "../../../../lib/control-validation";
+import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +100,7 @@ async function setWorkflowState(enabled: boolean) {
 async function dispatch(workflow: string, inputs: Record<string, string>) {
   const token = githubToken();
   if (!token) return controlUnavailable();
+  const controlRequestId = randomUUID();
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,
     {
@@ -109,7 +112,10 @@ async function dispatch(workflow: string, inputs: Record<string, string>) {
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "JobSift-operator-control",
       },
-      body: JSON.stringify({ ref: "main", inputs }),
+      body: JSON.stringify({
+        ref: "main",
+        inputs: { ...inputs, control_request_id: controlRequestId },
+      }),
       cache: "no-store",
       signal: AbortSignal.timeout(10000),
     },
@@ -126,7 +132,7 @@ async function dispatch(workflow: string, inputs: Record<string, string>) {
     );
   }
   return NextResponse.json(
-    { data: { accepted: true, workflow } },
+    { data: { accepted: true, workflow, control_request_id: controlRequestId } },
     { status: 202, headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -182,6 +188,23 @@ export async function POST(request: NextRequest) {
 
     if (!["list"].includes(operation) && !/^[0-9a-f]{16}$/.test(profileId)) {
       return invalid("A valid opaque delivery profile ID is required.");
+    }
+    if (
+      operation !== "list" &&
+      !isOperatorProfileAllowed(
+        process.env.JOBSIFT_OPERATOR_PROFILES,
+        profileId,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "This client is not in the operator control catalogue.",
+          },
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
     }
     if (operation === "set-quota") {
       const parsed = Number(quota);

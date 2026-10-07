@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 type Run = {
@@ -22,23 +22,101 @@ type WorkflowStatus = {
   runs: Run[];
 };
 
+type FunnelSnapshot = {
+  overall: Record<string, number>;
+  age_buckets: Record<string, number>;
+  delivery: Record<string, number>;
+};
+
+type PendingItem = {
+  ordinal: number;
+  title: string;
+  company: string;
+  link: string | null;
+  platform: string;
+};
+
+type ProfileSnapshot = {
+  action: string;
+  profile_id: string;
+  profile_status: string | null;
+  delivery_mode: string | null;
+  daily_quota: number | null;
+  sheet_status: string | null;
+  delivered_today: number | null;
+  batch_id: string | null;
+  batch_status: string | null;
+  requested_quota: number | null;
+  selected_count: number | null;
+  shortfall: number | null;
+  fresh_eligible_employers: number | null;
+  match_eligible_postings: number | null;
+  needs_review_postings: number | null;
+  selection_eligible_postings: number | null;
+  stale_posting_suppressed_groups: number | null;
+  company_cap_suppressed_groups: number | null;
+  pending_items: PendingItem[];
+  pending_items_truncated: boolean;
+  recovery_required: boolean;
+  client_funnel: FunnelSnapshot | null;
+};
+
+type OperatorSnapshot = {
+  complete: boolean;
+  observed_at: string | null;
+  control_request_id: string | null;
+  confirmed_control_request_id: string | null;
+  state_error: string | null;
+  run: {
+    id: number;
+    run_number: number;
+    status: string;
+    conclusion: string | null;
+    created_at: string;
+    updated_at: string;
+    url: string;
+    kind?: "inventory" | "delivery" | "configure";
+  } | null;
+  profiles: ProfileSnapshot[];
+  truncated: boolean;
+};
+
 type ControlStatus = {
   control_ready: boolean;
   inventory: WorkflowStatus;
   delivery: WorkflowStatus;
+  operator_snapshot: OperatorSnapshot;
 };
 
 type ApiError = { error?: { message?: string } };
 
 export type ManagedProfile = {
   profile_id: string;
-  client_id: string;
   client_name: string;
-  destination_id: string;
   destination_name: string;
 };
 
 type TargetMode = "listed" | "manual";
+
+function validControlRequestId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+function hasConfirmedControlRequest(
+  snapshot: OperatorSnapshot,
+  requestId: string,
+) {
+  return (
+    snapshot.complete === true &&
+    !snapshot.truncated &&
+    snapshot.confirmed_control_request_id === requestId
+  );
+}
 
 function validProfileId(value: string) {
   return /^[0-9a-f]{16}$/.test(value);
@@ -102,6 +180,32 @@ function deliveryConfirmation(
     return `Discard batch ${batchId} for ${target}? This permanently removes the unpublished prepared batch.`;
   }
   return null;
+}
+
+function countLabel(value: number | null | undefined) {
+  return value === null || value === undefined ? "—" : value.toLocaleString();
+}
+
+function FunnelSummary({ funnel }: { funnel: FunnelSnapshot }) {
+  const stages = [
+    ["Fresh ≤24h", funnel.overall.fresh_0_24h],
+    ["Role title", funnel.overall.title_matched_0_24h],
+    ["US market", funnel.overall.target_market_survived_0_24h],
+    ["Remote", funnel.overall.remote_survived_0_24h],
+    ["All brief rules", funnel.overall.other_rules_survived_0_24h],
+    ["Confirmed", funnel.overall.confirmed_matches_0_24h],
+    ["Needs review", funnel.overall.needs_review_matches_0_24h],
+  ] as const;
+  return (
+    <div className="operator-funnel" aria-label="Latest client match funnel">
+      {stages.map(([label, value]) => (
+        <div className="operator-metric" key={label}>
+          <strong>{countLabel(value)}</strong>
+          <span>{label}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function WorkflowRuns({
@@ -184,13 +288,47 @@ export function OperationsControl({
   const [deliveryOperation, setDeliveryOperation] = useState("status");
   const [sheetProfileOverride, setSheetProfileOverride] = useState("");
   const [deliveryProfileOverride, setDeliveryProfileOverride] = useState("");
+  const [awaitingFreshState, setAwaitingFreshState] = useState(false);
+  const pendingControlRequestId = useRef<string | null>(null);
+  const statePollTimer = useRef<number | null>(null);
+
+  const latestSnapshot = status?.operator_snapshot;
+  const stateVerified =
+    status !== null &&
+    !statusError &&
+    !awaitingFreshState &&
+    latestSnapshot?.complete !== false &&
+    latestSnapshot?.truncated !== true;
+  const pendingBatches =
+    latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
+  const latestProfile = latestSnapshot?.profiles[0];
+
+  function profileLabel(profileId: string) {
+    const profile = profiles.find((item) => item.profile_id === profileId);
+    return profile ? `${profile.client_name} — ${profile.destination_name}` : null;
+  }
 
   const loadStatus = useCallback(async () => {
     try {
-      const response = await fetch("/api/control/status", { cache: "no-store" });
+      const requestId = pendingControlRequestId.current;
+      const statusUrl = requestId
+        ? `/api/control/status?control_request_id=${encodeURIComponent(requestId)}`
+        : "/api/control/status";
+      const response = await fetch(statusUrl, { cache: "no-store" });
       const body = (await readJson(response)) as { data: ControlStatus };
       setStatus(body.data);
       setStatusError("");
+      const confirmedRequestId = pendingControlRequestId.current;
+      if (
+        confirmedRequestId &&
+        hasConfirmedControlRequest(
+          body.data.operator_snapshot,
+          confirmedRequestId,
+        )
+      ) {
+        pendingControlRequestId.current = null;
+        setAwaitingFreshState(false);
+      }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
     }
@@ -211,10 +349,39 @@ export function OperationsControl({
       });
     return () => {
       cancelled = true;
+      if (statePollTimer.current !== null) {
+        window.clearTimeout(statePollTimer.current);
+      }
     };
   }, []);
 
-  async function send(payload: Record<string, string>) {
+  function pollForFreshState(attempt = 0) {
+    if (statePollTimer.current !== null) {
+      window.clearTimeout(statePollTimer.current);
+    }
+    const delay = attempt < 8 ? 1500 : 5000;
+    statePollTimer.current = window.setTimeout(async () => {
+      await loadStatus();
+      if (pendingControlRequestId.current && attempt < 60) {
+        pollForFreshState(attempt + 1);
+      }
+    }, delay);
+  }
+
+  async function send(
+    payload: Record<string, string>,
+    options: { waitForState?: boolean } = {},
+  ) {
+    const needsVerifiedState =
+      payload.command === "inventory-refresh" ||
+      (payload.command === "client-control" && payload.operation !== "list");
+    const waitForState = needsVerifiedState || options.waitForState === true;
+    if (needsVerifiedState && !stateVerified) {
+      setMessage(
+        "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish before changing delivery.",
+      );
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -223,14 +390,80 @@ export function OperationsControl({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await readJson(response);
-      setMessage("Command accepted by GitHub Actions.");
-      window.setTimeout(() => void loadStatus(), 1200);
+      const result = (await readJson(response)) as {
+        data?: { control_request_id?: unknown };
+      };
+      if (waitForState) {
+        setAwaitingFreshState(true);
+        const requestId = result.data?.control_request_id;
+        if (!validControlRequestId(requestId)) {
+          pendingControlRequestId.current = null;
+          setMessage(
+            "Command accepted, but JobSift could not correlate its confirmation. Controls stay locked until you reload after the workflow finishes.",
+          );
+        } else {
+          pendingControlRequestId.current = requestId.toLowerCase();
+          setMessage("Command accepted. Waiting for JobSift to confirm the new state…");
+          pollForFreshState();
+        }
+      } else {
+        setMessage("Command accepted by GitHub Actions.");
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Command failed.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function actOnProfile(
+    profile: ProfileSnapshot,
+    operation: "run-now" | "pause" | "resume" | "sheet-check",
+  ) {
+    const label = profileLabel(profile.profile_id);
+    if (!label) {
+      setMessage("Client name is unavailable, so JobSift will not run this client action.");
+      return;
+    }
+    if (
+      operation === "pause" &&
+      !window.confirm(`Pause ${label}? New deliveries will stop until you resume them.`)
+    ) {
+      return;
+    }
+    await send({
+      command: "client-control",
+      operation,
+      profile_id: profile.profile_id,
+      daily_quota: String(profile.daily_quota ?? 100),
+      delivery_mode: profile.delivery_mode ?? "review",
+      timezone: "Africa/Lagos",
+      batch_id: "",
+    });
+  }
+
+  async function actOnPending(profile: ProfileSnapshot, operation: "release-batch" | "discard-batch") {
+    if (!profile.batch_id) return;
+    const label = profileLabel(profile.profile_id);
+    if (!label) {
+      setMessage("Client name is unavailable, so JobSift will not allow an irreversible batch action.");
+      return;
+    }
+    const verb = operation === "release-batch" ? "Release" : "Discard";
+    const effect =
+      operation === "release-batch"
+        ? "This sends the reviewed jobs to the client's Sheet."
+        : "This removes the unpublished batch without sending it.";
+    if (!window.confirm(`${verb} this batch for ${label}? ${effect}`)) return;
+    await send({
+      command: "client-control",
+      operation,
+      profile_id: profile.profile_id,
+      daily_quota: "100",
+      delivery_mode: "review",
+      timezone: "Africa/Lagos",
+      batch_id: profile.batch_id,
+    });
   }
 
   async function submitInventory(event: FormEvent<HTMLFormElement>) {
@@ -366,6 +599,324 @@ export function OperationsControl({
         {message ? <p className="control-message">{message}</p> : null}
       </section>
 
+      <section className="section-block operator-command-center" aria-labelledby="operator-now-title">
+        <div className="control-heading">
+          <div>
+            <h2 id="operator-now-title">Right now</h2>
+            <p>See what JobSift is waiting on before you run another command.</p>
+          </div>
+          <button type="button" disabled={busy} onClick={() => void loadStatus()}>
+            Refresh status
+          </button>
+        </div>
+
+        {latestSnapshot?.complete === false ? (
+          <div className="error operator-state-recovery" role="alert">
+            <div>
+              <strong>Client state could not be verified.</strong>{" "}
+              {latestSnapshot.state_error ??
+                "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
+            </div>
+            <button
+              type="button"
+              disabled={busy || awaitingFreshState || !status?.control_ready}
+              onClick={() =>
+                void send(
+                  {
+                    command: "client-control",
+                    operation: "list",
+                    profile_id: "",
+                    daily_quota: "100",
+                    delivery_mode: "review",
+                    timezone: "Africa/Lagos",
+                    batch_id: "",
+                  },
+                  { waitForState: true },
+                )
+              }
+            >
+              {awaitingFreshState ? "Syncing…" : "Sync current state"}
+            </button>
+          </div>
+        ) : latestSnapshot?.truncated ? (
+          <div className="notice" role="status">
+            <strong>Client state is incomplete.</strong> JobSift has locked client actions until
+            the full state can be verified.
+          </div>
+        ) : null}
+
+        {latestSnapshot?.run ? (
+          <div className="operator-run-strip">
+            <div>
+              <span className="metadata">Latest state update</span>
+              <strong>#{latestSnapshot.run.run_number}</strong>
+            </div>
+            <div>
+              <span className="metadata">Result</span>
+              <strong>
+                {latestSnapshot.run.status === "completed"
+                  ? latestSnapshot.run.conclusion ?? "completed"
+                  : latestSnapshot.run.status}
+              </strong>
+              {latestSnapshot.run.kind ? (
+                <span className="metadata">
+                  {latestSnapshot.run.kind === "inventory"
+                    ? "Sourcing"
+                    : latestSnapshot.run.kind === "delivery"
+                      ? "Delivery"
+                      : "Client setup"}
+                </span>
+              ) : null}
+            </div>
+            <div>
+              <span className="metadata">Finished</span>
+              <strong>{new Date(latestSnapshot.run.updated_at).toLocaleString()}</strong>
+            </div>
+          </div>
+        ) : (
+          <p className="metadata">No production sourcing run has been reported yet.</p>
+        )}
+
+        {pendingBatches.length ? (
+          <div className="operator-attention">
+            <div>
+              <p className="operator-eyebrow">
+                {pendingBatches.some((profile) => profile.recovery_required)
+                  ? "Delivery needs attention"
+                  : "Needs your decision"}
+              </p>
+              <h3>
+                {pendingBatches.some((profile) => profile.recovery_required)
+                  ? "A Sheet delivery needs safe recovery"
+                  : pendingBatches.length === 1
+                    ? `${countLabel(pendingBatches[0].selected_count)} job is waiting for approval`
+                    : `${pendingBatches.length} review batches are waiting`}
+              </h3>
+              <p>
+                {pendingBatches.some((profile) => profile.recovery_required)
+                  ? "JobSift detected an unfinished delivery journal. Do not start another batch; use the safe retry below."
+                  : "JobSift will not prepare another batch for this client until you release or discard the pending batch."}
+              </p>
+            </div>
+            {pendingBatches.map((profile) => (
+              <div className="operator-batch-card" key={profile.batch_id ?? profile.profile_id}>
+                <div>
+                  <strong>{profileLabel(profile.profile_id) ?? "Client name unavailable"}</strong>
+                  <p className="metadata">
+                    {countLabel(profile.selected_count)} selected · {countLabel(profile.shortfall)} short
+                    of the requested limit
+                  </p>
+                </div>
+                {profile.pending_items.length ? (
+                  <div className="operator-review-list" aria-label="Jobs waiting for approval">
+                    {profile.pending_items.map((item) => (
+                      <article className="operator-review-item" key={item.ordinal}>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p className="metadata">
+                            {item.company} · {item.platform}
+                          </p>
+                        </div>
+                        {item.link ? (
+                          <a href={item.link} target="_blank" rel="noopener noreferrer">
+                            Open job
+                          </a>
+                        ) : (
+                          <span className="metadata">Job link unavailable</span>
+                        )}
+                      </article>
+                    ))}
+                    {profile.pending_items_truncated ? (
+                      <p className="metadata">
+                        Showing the first {profile.pending_items.length} of{" "}
+                        {countLabel(profile.selected_count)} jobs in this batch.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="operator-decision-actions">
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      !status?.control_ready ||
+                      !stateVerified ||
+                      !profileLabel(profile.profile_id)
+                    }
+                    onClick={() => void actOnPending(profile, "release-batch")}
+                  >
+                    {profile.recovery_required
+                      ? "Retry safe delivery"
+                      : `Release ${countLabel(profile.selected_count)} ${profile.selected_count === 1 ? "job" : "jobs"}`}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={
+                      busy ||
+                      !status?.control_ready ||
+                      !stateVerified ||
+                      !profileLabel(profile.profile_id) ||
+                      profile.recovery_required
+                    }
+                    onClick={() => void actOnPending(profile, "discard-batch")}
+                  >
+                    Discard
+                  </button>
+                </div>
+                {profile.recovery_required ? (
+                  <p className="notice">
+                    Discard is locked because this batch has a delivery journal. Safe retry will
+                    reconcile the Sheet before doing anything else.
+                  </p>
+                ) : !profileLabel(profile.profile_id) ? (
+                  <p className="notice">
+                    Batch actions are locked until this production profile can be matched to a client name.
+                  </p>
+                ) : null}
+                <details>
+                  <summary>Why only {countLabel(profile.selected_count)}?</summary>
+                  <div className="operator-mini-grid">
+                    <span>Matched <strong>{countLabel(profile.match_eligible_postings)}</strong></span>
+                    <span>Needs review <strong>{countLabel(profile.needs_review_postings)}</strong></span>
+                    <span>Stale before delivery <strong>{countLabel(profile.stale_posting_suppressed_groups)}</strong></span>
+                    <span>Employer cap <strong>{countLabel(profile.company_cap_suppressed_groups)}</strong></span>
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+        ) : !stateVerified ? null : latestProfile ? (
+          <div className="operator-clear">
+            <strong>No review batch is blocking the listed client state.</strong>
+            <span>JobSift is free to prepare the next delivery batch for the profiles shown.</span>
+          </div>
+        ) : null}
+
+        {latestProfile ? (
+          <div className="operator-mini-grid" aria-label="Current delivery profile state">
+            <span>
+              Profile <strong>{latestProfile.profile_status ?? "Unknown"}</strong>
+            </span>
+            <span>
+              Mode <strong>{latestProfile.delivery_mode ?? "Unknown"}</strong>
+            </span>
+            <span>
+              Sent today{" "}
+              <strong>
+                {countLabel(latestProfile.delivered_today)}/{countLabel(latestProfile.daily_quota)}
+              </strong>
+            </span>
+            <span>
+              Sheet <strong>{latestProfile.sheet_status ?? "Unknown"}</strong>
+            </span>
+          </div>
+        ) : null}
+
+        {latestSnapshot?.profiles.length ? (
+          <div className="operator-client-list" aria-label="Client delivery controls">
+            <div className="control-heading">
+              <div>
+                <h3>Clients</h3>
+                <p className="metadata">Normal daily controls without profile IDs.</p>
+              </div>
+            </div>
+            {latestSnapshot.profiles.map((profile) => {
+              const label = profileLabel(profile.profile_id);
+              const locked =
+                !label || busy || !status?.control_ready || !stateVerified;
+              return (
+                <article className="operator-client-card" key={profile.profile_id}>
+                  <div className="operator-client-summary">
+                    <div>
+                      <strong>{label ?? "Client name unavailable"}</strong>
+                      <p className="metadata">
+                        {profile.profile_status ?? "Unknown"} · {profile.delivery_mode ?? "Unknown"} mode
+                      </p>
+                    </div>
+                    <strong>
+                      {countLabel(profile.delivered_today)}/{countLabel(profile.daily_quota)} sent today
+                    </strong>
+                  </div>
+                  <div className="operator-mini-grid">
+                    <span>Sheet <strong>{profile.sheet_status ?? "Unknown"}</strong></span>
+                    <span>
+                      Pending{" "}
+                      <strong>{profile.batch_id ? countLabel(profile.selected_count) : "0"}</strong>
+                    </span>
+                  </div>
+                  <div className="operator-decision-actions">
+                    <button
+                      type="button"
+                      disabled={locked || profile.profile_status !== "active" || Boolean(profile.batch_id)}
+                      onClick={() => void actOnProfile(profile, "run-now")}
+                    >
+                      Find matches for client
+                    </button>
+                    {profile.profile_status === "paused" ? (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={locked}
+                        onClick={() => void actOnProfile(profile, "resume")}
+                      >
+                        Resume
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={locked}
+                        onClick={() => void actOnProfile(profile, "pause")}
+                      >
+                        Pause
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={locked}
+                      onClick={() => void actOnProfile(profile, "sheet-check")}
+                    >
+                      Check Sheet
+                    </button>
+                  </div>
+                  {!label ? (
+                    <p className="notice">
+                      Client controls are locked until JobSift has a trustworthy display name.
+                    </p>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {latestProfile?.client_funnel ? (
+          <div className="operator-diagnostics">
+            <div className="control-heading">
+              <div>
+                <h3>Latest client funnel</h3>
+                <p className="metadata">
+                  These are measured backend counts, not estimates.
+                </p>
+              </div>
+            </div>
+            <FunnelSummary funnel={latestProfile.client_funnel} />
+            <div className="operator-age-grid">
+              <span>0–24h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_0_24h)}</strong></span>
+              <span>24–48h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_24_48h)}</strong></span>
+              <span>48–72h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_48_72h)}</strong></span>
+            </div>
+          </div>
+        ) : pendingBatches.length ? (
+          <div className="notice">
+            The latest client funnel is not available because the pending review batch stopped
+            a new client evaluation. Handle the batch above, then run sourcing again.
+          </div>
+        ) : null}
+      </section>
+
       <section className="section-block operations-section" id="find-jobs">
         <div className="control-heading">
           <div>
@@ -384,7 +935,10 @@ export function OperationsControl({
           <input type="hidden" name="workday_targets" value="1" />
           <input type="hidden" name="workday_detail_concurrency" value="4" />
           <input type="hidden" name="yield_extra_budget" value="100" />
-          <button type="submit" disabled={busy || !status?.control_ready}>
+          <button
+            type="submit"
+            disabled={busy || !status?.control_ready || !stateVerified}
+          >
             {busy ? "Starting…" : "Run sourcing now"}
           </button>
           <p className="metadata">
@@ -424,7 +978,7 @@ export function OperationsControl({
           <form className="control-form" onSubmit={submitInventory}>
             <label>
               Workday targets
-              <select name="workday_targets" defaultValue="1" disabled={busy || !status?.control_ready}>
+              <select name="workday_targets" defaultValue="1" disabled={busy || !status?.control_ready || !stateVerified}>
                 {["1", "5", "10", "20", "25"].map((value) => (
                   <option key={value} value={value}>
                     {value}
@@ -437,7 +991,7 @@ export function OperationsControl({
               <select
                 name="workday_detail_concurrency"
                 defaultValue="4"
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || !stateVerified}
               >
                 {["4", "6", "8"].map((value) => (
                   <option key={value} value={value}>
@@ -451,7 +1005,7 @@ export function OperationsControl({
               <select
                 name="yield_extra_budget"
                 defaultValue="100"
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || !stateVerified}
               >
                 {["0", "25", "50", "75", "100"].map((value) => (
                   <option key={value} value={value}>
@@ -460,7 +1014,7 @@ export function OperationsControl({
                 ))}
               </select>
             </label>
-            <button type="submit" disabled={busy || !status?.control_ready}>
+            <button type="submit" disabled={busy || !status?.control_ready || !stateVerified}>
               {busy ? "Starting…" : "Run custom sourcing"}
             </button>
           </form>
@@ -496,7 +1050,12 @@ export function OperationsControl({
                 <select
                   name="sheet_profile_id"
                   defaultValue={profiles[0]?.profile_id ?? ""}
-                  disabled={busy || !status?.control_ready || profiles.length === 0}
+                  disabled={
+                    busy ||
+                    !status?.control_ready ||
+                    !stateVerified ||
+                    profiles.length === 0
+                  }
                 >
                   {profiles.length === 0 ? (
                     <option value="">No listed clients</option>
@@ -520,7 +1079,7 @@ export function OperationsControl({
                   inputMode="text"
                   pattern="[0-9a-f]{16}"
                   placeholder="16-character profile ID"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             )}
@@ -530,6 +1089,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (sheetTargetMode === "listed"
                   ? profiles.length === 0
                   : !validProfileId(sheetProfileOverride.trim()))
@@ -543,6 +1103,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (sheetTargetMode === "listed"
                   ? profiles.length === 0
                   : !validProfileId(sheetProfileOverride.trim()))
@@ -556,6 +1117,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (sheetTargetMode === "listed"
                   ? profiles.length === 0
                   : !validProfileId(sheetProfileOverride.trim()))
@@ -575,7 +1137,7 @@ export function OperationsControl({
                     setSheetTargetMode(mode);
                     if (mode === "listed") setSheetProfileOverride("");
                   }}
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 >
                   <option value="listed" disabled={profiles.length === 0}>
                     Client name
@@ -596,7 +1158,7 @@ export function OperationsControl({
                 name="operation"
                 value={deliveryOperation}
                 onChange={(event) => setDeliveryOperation(event.target.value)}
-                disabled={busy || !status?.control_ready}
+                disabled={busy || !status?.control_ready || !stateVerified}
               >
                 <option value="status">Check delivery status</option>
                 <option value="run-now">Send jobs now</option>
@@ -641,7 +1203,7 @@ export function OperationsControl({
                   inputMode="text"
                   pattern="[0-9a-f]{16}"
                   placeholder="16-character profile ID"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -655,7 +1217,7 @@ export function OperationsControl({
                   min="1"
                   max="5000"
                   defaultValue="100"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -666,7 +1228,7 @@ export function OperationsControl({
                 <select
                   name="delivery_mode"
                   defaultValue="review"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 >
                   <option value="review">Review before sending</option>
                   <option value="auto">Send automatically</option>
@@ -681,7 +1243,7 @@ export function OperationsControl({
                   name="timezone"
                   defaultValue="Africa/Lagos"
                   autoComplete="off"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -693,7 +1255,7 @@ export function OperationsControl({
                   name="batch_id"
                   autoComplete="off"
                   placeholder="Batch ID"
-                  disabled={busy || !status?.control_ready}
+                  disabled={busy || !status?.control_ready || !stateVerified}
                 />
               </label>
             ) : null}
@@ -705,6 +1267,7 @@ export function OperationsControl({
               disabled={
                 busy ||
                 !status?.control_ready ||
+                !stateVerified ||
                 (deliveryOperation !== "list" &&
                   (deliveryTargetMode === "listed"
                     ? profiles.length === 0
@@ -725,7 +1288,12 @@ export function OperationsControl({
                     setDeliveryTargetMode(mode);
                     if (mode === "listed") setDeliveryProfileOverride("");
                   }}
-                  disabled={busy || !status?.control_ready || deliveryOperation === "list"}
+                  disabled={
+                    busy ||
+                    !status?.control_ready ||
+                    !stateVerified ||
+                    deliveryOperation === "list"
+                  }
                 >
                   <option value="listed" disabled={profiles.length === 0}>
                     Client name

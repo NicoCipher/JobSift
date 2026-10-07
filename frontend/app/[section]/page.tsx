@@ -4,8 +4,12 @@ import { notFound } from "next/navigation";
 import { api } from "@/lib/api/client";
 import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
+import { parseOperatorProfiles } from "@/lib/operator-profiles";
 import { PresentationSettings } from "@/components/preferences";
-import { OperationsControl } from "@/components/operations-control";
+import {
+  OperationsControl,
+  type ManagedProfile,
+} from "@/components/operations-control";
 function deliveryProfileControlId(clientId: string, destinationId: string) {
   return createHash("sha256")
     .update(`jobsift-delivery-profile-v1\0${clientId}\0${destinationId}`)
@@ -44,40 +48,51 @@ export default async function SectionPage({
   if (liveMode && !["operations", "settings"].includes(section)) {
     return <div className="section-content"><h1>{titles[section]}</h1><p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p><Link href="/jobs">Open Jobs</Link></div>;
   }
-  const session = await api.getSession();
-  const clientId = session.data.client_scopes[0].client_id;
+  const session = section === "operations" ? null : await api.getSession();
+  const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
   if (section === "operations") {
-    const clients = await Promise.all(
-      session.data.client_scopes.map(async (scope) => {
-        try {
-          return await api.getClient(scope.client_id);
-        } catch {
-          return null;
-        }
-      }),
-    );
-    const catalogueIncomplete = clients.some((client) => client === null);
-    const profiles = clients.flatMap((response) =>
-      response
-        ? response.data.destinations.map((destination) => ({
-            profile_id: deliveryProfileControlId(
-              response.data.client_id,
-              destination.destination_id,
-            ),
-            client_id: response.data.client_id,
-            client_name: response.data.display_name,
-            destination_id: destination.destination_id,
-            destination_name: destination.display_name,
-          }))
-        : [],
-    );
-    content = (
-      <OperationsControl
-        profiles={profiles}
-        catalogueIncomplete={catalogueIncomplete}
-      />
-    );
+    const configuredProfiles = parseOperatorProfiles(process.env.JOBSIFT_OPERATOR_PROFILES);
+    if (configuredProfiles.length || process.env.NODE_ENV === "production") {
+      content = (
+        <OperationsControl
+          profiles={configuredProfiles}
+          catalogueIncomplete={false}
+        />
+      );
+    } else {
+      // Development-only fallback keeps authored fixture coverage useful. Production
+      // controls fail closed unless the server-only operator allowlist is configured.
+      const developmentSession = await api.getSession();
+      const clients = await Promise.all(
+        developmentSession.data.client_scopes.map(async (scope) => {
+          try {
+            return await api.getClient(scope.client_id);
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const catalogueIncomplete = clients.some((client) => client === null);
+      const profiles: ManagedProfile[] = clients.flatMap((response) =>
+        response
+          ? response.data.destinations.map((destination) => ({
+              profile_id: deliveryProfileControlId(
+                response.data.client_id,
+                destination.destination_id,
+              ),
+              client_name: response.data.display_name,
+              destination_name: destination.display_name,
+            }))
+          : [],
+      );
+      content = (
+        <OperationsControl
+          profiles={profiles}
+          catalogueIncomplete={catalogueIncomplete}
+        />
+      );
+    }
   } else if (section === "settings")
     content = (
       <section className="section-block reading">

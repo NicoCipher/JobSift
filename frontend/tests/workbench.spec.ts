@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
+import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
 }) => {
@@ -119,6 +120,36 @@ test("control validation canonicalizes timezones and generated batch IDs", () =>
   expect(validBatchId("\"; echo pwned; #")).toBe(false);
 });
 
+test("operator profile catalogue rejects unlisted production controls", () => {
+  const raw = JSON.stringify([
+    {
+      profile_id: "AD763A0336D92204",
+      client_name: "Paying Client",
+      destination_name: "Client Jobs",
+    },
+    {
+      profile_id: "ad763a0336d92204",
+      client_name: "Duplicate",
+      destination_name: "Ignored",
+    },
+    {
+      profile_id: "not-a-profile",
+      client_name: "Invalid",
+      destination_name: "Ignored",
+    },
+  ]);
+  expect(parseOperatorProfiles(raw)).toEqual([
+    {
+      profile_id: "ad763a0336d92204",
+      client_name: "Paying Client",
+      destination_name: "Client Jobs",
+    },
+  ]);
+  expect(isOperatorProfileAllowed(raw, "ad763a0336d92204")).toBe(true);
+  expect(isOperatorProfileAllowed(raw, "0123456789abcdef")).toBe(false);
+  expect(isOperatorProfileAllowed(undefined, "0123456789abcdef")).toBe(false);
+});
+
 test("control API rejects unconfigured, invalid, and cross-origin mutations", async ({ request }) => {
   const unconfigured = await request.post("/api/control/dispatch", {
     data: {
@@ -156,7 +187,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
       timezone: "\"; echo pwned; #",
     },
   });
-  expect(maliciousTimezone.status()).toBe(400);
+  expect(maliciousTimezone.status()).toBe(403);
 
   const maliciousBatch = await request.post("/api/control/dispatch", {
     data: {
@@ -166,7 +197,7 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
       batch_id: "\"; echo pwned; #",
     },
   });
-  expect(maliciousBatch.status()).toBe(400);
+  expect(maliciousBatch.status()).toBe(403);
 
   const crossOrigin = await request.post("/api/control/dispatch", {
     headers: { Origin: "https://example.invalid" },
@@ -177,6 +208,504 @@ test("control API rejects unconfigured, invalid, and cross-origin mutations", as
     },
   });
   expect(crossOrigin.status()).toBe(403);
+});
+
+test("operator command center exposes pending review batch without opaque IDs", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            run: {
+              id: 43,
+              run_number: 43,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T18:59:46Z",
+              updated_at: "2026-10-06T19:12:25Z",
+              url: "https://example.invalid/run/43",
+            },
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "ad763a0336d92204",
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 30,
+                needs_review_postings: 0,
+                selection_eligible_postings: 30,
+                stale_posting_suppressed_groups: 29,
+                company_cap_suppressed_groups: 0,
+                pending_items: [
+                  {
+                    ordinal: 1,
+                    title: "Software Engineer",
+                    company: "Acme",
+                    link: "https://example.invalid/job-1",
+                    platform: "Greenhouse",
+                  },
+                ],
+                pending_items_truncated: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  const dispatched: Record<string, unknown>[] = [];
+  await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { accepted: true } }),
+    });
+  });
+
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.goto("/operations");
+
+  await expect(page.getByRole("heading", { name: "Right now" })).toBeVisible();
+  await expect(page.getByText("1 job is waiting for approval")).toBeVisible();
+  await expect(page.getByText("Software Engineer", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute(
+    "href",
+    "https://example.invalid/job-1",
+  );
+  await expect(
+    page.locator(".operator-batch-card").getByText(
+      "Example client — Example delivery destination",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/pending review batch stopped a new client evaluation/)).toBeVisible();
+
+  const release = page.getByRole("button", { name: "Release 1 job" });
+  await release.click();
+  await expect.poll(() => dispatched.length).toBe(1);
+  await expect(release).toBeDisabled();
+  expect(dispatched[0]).toMatchObject({
+    command: "client-control",
+    operation: "release-batch",
+    profile_id: "ad763a0336d92204",
+    batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+  });
+});
+
+test("pending batch actions fail closed when the client label is unavailable", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            run: {
+              id: 44,
+              run_number: 44,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T19:00:00Z",
+              updated_at: "2026-10-06T19:10:00Z",
+              url: "https://example.invalid/run/44",
+            },
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "0123456789abcdef",
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 30,
+                needs_review_postings: 0,
+                selection_eligible_postings: 30,
+                stale_posting_suppressed_groups: 29,
+                company_cap_suppressed_groups: 0,
+                pending_items: [
+                  {
+                    ordinal: 1,
+                    title: "Software Engineer",
+                    company: "Acme",
+                    link: "https://example.invalid/job-1",
+                    platform: "Greenhouse",
+                  },
+                ],
+                pending_items_truncated: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+  await page.goto("/operations");
+  await expect(
+    page.locator(".operator-batch-card").getByText("Client name unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Release 1 job" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Discard" })).toBeDisabled();
+  await expect(page.getByText(/Batch actions are locked/)).toBeVisible();
+});
+
+test("journaled delivery recovery is visible and cannot be discarded", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            run: null,
+            truncated: false,
+            profiles: [
+              {
+                action: "reconciliation_required",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 0,
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "failed",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 1,
+                needs_review_postings: 0,
+                selection_eligible_postings: 1,
+                stale_posting_suppressed_groups: 0,
+                company_cap_suppressed_groups: 0,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: true,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(page.getByText("A Sheet delivery needs safe recovery")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry safe delivery" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Discard" })).toBeDisabled();
+  await expect(page.getByText(/Discard is locked because this batch has a delivery journal/)).toBeVisible();
+});
+
+test("unverified latest operator state locks state-dependent controls", async ({ page }) => {
+  const dispatched: Record<string, unknown>[] = [];
+  await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: "33333333-3333-4333-8333-333333333333",
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            complete: false,
+            state_error:
+              "Latest JobSift mutation completed, but its authoritative state snapshot is unavailable.",
+            run: {
+              id: 45,
+              run_number: 45,
+              status: "completed",
+              conclusion: "failure",
+              created_at: "2026-10-06T20:00:00Z",
+              updated_at: "2026-10-06T20:05:00Z",
+              url: "https://example.invalid/run/45",
+              kind: "delivery",
+            },
+            truncated: false,
+            profiles: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(
+    page.locator(".operator-command-center").getByRole("alert"),
+  ).toContainText("Client state could not be verified");
+  await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run sourcing now" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Check Sheet", exact: true }).last()).toBeDisabled();
+  await expect(page.getByLabel("What do you want to do?")).toBeDisabled();
+
+  const sync = page.getByRole("button", { name: "Sync current state" });
+  await expect(sync).toBeEnabled();
+  await sync.click();
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]).toMatchObject({
+    command: "client-control",
+    operation: "list",
+  });
+});
+
+test("failed status refresh locks actions from the previous verified snapshot", async ({ page }) => {
+  let failStatus = false;
+  await page.route("**/api/control/status", async (route) => {
+    if (failStatus) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { message: "Could not load JobSift workflow status." },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            complete: true,
+            state_error: null,
+            run: null,
+            truncated: false,
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 0,
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 100,
+                selected_count: 1,
+                shortfall: 99,
+                fresh_eligible_employers: 1,
+                match_eligible_postings: 1,
+                needs_review_postings: 0,
+                selection_eligible_postings: 1,
+                stale_posting_suppressed_groups: 0,
+                company_cap_suppressed_groups: 0,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  const release = page.getByRole("button", { name: "Release 1 job" });
+  await expect(release).toBeEnabled();
+
+  failStatus = true;
+  await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(page.getByText("Could not load JobSift workflow status.")).toBeVisible();
+  await expect(release).toBeDisabled();
+});
+
+test("a newer authoritative snapshot can prove a dispatched command was superseded", async ({ page }) => {
+  const requestedId = "11111111-1111-4111-8111-111111111111";
+  const newerId = "22222222-2222-4222-8222-222222222222";
+  let commandAccepted = false;
+
+  await page.route("**/api/control/status*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: {
+            name: "Inventory",
+            state: "active",
+            url: "https://example.invalid/inventory",
+            runs: [],
+          },
+          delivery: {
+            name: "Delivery",
+            state: "active",
+            url: "https://example.invalid/delivery",
+            runs: [],
+          },
+          operator_snapshot: {
+            complete: true,
+            observed_at: commandAccepted
+              ? "2026-10-06T20:10:00Z"
+              : "2026-10-06T20:00:00Z",
+            control_request_id: commandAccepted ? newerId : null,
+            confirmed_control_request_id: commandAccepted ? requestedId : null,
+            state_error: null,
+            run: {
+              id: commandAccepted ? 2 : 1,
+              run_number: commandAccepted ? 2 : 1,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T20:00:00Z",
+              updated_at: commandAccepted
+                ? "2026-10-06T20:10:00Z"
+                : "2026-10-06T20:00:00Z",
+              url: "https://example.invalid/state",
+              kind: "inventory",
+            },
+            truncated: false,
+            profiles: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/control/dispatch", async (route) => {
+    commandAccepted = true;
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: requestedId,
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  const runNow = page.getByRole("button", { name: "Run sourcing now" });
+  await expect(runNow).toBeEnabled();
+  await runNow.click();
+  await expect(runNow).toBeDisabled();
+
+  await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(runNow).toBeEnabled();
+});
+
+test("truncated operator state never claims all clients are clear", async ({ page }) => {
+  await page.route("**/api/control/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            run: null,
+            truncated: true,
+            profiles: [
+              {
+                action: "ready",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 0,
+                batch_id: null,
+                batch_status: null,
+                requested_quota: null,
+                selected_count: null,
+                shortfall: null,
+                fresh_eligible_employers: null,
+                match_eligible_postings: null,
+                needs_review_postings: null,
+                selection_eligible_postings: null,
+                stale_posting_suppressed_groups: null,
+                company_cap_suppressed_groups: null,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/operations");
+  await expect(page.getByText(/Client state is incomplete/)).toBeVisible();
+  await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
 });
 
 test("yield-aware scheduling is visible and dispatches guarded bonus capacity", async ({ page }) => {
@@ -241,7 +770,9 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
 });
 
 test("client Sheet controls keep listed and manual targets explicit", async ({ page }) => {
-  await page.route("**/api/control/status", async (route) => {
+  let stateVersion = 0;
+  let lastControlRequestId: string | null = null;
+  await page.route("**/api/control/status*", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -250,6 +781,25 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
           control_ready: true,
           inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
           delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
+          operator_snapshot: {
+            complete: true,
+            observed_at: `2026-10-06T20:00:0${stateVersion}Z`,
+            control_request_id: lastControlRequestId,
+            confirmed_control_request_id: lastControlRequestId,
+            state_error: null,
+            run: {
+              id: 100 + stateVersion,
+              run_number: 100 + stateVersion,
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-10-06T20:00:00Z",
+              updated_at: `2026-10-06T20:00:0${stateVersion}Z`,
+              url: "https://example.invalid/state",
+              kind: "delivery",
+            },
+            truncated: false,
+            profiles: [],
+          },
         },
       }),
     });
@@ -258,10 +808,18 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   const dispatched: Record<string, unknown>[] = [];
   await page.route("**/api/control/dispatch", async (route) => {
     dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    stateVersion += 1;
+    lastControlRequestId =
+      `00000000-0000-4000-8000-${String(stateVersion).padStart(12, "0")}`;
     await route.fulfill({
       status: 202,
       contentType: "application/json",
-      body: JSON.stringify({ data: { accepted: true } }),
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: lastControlRequestId,
+        },
+      }),
     });
   });
 
@@ -289,35 +847,45 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   const sheetBlock = page
     .locator(".operations-client-block")
     .filter({ has: page.getByRole("heading", { name: "Google Sheet" }) });
   await sheetBlock.getByText("Advanced target", { exact: true }).click();
-  await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("manual");
+  const sheetTarget = sheetBlock.getByRole("combobox", { name: "Target by" });
+  await expect(sheetTarget).toBeEnabled();
+  await sheetTarget.selectOption("manual");
   await sheetBlock.getByRole("textbox", { name: "Profile ID" }).fill("0123456789abcdef");
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
+  await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(sheetTarget).toBeEnabled();
 
-  await sheetBlock.getByRole("combobox", { name: "Target by" }).selectOption("listed");
+  await sheetTarget.selectOption("listed");
   await expect(sheetBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
   expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   const deliveryBlock = page
     .locator(".operations-client-block")
     .filter({ has: page.getByRole("heading", { name: "Delivery" }) });
   await deliveryBlock.getByText("Advanced target", { exact: true }).click();
-  await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("manual");
+  const deliveryTarget = deliveryBlock.getByRole("combobox", { name: "Target client by" });
+  await expect(deliveryTarget).toBeEnabled();
+  await deliveryTarget.selectOption("manual");
   await deliveryBlock.getByRole("textbox", { name: "Profile ID" }).fill("fedcba9876543210");
   await deliveryBlock.getByRole("combobox", { name: "What do you want to do?" }).selectOption("set-quota");
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(4);
   expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
+  await page.getByRole("button", { name: "Refresh status" }).click();
+  await expect(deliveryTarget).toBeEnabled();
 
-  await deliveryBlock.getByRole("combobox", { name: "Target client by" }).selectOption("listed");
+  await deliveryTarget.selectOption("listed");
   await expect(deliveryBlock.getByRole("textbox", { name: "Profile ID" })).toHaveCount(0);
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(5);

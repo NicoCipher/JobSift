@@ -48,6 +48,10 @@ on:
         description: Prepared batch ID for release/discard
         required: false
         type: string
+      control_request_id:
+        description: Opaque correlation ID from the operator interface
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -68,6 +72,7 @@ jobs:
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -171,3 +176,7 @@ jobs:
                 --batch-id "$CONTROL_BATCH_ID"
               ;;
           esac
+
+      - name: Emit authoritative operator state
+        if: ${{ always() }}
+        run: python -m job_scout.operator_snapshot
