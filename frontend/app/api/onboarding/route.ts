@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { encryptProvisioningPayload, validProvisioningKey } from "../../../lib/provisioning-crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,10 @@ type GithubRun = {
 
 function token() {
   return process.env.JOBSIFT_GITHUB_TOKEN?.trim() ?? "";
+}
+
+function provisioningKey() {
+  return process.env.JOBSIFT_PROVISIONING_KEY?.trim() ?? "";
 }
 
 function sameOrigin(request: NextRequest) {
@@ -219,6 +224,17 @@ export async function POST(request: NextRequest) {
       503,
     );
   }
+  if (!validProvisioningKey(provisioningKey())) {
+    return response(
+      {
+        error: {
+          code: "PROVISIONING_NOT_CONFIGURED",
+          message: "Secure client onboarding is not configured on this deployment.",
+        },
+      },
+      503,
+    );
+  }
   if (!request.headers.get("content-type")?.startsWith("application/json")) {
     return invalid("Expected a JSON onboarding request.");
   }
@@ -238,6 +254,18 @@ export async function POST(request: NextRequest) {
   if (Buffer.byteLength(serialized, "utf8") > 20_000) {
     return invalid("Onboarding request is too large.");
   }
+  const ciphertext = encryptProvisioningPayload(provisioningKey(), serialized);
+  if (!ciphertext) {
+    return response(
+      {
+        error: {
+          code: "PROVISIONING_NOT_CONFIGURED",
+          message: "Secure client onboarding is not configured on this deployment.",
+        },
+      },
+      503,
+    );
+  }
   const requestId = randomUUID();
   const controlRequestId = randomUUID();
   const dispatched = await github("/actions/workflows/" + workflow + "/dispatches", {
@@ -248,7 +276,7 @@ export async function POST(request: NextRequest) {
       inputs: {
         request_id: requestId,
         operation,
-        payload_b64: Buffer.from(serialized, "utf8").toString("base64"),
+        payload_ciphertext: ciphertext,
         control_request_id: controlRequestId,
       },
     }),
