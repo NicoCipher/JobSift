@@ -387,7 +387,6 @@ def test_retained_candidate_snapshot_keeps_only_titles_matching_active_briefs(tm
 
 
 def test_active_profile_binding_supports_durable_operator_brief(tmp_path):
-    from job_scout.delivery_profiles import ClientDeliveryProfileStore
     from job_scout.operator_clients import OperatorClientStore
     from job_scout.storage.sqlite import SQLiteRepository
 
@@ -404,14 +403,24 @@ def test_active_profile_binding_supports_durable_operator_brief(tmp_path):
         sourcing_plan_id="operator-client-a",
         brief=brief,
     )
-    ClientDeliveryProfileStore(repository).upsert(
-        client_id="client-a",
-        destination_id="jobs",
-        sourcing_plan_id="operator-client-a",
-        daily_quota=100,
-        status="active",
-        delivery_mode="review",
-        timezone="Africa/Lagos",
+    class FakeProfileStore:
+        def __init__(self, _repository) -> None:
+            pass
+
+        def active(self):
+            return (
+                SimpleNamespace(
+                    client_id="client-a",
+                    destination_id="jobs",
+                    sourcing_plan_id="operator-client-a",
+                ),
+            )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        workday_production,
+        "ClientDeliveryProfileStore",
+        FakeProfileStore,
     )
 
     plan_dir = tmp_path / "config" / "sourcing_plans"
@@ -430,3 +439,4 @@ def test_active_profile_binding_supports_durable_operator_brief(tmp_path):
         repo_root=tmp_path,
     )
     assert loaded == [brief]
+    monkeypatch.undo()
