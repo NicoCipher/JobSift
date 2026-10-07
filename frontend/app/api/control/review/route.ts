@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { validBatchId } from "../../../../../lib/control-validation";
-import { isOperatorProfileAllowed } from "../../../../../lib/operator-profiles";
+import { validBatchId } from "../../../../lib/control-validation";
+import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
 
