@@ -263,7 +263,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const runsResponse = await github(
-      `/actions/workflows/${workflow}/runs?event=workflow_dispatch&per_page=50`,
+      `/actions/workflows/${workflow}/runs?event=workflow_dispatch&per_page=100`,
     );
     if (!runsResponse.ok) throw new Error("runs");
     const runsBody = (await runsResponse.json()) as { workflow_runs?: GithubRun[] };
