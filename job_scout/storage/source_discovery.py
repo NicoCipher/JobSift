@@ -103,6 +103,16 @@ def _health_interval(classification: str) -> timedelta:
     return timedelta(hours=6)
 
 
+def _begin_write(connection) -> None:
+    """Start a discovery write without taking JobSift's global Postgres lock."""
+
+    # SQLite still needs BEGIN IMMEDIATE for local writer serialization.
+    # Production Postgres uses MVCC and constraints for these isolated
+    # source_discovery_* tables; the discovery workflow itself is singleton.
+    statement = "BEGIN" if getattr(connection, "is_postgres", False) else "BEGIN IMMEDIATE"
+    connection.execute(statement)
+
+
 class SourceDiscoveryStore:
     """Auditable candidate, health-evidence, admission and crawl-cursor state."""
 
@@ -140,7 +150,7 @@ class SourceDiscoveryStore:
         if page < 0 or pages < 1 or page >= pages:
             raise ValueError("invalid source-discovery cursor")
         with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_write(connection)
             connection.execute(
                 "INSERT INTO source_discovery_cursors "
                 "(discovery_source,query_id,crawl_id,page,pages,updated_at) "
@@ -253,7 +263,7 @@ class SourceDiscoveryStore:
         inserted_targets = 0
         inserted_evidence = 0
         with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_write(connection)
             for value in values:
                 target_added, evidence_added = self._observe_one(connection, value)
                 inserted_targets += int(target_added)
@@ -484,7 +494,7 @@ class SourceDiscoveryStore:
         if not values:
             return
         with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_write(connection)
             for target_identity, checked_at, result in values:
                 self._record_health_one(
                     connection,
