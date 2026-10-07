@@ -46,6 +46,15 @@ function clean(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function validTimeZone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validRequestId(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
@@ -89,6 +98,7 @@ function validatePayload(operation: string, raw: unknown): Record<string, unknow
   const freshnessHours = Number(criteria.freshness_hours);
   const dailyLimit = Number(source.daily_limit);
   const deliveryMode = clean(source.delivery_mode, 12).toLowerCase();
+  const timezone = clean(source.timezone, 80);
   const sheetUrl = clean(sheet.url, 2048);
   const tab = clean(sheet.tab, 120);
   const mapping =
@@ -113,8 +123,10 @@ function validatePayload(operation: string, raw: unknown): Record<string, unknow
     freshnessHours > 24 ||
     !Number.isInteger(dailyLimit) ||
     dailyLimit < 1 ||
-    dailyLimit > 5000 ||
+    dailyLimit > 2000 ||
     !["review", "auto"].includes(deliveryMode) ||
+    !timezone ||
+    !validTimeZone(timezone) ||
     !sheetUrl ||
     !tab ||
     exclusions === null ||
@@ -135,6 +147,7 @@ function validatePayload(operation: string, raw: unknown): Record<string, unknow
     },
     daily_limit: dailyLimit,
     delivery_mode: deliveryMode,
+    timezone,
     sheet: {
       url: sheetUrl,
       tab,
