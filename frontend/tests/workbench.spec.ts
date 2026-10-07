@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
+import { canonicalTimeZone, validBatchId, validGenerationId } from "../lib/control-validation";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
@@ -118,6 +118,8 @@ test("control validation canonicalizes timezones and generated batch IDs", () =>
   expect(canonicalTimeZone("\"; echo pwned; #")).toBeNull();
   expect(validBatchId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(true);
   expect(validBatchId("\"; echo pwned; #")).toBe(false);
+  expect(validGenerationId("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).toBe(true);
+  expect(validGenerationId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(false);
 });
 
 test("operator profile catalogue rejects unlisted production controls", () => {
@@ -1283,6 +1285,7 @@ test("Review shows authoritative evidence and sends only kept jobs", async ({ pa
             observed_at: "2026-10-07T05:30:00Z",
             profile_id: "ad763a0336d92204",
             batch_id: batchId,
+            generation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             batch_status: "prepared",
             selected_count: 2,
             requested_quota: 83,
@@ -1377,6 +1380,7 @@ test("Review shows authoritative evidence and sends only kept jobs", async ({ pa
     profile_id: "ad763a0336d92204",
     batch_id: batchId,
     removed_ordinals: "1",
+    expected_generation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   });
   await expect(page.getByText("ad763a0336d92204")).toHaveCount(0);
   await expect(page.getByText(batchId)).toHaveCount(0);
@@ -1446,6 +1450,7 @@ test("Review locks unsafe kept evidence until the operator removes it", async ({
             observed_at: "2026-10-07T05:30:00Z",
             profile_id: "ad763a0336d92204",
             batch_id: batchId,
+            generation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             batch_status: "prepared",
             selected_count: 2,
             requested_quota: 2,
