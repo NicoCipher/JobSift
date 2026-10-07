@@ -131,6 +131,49 @@ def prepare(repo: SQLiteRepository, destination, jobs: list[Job]):
     return prepare_daily_batch(repository=repo, request=request)
 
 
+def test_review_selection_removes_only_requested_rows_and_changes_generation(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    _gateway, destination, _store, _profile = setup_profile(repo, quota=2)
+    batch = prepare(
+        repo,
+        destination,
+        [make_job("job-1", "Acme"), make_job("job-2", "Beta")],
+    )
+    original_generation = batch.generation_id
+
+    updated = DailyBatchStore(repo).remove_prepared_items(
+        batch.batch_id,
+        (1,),
+        expected_generation_id=original_generation,
+    )
+
+    assert updated.generation_id != original_generation
+    assert updated.selected_count == 1
+    assert updated.shortfall == 1
+    assert [item.representative_job_id for item in updated.items] == ["job-2"]
+    assert [item.ordinal for item in updated.items] == [1]
+    with repo.connect() as connection:
+        disposition = connection.execute(
+            "SELECT disposition FROM daily_batch_candidates "
+            "WHERE batch_id=? AND job_id='job-1'",
+            (batch.batch_id,),
+        ).fetchone()[0]
+    assert disposition == "operator_removed"
+
+
+def test_review_selection_cannot_remove_every_prepared_job(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    _gateway, destination, _store, _profile = setup_profile(repo, quota=1)
+    batch = prepare(repo, destination, [make_job("job-1", "Acme")])
+
+    with pytest.raises(BatchConflict, match="discard the batch"):
+        DailyBatchStore(repo).remove_prepared_items(
+            batch.batch_id,
+            (1,),
+            expected_generation_id=batch.generation_id,
+        )
+
+
 def test_release_guard_blocks_batch_after_quota_is_reduced(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     gateway, destination, store, profile = setup_profile(repo, quota=2)
