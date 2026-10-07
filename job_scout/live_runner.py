@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
+from job_scout.domain.models import SearchBrief
 from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
@@ -331,13 +332,32 @@ def run_once(
     config: LiveRunnerConfig,
     *,
     repository=None,
+    brief_override: SearchBrief | None = None,
+    plan_id_override: str | None = None,
+    brief_revision_id_override: str | None = None,
+    brief_sha256_override: str | None = None,
 ) -> dict[str, object]:
     config.database_path.parent.mkdir(parents=True, exist_ok=True)
     config.csv_path.parent.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    plan, brief_path = _runtime_plan(config)
-    brief = load_search_brief(brief_path)
+    plan: SourcingPlan | None = None
+    brief_path: Path | None = None
+    if brief_override is not None:
+        if config.source_before_delivery:
+            raise ValueError("dynamic SearchBriefs require shared-inventory delivery")
+        if not plan_id_override or not brief_revision_id_override or not brief_sha256_override:
+            raise ValueError("dynamic SearchBrief identity is incomplete")
+        brief = brief_override
+        plan_id = plan_id_override
+        brief_revision_id = brief_revision_id_override
+        brief_sha = brief_sha256_override
+    else:
+        plan, brief_path = _runtime_plan(config)
+        brief = load_search_brief(brief_path)
+        plan_id = plan.plan_id
+        brief_revision_id = brief_path.stem
+        brief_sha = sha256(brief_path.read_bytes()).hexdigest()
     if repository is None:
         repository = create_repository(config.database_path)
     if config.validation_only and repository.remote_url:
@@ -393,7 +413,7 @@ def run_once(
             )
         profile_store = ClientDeliveryProfileStore(repository)
         profile = profile_store.get(brief.client_id, destination_record.destination_id)
-        if profile.sourcing_plan_id != plan.plan_id:
+        if profile.sourcing_plan_id != plan_id:
             raise ValueError(
                 "delivery profile sourcing plan does not match the active runner plan"
             )
@@ -595,7 +615,7 @@ def run_once(
     if config.discard_prepared:
         return {
             "action": "nothing_to_discard",
-            "plan_id": plan.plan_id,
+            "plan_id": plan_id,
             "client_id": brief.client_id,
             "destination": destination,
         }
@@ -620,11 +640,12 @@ def run_once(
         if today is not None:
             return _batch_payload(store, today, action="already_ran_today")
 
-    brief_sha = sha256(brief_path.read_bytes()).hexdigest()
     match_scope_id = brief_sha if profile is not None else None
 
     report = None
     if config.source_before_delivery:
+        if plan is None:
+            raise ValueError("sourcing requires a concrete sourcing plan")
         report = collect_inventory_plan(
             plan,
             repository=repository,
@@ -664,7 +685,7 @@ def run_once(
             retention_hours=config.inventory_retention_hours,
             evaluated_at=report.completed_at,
         )
-        scope = f"{plan.plan_id}:{report.run_id}"
+        scope = f"{plan_id}:{report.run_id}"
         failures = _source_failures(report)
         completeness = "complete" if report.status == "success" else "partial"
     else:
@@ -674,7 +695,7 @@ def run_once(
             retention_hours=config.inventory_retention_hours,
             match_scope_id=match_scope_id,
         )
-        scope = f"{plan.plan_id}:{evaluation.run_id}"
+        scope = f"{plan_id}:{evaluation.run_id}"
         failures = ()
         completeness = "complete"
 
@@ -726,7 +747,7 @@ def run_once(
         candidate_job_ids=candidate_ids,
         evidence_sha256=evidence_sha,
         match_scope_id=match_scope_id,
-        brief_revision_id=brief_path.stem,
+        brief_revision_id=brief_revision_id,
         brief_sha256=brief_sha,
         completeness=completeness,
         source_failures=failures,
@@ -774,7 +795,7 @@ def run_once(
     if profile_auto_release and profile_store is not None and profile is not None:
         current_profile = profile_store.get(profile.client_id, profile.destination_id)
         profile = current_profile
-        if current_profile.sourcing_plan_id != plan.plan_id:
+        if current_profile.sourcing_plan_id != plan_id:
             action = "release_blocked_profile"
         elif current_profile.delivery_mode != "auto":
             action = "prepared"
