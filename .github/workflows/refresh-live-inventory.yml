@@ -196,8 +196,6 @@ jobs:
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-      JOBSIFT_CONTROL_REQUEST_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.control_request_id || '' }}
-      JOBSIFT_PROVISIONING_KEY: ${{ secrets.JOBSIFT_PROVISIONING_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -282,12 +280,6 @@ jobs:
             --retention-hours "$JOBSIFT_INVENTORY_RETENTION_HOURS" \
             --output refresh-result/retention.json
 
-      - name: Emit authoritative operator state
-        if: ${{ always() }}
-        run: |
-          test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
-          python -m job_scout.operator_snapshot
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -297,20 +289,18 @@ jobs:
           retention-days: 7
 
 
-  operator-snapshot-fallback:
-    # Normal refreshes emit the snapshot inside persist-and-deliver so scheduled
-    # runs do not boot a second Python runner just to reread the same database.
-    # Only a manually requested refresh whose plan job failed needs this fallback.
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && needs.plan.result == 'failure' }}
+  operator-snapshot:
+    if: ${{ always() && needs.plan.result != 'cancelled' }}
     needs:
       - plan
+      - persist-and-deliver
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       JOBSIFT_DATABASE: /tmp/jobsift-operator-state.sqlite3
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
+      JOBSIFT_CONTROL_REQUEST_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.control_request_id || '' }}
       JOBSIFT_PROVISIONING_KEY: ${{ secrets.JOBSIFT_PROVISIONING_KEY }}
 
     steps:
