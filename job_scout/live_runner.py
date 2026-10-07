@@ -623,7 +623,7 @@ def run_once(
     if config.auto_release:
         return {
             "action": "nothing_to_release",
-            "plan_id": plan.plan_id,
+            "plan_id": plan_id,
             "client_id": brief.client_id,
             "destination": destination,
         }
@@ -654,14 +654,14 @@ def run_once(
         if report.status == "failure":
             return {
                 "action": "sourcing_failed",
-                "plan_id": plan.plan_id,
+                "plan_id": plan_id,
                 "status": report.status,
                 "source_failures": list(_source_failures(report)),
             }
         if report.status != "success" and not config.allow_partial:
             return {
                 "action": "partial_sourcing_blocked",
-                "plan_id": plan.plan_id,
+                "plan_id": plan_id,
                 "status": report.status,
                 "source_failures": list(_source_failures(report)),
             }
