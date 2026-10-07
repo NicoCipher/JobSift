@@ -7,6 +7,7 @@ operator frontend can safely consume through private GitHub Actions logs.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -48,7 +49,7 @@ def _sheet_ciphertext(
     try:
         padded = raw_key + "=" * (-len(raw_key) % 4)
         key = base64.urlsafe_b64decode(padded)
-    except Exception:
+    except (binascii.Error, ValueError):
         return None
     if len(key) != 32:
         return None
