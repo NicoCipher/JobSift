@@ -354,7 +354,7 @@ class OperatorProvisioningStore:
                     request_id.casefold(),
                     operation,
                     request_sha,
-                    _canonical(payload),
+                    "{}",
                     now,
                     now,
                 ),
