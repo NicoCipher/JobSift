@@ -26,6 +26,7 @@ const deliveryOperations = new Set([
   "set-timezone",
   "run-now",
   "release-batch",
+  "release-selection",
   "discard-batch",
 ]);
 
@@ -185,6 +186,7 @@ export async function POST(request: NextRequest) {
     const quota = clean(body.daily_quota, 8);
     const mode = clean(body.delivery_mode, 16);
     const timezone = clean(body.timezone, 80);
+    const removedOrdinals = clean(body.removed_ordinals, 30000);
 
     if (!["list"].includes(operation) && !/^[0-9a-f]{16}$/.test(profileId)) {
       return invalid("A valid opaque delivery profile ID is required.");
@@ -220,8 +222,18 @@ export async function POST(request: NextRequest) {
     if (operation === "set-timezone" && !canonicalTimezone) {
       return invalid("Timezone must be a valid IANA timezone.");
     }
-    if (["release-batch", "discard-batch"].includes(operation) && !validBatchId(batchId)) {
+    if (
+      ["release-batch", "release-selection", "discard-batch"].includes(operation) &&
+      !validBatchId(batchId)
+    ) {
       return invalid("Batch ID must be a valid JobSift batch UUID.");
+    }
+    if (
+      operation === "release-selection" &&
+      removedOrdinals &&
+      !/^\\d+(?:,\\d+)*$/.test(removedOrdinals)
+    ) {
+      return invalid("Removed review rows must be comma-separated positive integers.");
     }
 
     return dispatch(deliveryWorkflow, {
@@ -231,6 +243,7 @@ export async function POST(request: NextRequest) {
       delivery_mode: mode || "review",
       timezone: canonicalTimezone ?? "Africa/Lagos",
       batch_id: batchId,
+      removed_ordinals: removedOrdinals,
     });
   }
 
