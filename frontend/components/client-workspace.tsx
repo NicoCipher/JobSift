@@ -860,6 +860,15 @@ export function ClientWorkspace({
                           job before sending.
                         </div>
                       ) : null}
+                      {state.profile_status !== "active" ? (
+                        <div className="notice">
+                          This client is paused. Resume the client before sending reviewed jobs.
+                        </div>
+                      ) : state.sheet_status !== "ready" ? (
+                        <div className="notice">
+                          The client Sheet is not ready. Fix the Sheet connection before sending.
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         disabled={
@@ -867,7 +876,9 @@ export function ClientWorkspace({
                           !stateVerified ||
                           state.recovery_required ||
                           !keptCount ||
-                          keptUnsafe
+                          keptUnsafe ||
+                          state.profile_status !== "active" ||
+                          state.sheet_status !== "ready"
                         }
                         onClick={() => void sendSelection(config, state, review)}
                       >
