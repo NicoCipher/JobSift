@@ -246,11 +246,19 @@ def test_active_profile_bindings_ignore_unbound_example_plans(tmp_path, monkeypa
             return (
                 SimpleNamespace(
                     client_id="client-a",
+                    destination_id="jobs",
                     sourcing_plan_id="active-plan",
                 ),
             )
 
     monkeypatch.setattr(workday_production, "ClientDeliveryProfileStore", FakeProfileStore)
+    monkeypatch.setattr(
+        workday_production,
+        "OperatorClientStore",
+        lambda _repository: SimpleNamespace(
+            get_for_profile=lambda _client_id, _destination_id: None
+        ),
+    )
 
     bindings = workday_production.resolve_active_workday_brief_bindings(
         repository=object(),
@@ -275,6 +283,7 @@ def test_active_profile_bindings_ignore_unbound_example_plans(tmp_path, monkeypa
             return (
                 SimpleNamespace(
                     client_id="example",
+                    destination_id="jobs",
                     sourcing_plan_id="example-plan",
                 ),
             )
