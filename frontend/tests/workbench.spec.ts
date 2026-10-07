@@ -1206,7 +1206,7 @@ test("Clients page shows operator state without exposing opaque identifiers", as
   });
 
   await page.goto("/clients");
-  await expect(page.getByRole("heading", { name: "Clients" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Clients", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Example client" })).toBeVisible();
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
   await expect(page.getByText("Review", { exact: true })).toBeVisible();
