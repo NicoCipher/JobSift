@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from job_scout.delivery_destinations import ClientSheetDestinationStore
-from job_scout.delivery_profiles import ClientDeliveryProfileStore
+from job_scout.delivery_profiles import (
+    ClientDeliveryProfileStore,
+    delivery_profile_control_id,
+)
 from job_scout.domain.daily_batch import DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
