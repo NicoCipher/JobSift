@@ -194,7 +194,6 @@ export async function POST(request: NextRequest) {
       !isOperatorProfileAllowed(
         process.env.JOBSIFT_OPERATOR_PROFILES,
         profileId,
-        process.env.NODE_ENV !== "production",
       )
     ) {
       return NextResponse.json(
