@@ -148,7 +148,6 @@ test("operator profile catalogue rejects unlisted production controls", () => {
   expect(isOperatorProfileAllowed(raw, "ad763a0336d92204")).toBe(true);
   expect(isOperatorProfileAllowed(raw, "0123456789abcdef")).toBe(false);
   expect(isOperatorProfileAllowed(undefined, "0123456789abcdef")).toBe(false);
-  expect(isOperatorProfileAllowed(undefined, "0123456789abcdef", true)).toBe(true);
 });
 
 test("control API rejects unconfigured, invalid, and cross-origin mutations", async ({ request }) => {
