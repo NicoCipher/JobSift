@@ -18,6 +18,7 @@ from job_scout.delivery_destinations import (
 )
 from job_scout.delivery_profiles import (
     ClientDeliveryProfile,
+    ClientDeliveryProfileStore,
     delivery_profile_control_id,
 )
 from job_scout.domain.daily_batch import BatchConflict
@@ -403,6 +404,9 @@ def process_request(
             )
         elif operation == "create_client":
             value = CreateClientPayload.model_validate(payload)
+            # Ensure the pre-existing delivery-profile schema exists before the
+            # atomic activation transaction writes the profile row directly.
+            ClientDeliveryProfileStore(repository)
             client_id = _client_id(value.client_name, request_id)
             destination_id = "jobs"
             destination_name = f"{value.client_name} Jobs"
