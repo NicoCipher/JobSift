@@ -9,6 +9,7 @@ const workflows = {
   inventory: "refresh-live-inventory.yml",
   delivery: "client-delivery-control.yml",
   configure: "configure-client-delivery-profile.yml",
+  provision: "operator-client-provision.yml",
 } as const;
 
 type GithubRun = {
@@ -392,9 +393,9 @@ function parseEvaluationProfiles(logs: string): Map<string, FunnelSnapshot> {
 }
 
 type SnapshotCandidate = {
-  kind: "inventory" | "delivery" | "configure";
+  kind: "inventory" | "delivery" | "configure" | "provision";
   run: WorkflowRun;
-  jobName: "operator-snapshot" | "control" | "configure";
+  jobName: "operator-snapshot" | "control" | "configure" | "provision";
 };
 
 type SnapshotEvidence =
@@ -531,6 +532,7 @@ async function latestOperatorSnapshot(
   inventoryRuns: WorkflowRun[],
   deliveryRuns: WorkflowRun[],
   configureRuns: WorkflowRun[],
+  provisionRuns: WorkflowRun[],
   token: string,
   requestedControlRequestId: string | null,
 ) {
@@ -549,6 +551,11 @@ async function latestOperatorSnapshot(
       kind: "configure" as const,
       runs: configureRuns,
       jobName: "configure" as const,
+    },
+    {
+      kind: "provision" as const,
+      runs: provisionRuns,
+      jobName: "provision" as const,
     },
   ];
 
@@ -772,15 +779,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [inventory, delivery, configure] = await Promise.all([
+    const [inventory, delivery, configure, provision] = await Promise.all([
       workflowStatus(workflows.inventory, token),
       workflowStatus(workflows.delivery, token),
       workflowStatus(workflows.configure, token),
+      workflowStatus(workflows.provision, token),
     ]);
     const operatorSnapshot = await latestOperatorSnapshot(
       inventory.runs,
       delivery.runs,
       configure.runs,
+      provision.runs,
       token,
       requestedControlRequestId,
     );
