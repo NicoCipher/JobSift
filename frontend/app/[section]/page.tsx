@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { api } from "@/lib/api/client";
 import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
+import { parseOperatorProfiles } from "@/lib/operator-profiles";
 import { PresentationSettings } from "@/components/preferences";
 import {
   OperationsControl,
@@ -14,44 +15,6 @@ function deliveryProfileControlId(clientId: string, destinationId: string) {
     .update(`jobsift-delivery-profile-v1\0${clientId}\0${destinationId}`)
     .digest("hex")
     .slice(0, 16);
-}
-
-function operatorControlProfiles(): ManagedProfile[] {
-  const raw = process.env.JOBSIFT_OPERATOR_PROFILES?.trim();
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    const seen = new Set<string>();
-    return parsed.flatMap((value): ManagedProfile[] => {
-      if (!value || typeof value !== "object") return [];
-      const item = value as Record<string, unknown>;
-      const profileId =
-        typeof item.profile_id === "string" ? item.profile_id.trim().toLowerCase() : "";
-      const clientName =
-        typeof item.client_name === "string" ? item.client_name.trim().slice(0, 120) : "";
-      const destinationName =
-        typeof item.destination_name === "string"
-          ? item.destination_name.trim().slice(0, 120)
-          : "";
-      if (
-        !/^[0-9a-f]{16}$/.test(profileId) ||
-        !clientName ||
-        !destinationName ||
-        seen.has(profileId)
-      ) {
-        return [];
-      }
-      seen.add(profileId);
-      return [{
-        profile_id: profileId,
-        client_name: clientName,
-        destination_name: destinationName,
-      }];
-    });
-  } catch {
-    return [];
-  }
 }
 
 const titles: Record<string, string> = {
@@ -89,7 +52,7 @@ export default async function SectionPage({
   const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
   if (section === "operations") {
-    const configuredProfiles = operatorControlProfiles();
+    const configuredProfiles = parseOperatorProfiles(process.env.JOBSIFT_OPERATOR_PROFILES);
     if (configuredProfiles.length || process.env.NODE_ENV === "production") {
       content = (
         <OperationsControl
