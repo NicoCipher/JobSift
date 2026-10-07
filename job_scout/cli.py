@@ -6,6 +6,7 @@ import os
 import sqlite3
 from collections import Counter
 from pathlib import Path
+from uuid import UUID
 
 from job_scout.collectors.ashby import AshbyCollector
 from job_scout.collectors.greenhouse import GreenhouseCollector
@@ -217,6 +218,11 @@ def main() -> None:
                 help="Repeat the reviewed batch ID to authorize Sheet delivery",
             )
         if name == "release-selection":
+            command.add_argument(
+                "--expected-generation-id",
+                required=True,
+                help="Exact prepared batch revision returned by the reviewed snapshot",
+            )
             command.add_argument(
                 "--removed-ordinals",
                 default="",
@@ -527,7 +533,20 @@ def main() -> None:
                     if args.confirm_batch_id != args.batch_id:
                         parser.error("confirmation must match the reviewed batch ID")
                     if args.delivery_profile_command == "release-selection":
+                        try:
+                            reviewed_generation = UUID(args.expected_generation_id)
+                        except ValueError:
+                            parser.error("expected generation must be a UUID")
+                        if (
+                            reviewed_generation.version != 4
+                            or str(reviewed_generation) != args.expected_generation_id.casefold()
+                        ):
+                            parser.error("expected generation must be a canonical UUIDv4")
                         current = batch_store.get(args.batch_id)
+                        if current.generation_id != args.expected_generation_id.casefold():
+                            raise BatchConflict(
+                                "reviewed batch revision changed; reload review before release"
+                            )
                         expected_control_id = delivery_profile_control_id(
                             current.request.client_id,
                             current.request.destination_id or "",
@@ -551,7 +570,7 @@ def main() -> None:
                             current = batch_store.remove_prepared_items(
                                 current.batch_id,
                                 removed_ordinals,
-                                expected_generation_id=current.generation_id,
+                                expected_generation_id=args.expected_generation_id.casefold(),
                             )
                     result, reconciliation, _remaining = store.guard_batch_release(
                         profile,
