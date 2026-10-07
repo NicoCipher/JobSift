@@ -218,8 +218,8 @@ export async function POST(request: NextRequest) {
     }
     if (operation === "set-quota") {
       const parsed = Number(quota);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5000) {
-        return invalid("Daily quota must be an integer from 1 to 5000.");
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 2000) {
+        return invalid("Daily quota must be an integer from 1 to 2000.");
       }
     }
     if (operation === "set-mode" && !["review", "auto"].includes(mode)) {
