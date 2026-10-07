@@ -1,5 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { canonicalTimeZone, validBatchId, validGenerationId, validRemovedOrdinals } from "../lib/control-validation";
+import {
+  canonicalTimeZone,
+  validBatchId,
+  validGenerationId,
+  validRemovedOrdinals,
+} from "../lib/control-validation";
+import {
+  issueOperatorCapability,
+  verifyOperatorCapability,
+} from "../lib/operator-capability";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
@@ -1517,4 +1526,186 @@ test("Review locks unsafe kept evidence until the operator removes it", async ({
   await expect(
     page.getByRole("button", { name: "Send 1 job to Example client's Sheet" }),
   ).toBeEnabled();
+});
+
+
+test("operator control capabilities are profile-bound and short-lived", () => {
+  const capability = issueOperatorCapability(
+    "server-secret",
+    "ad763a0336d92204",
+    1_000_000_000_000,
+  );
+  expect(capability).not.toBeNull();
+  expect(
+    verifyOperatorCapability(
+      "server-secret",
+      "ad763a0336d92204",
+      capability ?? "",
+      1_000_000_010_000,
+    ),
+  ).toBe(true);
+  expect(
+    verifyOperatorCapability(
+      "server-secret",
+      "0123456789abcdef",
+      capability ?? "",
+      1_000_000_010_000,
+    ),
+  ).toBe(false);
+  expect(
+    verifyOperatorCapability(
+      "server-secret",
+      "ad763a0336d92204",
+      capability ?? "",
+      1_000_000_400_001,
+    ),
+  ).toBe(false);
+});
+
+test("Add Client wizard inspects Sheet and creates a client without internal IDs", async ({
+  page,
+}) => {
+  let operation = "";
+  let createPayload: Record<string, unknown> | null = null;
+
+  await page.route("**/api/onboarding**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as {
+        operation: string;
+        payload: Record<string, unknown>;
+      };
+      operation = body.operation;
+      if (operation === "create_client") createPayload = body.payload;
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            state: "queued",
+            control_request_id:
+              operation === "inspect_sheet"
+                ? "11111111-1111-4111-8111-111111111111"
+                : "22222222-2222-4222-8222-222222222222",
+          },
+        }),
+      });
+      return;
+    }
+    expect(url.searchParams.get("control_request_id")).toBeTruthy();
+    if (operation === "inspect_sheet") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            state: "ready",
+            result: {
+              tabs: ["Jobs", "Archive"],
+              selected_tab: "Jobs",
+              headers: ["Role", "Company", "URL", "Source"],
+              proposed_mapping: {
+                "Job Title": "Role",
+                "Company Name": "Company",
+                "Job Link": "URL",
+                "Job Platform": "Source",
+              },
+              missing_required_fields: [],
+            },
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          state: "ready",
+          result: {
+            client_name: "Acme Software",
+            destination_name: "Acme Software Jobs",
+            delivery_mode: "review",
+            daily_limit: 250,
+            sheet_status: "ready",
+            sheet_url:
+              "https://docs.google.com/spreadsheets/d/sheet123456/edit#gid=17",
+            brief_revision: 1,
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/clients/new");
+  await page.getByLabel("Client name").fill("Acme Software");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await page.getByLabel("Role titles").fill("Software Engineer\nBackend Developer");
+  await expect(page.getByLabel("Remote")).toBeChecked();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await page.getByLabel("Daily limit").fill("250");
+  await expect(page.getByText("Review first", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await page
+    .getByLabel("Google Sheet URL")
+    .fill("https://docs.google.com/spreadsheets/d/sheet123456/edit");
+  await page.getByLabel("Tab").fill("Jobs");
+  await page.getByRole("button", { name: "Inspect Sheet" }).click();
+  await expect(page.getByText("Sheet tab found · 4 headers")).toBeVisible();
+  await expect(page.getByLabel("Job title *")).toHaveValue("Role");
+  await expect(page.getByLabel("Company *")).toHaveValue("Company");
+  await expect(page.getByLabel("Application link *")).toHaveValue("URL");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await expect(page.getByText("Software Engineer, Backend Developer")).toBeVisible();
+  await expect(page.getByText("Last 24 hours · unknown age rejected")).toBeVisible();
+  await page.getByRole("button", { name: "Create client" }).click();
+
+  await expect(page.getByRole("heading", { name: "Acme Software is ready" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open client" })).toHaveAttribute(
+    "href",
+    "/clients",
+  );
+  await expect(page.getByRole("link", { name: "Open client Sheet" })).toHaveAttribute(
+    "href",
+    "https://docs.google.com/spreadsheets/d/sheet123456/edit#gid=17",
+  );
+  expect(createPayload).toMatchObject({
+    client_name: "Acme Software",
+    criteria: {
+      role_titles: ["Software Engineer", "Backend Developer"],
+      country: "US",
+      work_modes: ["remote"],
+      freshness_hours: 24,
+    },
+    daily_limit: 250,
+    delivery_mode: "review",
+    sheet: {
+      tab: "Jobs",
+      column_mapping: {
+        "Job Title": "Role",
+        "Company Name": "Company",
+        "Job Link": "URL",
+      },
+    },
+  });
+  await expect(page.getByText(/profile_id|client_id|batch_id/i)).toHaveCount(0);
+});
+
+test("Add Client wizard stays usable at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto("/clients/new");
+  await page.getByLabel("Client name").fill("Mobile Client");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
+  await expect(page.getByRole("heading", { name: "What jobs should JobSift find?" })).toBeVisible();
+  await expect(page.getByLabel("Role titles")).toBeVisible();
 });
