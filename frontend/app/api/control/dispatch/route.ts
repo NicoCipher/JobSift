@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { canonicalTimeZone, validBatchId } from "../../../../lib/control-validation";
+import { canonicalTimeZone, validBatchId, validGenerationId } from "../../../../lib/control-validation";
 import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
@@ -187,6 +187,7 @@ export async function POST(request: NextRequest) {
     const mode = clean(body.delivery_mode, 16);
     const timezone = clean(body.timezone, 80);
     const removedOrdinals = clean(body.removed_ordinals, 30000);
+    const expectedGenerationId = clean(body.expected_generation_id, 80);
 
     if (!["list"].includes(operation) && !/^[0-9a-f]{16}$/.test(profileId)) {
       return invalid("A valid opaque delivery profile ID is required.");
@@ -231,9 +232,15 @@ export async function POST(request: NextRequest) {
     if (
       operation === "release-selection" &&
       removedOrdinals &&
-      !/^\\d+(?:,\\d+)*$/.test(removedOrdinals)
+      !/^\d+(?:,\d+)*$/.test(removedOrdinals)
     ) {
       return invalid("Removed review rows must be comma-separated positive integers.");
+    }
+    if (
+      operation === "release-selection" &&
+      !validGenerationId(expectedGenerationId)
+    ) {
+      return invalid("Reviewed batch revision is missing or invalid. Reload the review.");
     }
 
     return dispatch(deliveryWorkflow, {
@@ -244,6 +251,7 @@ export async function POST(request: NextRequest) {
       timezone: canonicalTimezone ?? "Africa/Lagos",
       batch_id: batchId,
       removed_ordinals: removedOrdinals,
+      expected_generation_id: expectedGenerationId,
     });
   }
 
