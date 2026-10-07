@@ -32,6 +32,7 @@ from job_scout.operator_clients import (
 )
 from job_scout.storage.factory import create_repository
 
+
 class ProvisioningFailure(ValueError):
     """Safe operator-facing provisioning failure with no private payload values."""
 
@@ -169,7 +170,7 @@ def _read_payload(path: Path) -> dict[str, object]:
     except Exception as exc:
         raise ValueError("invalid provisioning payload") from exc
     if not isinstance(value, dict):
-        raise ValueError("provisioning payload must be an object")
+        raise TypeError("provisioning payload must be an object")
     return value
 
 
