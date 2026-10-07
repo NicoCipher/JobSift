@@ -719,3 +719,19 @@ def test_observed_sheet_links_are_scoped_to_one_destination(tmp_path):
     assert not repo.is_historically_surfaced(
         posting, "client-a", "client-sheet://sheet-b"
     )
+
+
+def test_profile_rejects_quota_above_product_ceiling(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    register(repo)
+
+    with pytest.raises(ValueError):
+        ClientDeliveryProfileStore(repo).upsert(
+            client_id="client-a",
+            destination_id="jobs",
+            sourcing_plan_id="remote-software-v1",
+            daily_quota=2001,
+            status="active",
+            delivery_mode="review",
+            timezone="Africa/Lagos",
+        )
