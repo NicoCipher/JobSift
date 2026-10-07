@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -90,6 +90,10 @@ def _canonical(value: object) -> str:
 
 def _sha(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode()).hexdigest()
+
+
+def provisioning_payload_sha256(payload: dict[str, object]) -> str:
+    return _sha(payload)
 
 
 def brief_sha256(brief: SearchBrief) -> str:
@@ -339,7 +343,7 @@ class OperatorProvisioningStore:
         }:
             raise ValueError("unsupported provisioning operation")
         now = datetime.now(UTC).isoformat()
-        request_sha = _sha(payload)
+        request_sha = provisioning_payload_sha256(payload)
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -371,10 +375,18 @@ class OperatorProvisioningStore:
             ).fetchone()
         return self._from_row(row) if row is not None else None
 
-    def claim(self, request_id: str) -> OperatorProvisioningRequest:
+    def claim(
+        self,
+        request_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> OperatorProvisioningRequest:
         if not self.available():
             raise RuntimeError("operator provisioning schema is not installed")
-        now = datetime.now(UTC).isoformat()
+        current_time = now or datetime.now(UTC)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=UTC)
+        lease_cutoff = current_time - timedelta(minutes=15)
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -386,13 +398,18 @@ class OperatorProvisioningStore:
             current = self._from_row(row)
             if current.state == "completed":
                 return current
-            if current.state == "running":
+            if current.state == "running" and current.updated_at > lease_cutoff:
                 raise ValueError("provisioning request is already running")
             updated = connection.execute(
                 "UPDATE operator_provisioning_requests "
-                "SET state='running',error_code=NULL,error_message=NULL,updated_at=? "
-                "WHERE request_id=? AND state IN ('queued','failed')",
-                (now, request_id.casefold()),
+                "SET state='running',payload_json='{}',error_code=NULL,error_message=NULL,"
+                "updated_at=? WHERE request_id=? AND state=? AND updated_at=?",
+                (
+                    current_time.isoformat(),
+                    request_id.casefold(),
+                    current.state,
+                    row["updated_at"],
+                ),
             )
             if updated.rowcount != 1:
                 raise ValueError("provisioning request state changed")
@@ -411,7 +428,8 @@ class OperatorProvisioningStore:
             connection.execute("BEGIN IMMEDIATE")
             updated = connection.execute(
                 "UPDATE operator_provisioning_requests "
-                "SET state='completed',result_json=?,error_code=NULL,error_message=NULL,"
+                "SET state='completed',payload_json='{}',result_json=?,"
+                "error_code=NULL,error_message=NULL,"
                 "updated_at=? WHERE request_id=? AND state='running'",
                 (_canonical(result), now, request_id.casefold()),
             )
@@ -434,7 +452,7 @@ class OperatorProvisioningStore:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 "UPDATE operator_provisioning_requests "
-                "SET state='failed',error_code=?,error_message=?,updated_at=? "
+                "SET state='failed',payload_json='{}',error_code=?,error_message=?,updated_at=? "
                 "WHERE request_id=? AND state='running'",
                 (code[:80], message[:1000], now, request_id.casefold()),
             )
