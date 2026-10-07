@@ -69,6 +69,7 @@ export function ClientOnboardingWizard() {
   const [freshness, setFreshness] = useState("24");
   const [dailyLimit, setDailyLimit] = useState("100");
   const [deliveryMode, setDeliveryMode] = useState<"review" | "auto">("review");
+  const [timezone, setTimezone] = useState("America/New_York");
   const [sheetUrl, setSheetUrl] = useState("");
   const [sheetTab, setSheetTab] = useState("Jobs");
   const [inspection, setInspection] = useState<SheetInspection | null>(null);
@@ -95,7 +96,7 @@ export function ClientOnboardingWizard() {
     (step === 3 &&
       Number.isInteger(Number(dailyLimit)) &&
       Number(dailyLimit) >= 1 &&
-      Number(dailyLimit) <= 5000) ||
+      Number(dailyLimit) <= 2000) ||
     (step === 4 && inspection !== null && requiredMapped);
 
   function toggleMode(mode: string) {
@@ -219,6 +220,7 @@ export function ClientOnboardingWizard() {
         },
         daily_limit: Number(dailyLimit),
         delivery_mode: deliveryMode,
+        timezone,
         sheet: {
           url: sheetUrl.trim(),
           tab: sheetTab.trim(),
@@ -382,10 +384,28 @@ export function ClientOnboardingWizard() {
             <input
               type="number"
               min={1}
-              max={5000}
+              max={2000}
               value={dailyLimit}
               onChange={(event) => setDailyLimit(event.target.value)}
             />
+          </label>
+          <label>
+            Daily reset timezone
+            <select
+              value={timezone}
+              onChange={(event) => setTimezone(event.target.value)}
+            >
+              <option value="America/New_York">US Eastern (New York)</option>
+              <option value="America/Chicago">US Central (Chicago)</option>
+              <option value="America/Denver">US Mountain (Denver)</option>
+              <option value="America/Los_Angeles">US Pacific (Los Angeles)</option>
+              <option value="Africa/Lagos">West Africa (Lagos)</option>
+              <option value="Europe/London">UK (London)</option>
+              <option value="UTC">UTC</option>
+            </select>
+            <span className="metadata">
+              The daily sent limit resets at midnight in this timezone.
+            </span>
           </label>
           <fieldset>
             <legend>Delivery mode</legend>
@@ -487,6 +507,7 @@ export function ClientOnboardingWizard() {
             <div><span>Market</span><strong>{country.toUpperCase()} · {workModes.join(", ")}</strong></div>
             <div><span>Freshness</span><strong>Last {freshness} hours · unknown age rejected</strong></div>
             <div><span>Delivery</span><strong>{deliveryMode === "review" ? "Review first" : "Auto"} · up to {dailyLimit}/day</strong></div>
+            <div><span>Daily reset</span><strong>{timezone}</strong></div>
             <div><span>Sheet</span><strong>{sheetTab} · required columns mapped</strong></div>
           </div>
           <div className="notice">
