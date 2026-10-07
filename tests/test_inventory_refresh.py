@@ -742,7 +742,8 @@ def test_live_refresh_workflow_enforces_logical_scheduler_contract():
     scheduler_block = workflow[resolver:build]
     completion_block = workflow[complete:prune]
 
-    assert '- cron: "2,17,32,47 * * * *"' in workflow
+    assert '- cron: "17 * * * *"' in workflow
+    assert "2,17,32,47" not in workflow
     assert workflow.count("group: jobsift-live-inventory-refresh") == 1
     assert "python -m job_scout.inventory_refresh schedule-next" in scheduler_block
     assert "mkdir -p refresh-plan" in scheduler_block
@@ -755,12 +756,36 @@ def test_live_refresh_workflow_enforces_logical_scheduler_contract():
     assert "name: jobsift-refresh-plan-${{ github.run_id }}" in workflow
     assert "path: refresh-plan/" in workflow
     assert "if-no-files-found: error" in workflow
+    plan_artifact = workflow.index("name: jobsift-refresh-plan-${{ github.run_id }}")
+    assert "steps.schedule.outputs.should_run == 'true'" in workflow[
+        workflow.rfind("- uses: actions/upload-artifact@v4", 0, plan_artifact):plan_artifact
+    ]
     assert "if: ${{ needs.plan.outputs.should_run == 'true' }}" in workflow[collect:persist]
     assert "needs.plan.outputs.should_run == 'true'" in workflow[persist:complete]
     assert "if: ${{ github.event_name == 'schedule' }}" in completion_block
     assert '--cohort "${{ needs.plan.outputs.cohort }}"' in completion_block
     assert "--fan-in-report refresh-result/report.json" in completion_block
     assert "schedule-complete" not in scheduler_block
+
+
+
+
+def test_live_refresh_avoids_a_second_snapshot_runner_on_scheduled_success():
+    workflow = Path(".github/workflows/refresh-live-inventory.yml").read_text(
+        encoding="utf-8"
+    )
+
+    persist = workflow.index("  persist-and-deliver:")
+    fallback = workflow.index("  operator-snapshot-fallback:")
+    persist_block = workflow[persist:fallback]
+    fallback_block = workflow[fallback:]
+
+    assert "python -m job_scout.operator_snapshot" in persist_block
+    assert "JOBSIFT_PROVISIONING_KEY" in persist_block
+    assert "JOBSIFT_CONTROL_REQUEST_ID" in persist_block
+    assert "github.event_name == 'workflow_dispatch'" in fallback_block
+    assert "needs.plan.result == 'failure'" in fallback_block
+    assert workflow.count("python -m job_scout.operator_snapshot") == 2
 
 
 def test_profile_mutation_workflows_queue_all_pending_changes():
