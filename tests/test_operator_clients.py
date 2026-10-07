@@ -10,6 +10,7 @@ from job_scout.operator_clients import (
     OperatorClientStore,
     OperatorProvisioningStore,
     brief_sha256,
+    provisioning_payload_sha256,
 )
 from job_scout.storage.sqlite import SQLiteRepository
 
