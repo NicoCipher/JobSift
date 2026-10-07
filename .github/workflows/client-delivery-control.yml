@@ -21,6 +21,7 @@ on:
           - set-timezone
           - run-now
           - release-batch
+          - release-selection
           - discard-batch
       profile_id:
         description: Opaque delivery profile ID shown by profile setup/status
@@ -46,6 +47,14 @@ on:
         type: string
       batch_id:
         description: Prepared batch ID for release/discard
+        required: false
+        type: string
+      removed_ordinals:
+        description: Comma-separated reviewed rows to exclude before release
+        required: false
+        type: string
+      expected_generation_id:
+        description: Opaque reviewed batch revision for release-selection
         required: false
         type: string
       control_request_id:
@@ -105,6 +114,8 @@ jobs:
           CONTROL_DELIVERY_MODE: ${{ inputs.delivery_mode }}
           CONTROL_TIMEZONE: ${{ inputs.timezone }}
           CONTROL_BATCH_ID: ${{ inputs.batch_id }}
+          CONTROL_REMOVED_ORDINALS: ${{ inputs.removed_ordinals }}
+          CONTROL_EXPECTED_GENERATION_ID: ${{ inputs.expected_generation_id }}
         run: |
           operation="$CONTROL_OPERATION"
           profile_id="$CONTROL_PROFILE_ID"
@@ -165,6 +176,18 @@ jobs:
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
                 --batch-id "$CONTROL_BATCH_ID" \
+                --confirm-batch-id "$CONTROL_BATCH_ID"
+              ;;
+            release-selection)
+              test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
+              test -n "$CONTROL_BATCH_ID" || { echo "batch_id is required"; exit 1; }
+              test -n "$CONTROL_EXPECTED_GENERATION_ID" || { echo "expected_generation_id is required"; exit 1; }
+              python -m job_scout.cli delivery-profile release-selection \
+                --database "$JOBSIFT_DATABASE" \
+                --profile-id "$profile_id" \
+                --batch-id "$CONTROL_BATCH_ID" \
+                --expected-generation-id "$CONTROL_EXPECTED_GENERATION_ID" \
+                --removed-ordinals "$CONTROL_REMOVED_ORDINALS" \
                 --confirm-batch-id "$CONTROL_BATCH_ID"
               ;;
             discard-batch)

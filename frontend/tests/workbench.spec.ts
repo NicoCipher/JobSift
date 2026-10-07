@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
+import { canonicalTimeZone, validBatchId, validGenerationId, validRemovedOrdinals } from "../lib/control-validation";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
@@ -118,6 +118,13 @@ test("control validation canonicalizes timezones and generated batch IDs", () =>
   expect(canonicalTimeZone("\"; echo pwned; #")).toBeNull();
   expect(validBatchId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(true);
   expect(validBatchId("\"; echo pwned; #")).toBe(false);
+  expect(validGenerationId("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).toBe(true);
+  expect(validGenerationId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(false);
+  expect(validRemovedOrdinals("")).toBe(true);
+  expect(validRemovedOrdinals("1")).toBe(true);
+  expect(validRemovedOrdinals("1,2,17")).toBe(true);
+  expect(validRemovedOrdinals("\\d")).toBe(false);
+  expect(validRemovedOrdinals("1,0x2")).toBe(false);
 });
 
 test("operator profile catalogue rejects unlisted production controls", () => {
@@ -1154,4 +1161,360 @@ test("nested editable descendants keep slash, j/k and detail Escape native", asy
   await expect(page.locator(".detail")).toHaveCount(0);
   await page.keyboard.press("/");
   await expect(page.getByRole("searchbox")).toBeFocused();
+});
+
+
+test("Clients page shows operator state without exposing opaque identifiers", async ({ page }) => {
+  await page.route("**/api/control/status*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { state: "active" },
+          operator_snapshot: {
+            complete: true,
+            observed_at: "2026-10-07T05:30:00Z",
+            confirmed_control_request_id: null,
+            state_error: null,
+            run: null,
+            truncated: false,
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 17,
+                batch_id: "f96331fa-7c62-5793-b2e5-ea395286d416",
+                batch_status: "prepared",
+                requested_quota: 83,
+                selected_count: 2,
+                shortfall: 81,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: false,
+                client_funnel: {
+                  overall: {
+                    confirmed_matches_0_24h: 63,
+                  },
+                  age_buckets: {},
+                  delivery: {},
+                },
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/clients");
+  await expect(page.getByRole("heading", { name: "Clients", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example client" })).toBeVisible();
+  await expect(page.getByText("Active", { exact: true })).toBeVisible();
+  await expect(page.locator(".client-card").getByText("Review", { exact: true })).toBeVisible();
+  await expect(page.getByText("17", { exact: true })).toBeVisible();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(page.getByText("63 jobs", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review 2 jobs" })).toBeVisible();
+  await expect(page.getByText("ad763a0336d92204")).toHaveCount(0);
+  await expect(page.getByText("f96331fa-7c62-5793-b2e5-ea395286d416")).toHaveCount(0);
+});
+
+test("Review shows authoritative evidence and sends only kept jobs", async ({ page }) => {
+  const batchId = "f96331fa-7c62-5793-b2e5-ea395286d416";
+  const controlRequestId = "11111111-1111-4111-8111-111111111111";
+  await page.route("**/api/control/status*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { state: "active" },
+          operator_snapshot: {
+            complete: true,
+            observed_at: "2026-10-07T05:30:00Z",
+            confirmed_control_request_id: null,
+            state_error: null,
+            run: null,
+            truncated: false,
+            profiles: [
+              {
+                action: "awaiting_release",
+                profile_id: "ad763a0336d92204",
+                profile_status: "active",
+                delivery_mode: "review",
+                daily_quota: 100,
+                sheet_status: "ready",
+                delivered_today: 17,
+                batch_id: batchId,
+                batch_status: "prepared",
+                requested_quota: 83,
+                selected_count: 2,
+                shortfall: 81,
+                pending_items: [],
+                pending_items_truncated: false,
+                recovery_required: false,
+                client_funnel: null,
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/control/review**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { state: "queued", control_request_id: controlRequestId },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          state: "ready",
+          review: {
+            observed_at: "2026-10-07T05:30:00Z",
+            profile_id: "ad763a0336d92204",
+            batch_id: batchId,
+            generation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            batch_status: "prepared",
+            selected_count: 2,
+            requested_quota: 83,
+            freshness_limit_hours: 24,
+            safe_to_release: true,
+            recovery_required: false,
+            error: null,
+            items: [
+              {
+                ordinal: 1,
+                title: "Software Engineer",
+                company: "Acme",
+                application_link: "https://example.invalid/job-1",
+                source: "Greenhouse",
+                posted_at: "2026-10-07T02:30:00Z",
+                age_hours: 3,
+                location: "United States",
+                remote_status: "remote",
+                decision: "strong_match",
+                matched_reasons: ["role title matched", "remote policy satisfied"],
+                review_reasons: [],
+                evidence_verified: true,
+                release_ready: true,
+                warnings: [],
+              },
+              {
+                ordinal: 2,
+                title: "Backend Developer",
+                company: "Beta",
+                application_link: "https://example.invalid/job-2",
+                source: "Ashby",
+                posted_at: "2026-10-07T01:30:00Z",
+                age_hours: 4,
+                location: "United States",
+                remote_status: "remote",
+                decision: "possible_match",
+                matched_reasons: ["software role matched"],
+                review_reasons: [],
+                evidence_verified: true,
+                release_ready: true,
+                warnings: [],
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  const dispatched: Record<string, unknown>[] = [];
+  await page.route("**/api/control/dispatch", async (route) => {
+    dispatched.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          accepted: true,
+          control_request_id: "22222222-2222-4222-8222-222222222222",
+        },
+      }),
+    });
+  });
+
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.goto("/review");
+  await page.getByRole("button", { name: "Load jobs to review" }).click();
+
+  await expect(page.getByRole("heading", { name: "Software Engineer" })).toBeVisible();
+  await expect(page.getByText("3h old", { exact: true })).toBeVisible();
+  await expect(page.getByText("Greenhouse", { exact: true })).toBeVisible();
+  await expect(page.getByText("Role title matched", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open job" }).first()).toHaveAttribute(
+    "href",
+    "https://example.invalid/job-1",
+  );
+
+  const firstJob = page.locator(".review-job").first();
+  await firstJob.getByRole("button", { name: "Remove" }).click();
+  await expect(firstJob.getByText("Will not be sent")).toBeVisible();
+
+  const send = page.getByRole("button", {
+    name: "Send 1 job to Example client's Sheet",
+  });
+  await expect(send).toBeEnabled();
+  await send.click();
+
+  await expect.poll(() => dispatched.length).toBe(1);
+  expect(dispatched[0]).toMatchObject({
+    command: "client-control",
+    operation: "release-selection",
+    profile_id: "ad763a0336d92204",
+    batch_id: batchId,
+    removed_ordinals: "1",
+    expected_generation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  });
+  await expect(page.getByText("ad763a0336d92204")).toHaveCount(0);
+  await expect(page.getByText(batchId)).toHaveCount(0);
+});
+
+test("Review locks unsafe kept evidence until the operator removes it", async ({ page }) => {
+  const batchId = "f96331fa-7c62-5793-b2e5-ea395286d416";
+  await page.route("**/api/control/status*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { state: "active" },
+          operator_snapshot: {
+            complete: true,
+            observed_at: "2026-10-07T05:30:00Z",
+            confirmed_control_request_id: null,
+            state_error: null,
+            run: null,
+            truncated: false,
+            profiles: [{
+              action: "awaiting_release",
+              profile_id: "ad763a0336d92204",
+              profile_status: "active",
+              delivery_mode: "review",
+              daily_quota: 100,
+              sheet_status: "ready",
+              delivered_today: 0,
+              batch_id: batchId,
+              batch_status: "prepared",
+              requested_quota: 2,
+              selected_count: 2,
+              shortfall: 0,
+              pending_items: [],
+              pending_items_truncated: false,
+              recovery_required: false,
+              client_funnel: null,
+            }],
+          },
+        },
+      }),
+    });
+  });
+  await page.route("**/api/control/review**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            state: "queued",
+            control_request_id: "11111111-1111-4111-8111-111111111111",
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          state: "ready",
+          review: {
+            observed_at: "2026-10-07T05:30:00Z",
+            profile_id: "ad763a0336d92204",
+            batch_id: batchId,
+            generation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            batch_status: "prepared",
+            selected_count: 2,
+            requested_quota: 2,
+            freshness_limit_hours: 24,
+            safe_to_release: false,
+            recovery_required: false,
+            error: null,
+            items: [
+              {
+                ordinal: 1,
+                title: "Safe role",
+                company: "Acme",
+                application_link: "https://example.invalid/safe",
+                source: "Greenhouse",
+                posted_at: "2026-10-07T04:30:00Z",
+                age_hours: 1,
+                location: "United States",
+                remote_status: "remote",
+                decision: "strong_match",
+                matched_reasons: ["role title matched"],
+                review_reasons: [],
+                evidence_verified: true,
+                release_ready: true,
+                warnings: [],
+              },
+              {
+                ordinal: 2,
+                title: "Changed role",
+                company: "Beta",
+                application_link: "https://example.invalid/changed",
+                source: "Ashby",
+                posted_at: "2026-10-05T04:30:00Z",
+                age_hours: 49,
+                location: "United States",
+                remote_status: "remote",
+                decision: "strong_match",
+                matched_reasons: [],
+                review_reasons: [],
+                evidence_verified: false,
+                release_ready: false,
+                warnings: ["Job or match evidence changed after this review batch was prepared."],
+              },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/review");
+  await page.getByRole("button", { name: "Load jobs to review" }).click();
+  const send = page.getByRole("button", {
+    name: "Send 2 jobs to Example client's Sheet",
+  });
+  await expect(send).toBeDisabled();
+  await expect(page.getByText(/At least one kept job is no longer safe/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Approve all eligible" }).click();
+  await expect(
+    page.getByRole("button", { name: "Send 1 job to Example client's Sheet" }),
+  ).toBeEnabled();
 });

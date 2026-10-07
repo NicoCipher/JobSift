@@ -10,6 +10,7 @@ import {
   OperationsControl,
   type ManagedProfile,
 } from "@/components/operations-control";
+import { ClientWorkspace } from "@/components/client-workspace";
 function deliveryProfileControlId(clientId: string, destinationId: string) {
   return createHash("sha256")
     .update(`jobsift-delivery-profile-v1\0${clientId}\0${destinationId}`)
@@ -19,6 +20,7 @@ function deliveryProfileControlId(clientId: string, destinationId: string) {
 
 const titles: Record<string, string> = {
   dashboard: "Dashboard",
+  clients: "Clients",
   operations: "Operations",
   review: "Review",
   briefs: "Search Briefs",
@@ -45,22 +47,18 @@ export default async function SectionPage({
 }) {
   const { section } = await params;
   if (!titles[section]) notFound();
-  if (liveMode && !["operations", "settings"].includes(section)) {
+  if (liveMode && !["operations", "clients", "review", "settings"].includes(section)) {
     return <div className="section-content"><h1>{titles[section]}</h1><p>This view is not connected to the operator service yet. Open Jobs to inspect registered evidence.</p><Link href="/jobs">Open Jobs</Link></div>;
   }
-  const session = section === "operations" ? null : await api.getSession();
+  const operatorSurface = ["operations", "clients", "review"].includes(section);
+  const session = operatorSurface ? null : await api.getSession();
   const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
-  if (section === "operations") {
+  if (operatorSurface) {
     const configuredProfiles = parseOperatorProfiles(process.env.JOBSIFT_OPERATOR_PROFILES);
-    if (configuredProfiles.length || process.env.NODE_ENV === "production") {
-      content = (
-        <OperationsControl
-          profiles={configuredProfiles}
-          catalogueIncomplete={false}
-        />
-      );
-    } else {
+    let profiles = configuredProfiles;
+    let catalogueIncomplete = false;
+    if (!configuredProfiles.length && process.env.NODE_ENV !== "production") {
       // Development-only fallback keeps authored fixture coverage useful. Production
       // controls fail closed unless the server-only operator allowlist is configured.
       const developmentSession = await api.getSession();
@@ -73,8 +71,8 @@ export default async function SectionPage({
           }
         }),
       );
-      const catalogueIncomplete = clients.some((client) => client === null);
-      const profiles: ManagedProfile[] = clients.flatMap((response) =>
+      catalogueIncomplete = clients.some((client) => client === null);
+      profiles = clients.flatMap((response): ManagedProfile[] =>
         response
           ? response.data.destinations.map((destination) => ({
               profile_id: deliveryProfileControlId(
@@ -86,13 +84,19 @@ export default async function SectionPage({
             }))
           : [],
       );
-      content = (
+    }
+    content =
+      section === "operations" ? (
         <OperationsControl
           profiles={profiles}
           catalogueIncomplete={catalogueIncomplete}
         />
+      ) : (
+        <ClientWorkspace
+          profiles={profiles}
+          surface={section === "clients" ? "clients" : "review"}
+        />
       );
-    }
   } else if (section === "settings")
     content = (
       <section className="section-block reading">

@@ -38,7 +38,10 @@ The variable contains no Sheet URL, spreadsheet ID, client ID, or credentials.
 When it is absent in production, JobSift may still show opaque backend state but
 client-specific mutations remain locked because no trusted human-readable target
 is configured. Development retains the authored fixture catalogue for tests.
-The same catalogue is enforced again inside the server-side dispatch route, so an\nauthenticated browser cannot bypass the UI by posting an unlisted opaque profile\nhandle directly.\n
+The same catalogue is enforced again inside the server-side dispatch and review
+routes, so an authenticated browser cannot bypass the UI by posting an unlisted
+opaque profile handle directly.
+
 Manual inventory refreshes preserve the existing workflow contract: choices are
 limited to Workday targets 1/5/10/20/25, detail concurrency 4/6/8, and a
 yield-aware bonus budget of 0/25/50/75/100 targets. The bonus is applied only
@@ -52,6 +55,33 @@ Sheet without exposing spreadsheet IDs, tab names, client IDs, or Google
 credentials through public workflow inputs. Registering a brand-new physical
 Sheet remains a private provisioning operation until a private registration
 transport is added.
+
+## Normal operator workflow
+
+Production operators land on `/clients`. The normal path is now:
+
+`Clients → Find jobs → Review → Send to client Sheet`
+
+`/clients` shows the human-readable client name, active/paused state,
+review/auto mode, daily limit, sent-today count, waiting review count, Sheet
+readiness and the latest client match result. Opaque profile and batch IDs remain
+server-side implementation details.
+
+`/review` reads the exact prepared batch through a server-only review bridge.
+The browser does not recompute matching. JobSift only shows match explanations
+when the current authoritative job/match evidence still hashes to the frozen
+prepared-batch evidence. Changed or stale evidence is visibly unsafe and blocks
+release until removed or refreshed.
+
+Keep/Remove decisions are applied through a generation-bound
+`release-selection` backend operation. Removed rows are journaled as
+`operator_removed`; the remaining rows still pass the existing release guard
+for freshness, quota, history/dedupe, profile state, destination state and
+uncertain Sheet-write recovery immediately before delivery.
+
+`/operations` remains the advanced/recovery surface rather than the normal
+operator workflow. GitHub Actions are transitional server-side machinery and are
+not modeled in the normal UI.
 
 
 ## Local service connection
@@ -71,15 +101,18 @@ come from the service. In local service mode, `/jobs` shows individual postings,
 including postings without a recorded group representative; `/jobs?view=groups`
 shows only service-backed delivery groups. These are distinct resource views and
 no group is synthesized for a posting. The existing fixture mode remains the default for UI
-development and its browser tests. In live mode, only Jobs and presentation
-Settings are exposed; other views are marked unavailable until their service
-contracts are integrated. No mutation, sourcing command, or production login is
+development and its browser tests. In live mode, Clients, Review, Operations, Jobs and presentation Settings are
+available. Clients/Review/Operations use the server-only production control
+boundary; Jobs remains the registered-evidence view. No mutation, sourcing command, or production login is
 enabled. An unregistered destination or unavailable group representation
 returns the service error rather than substituting fictional rows. The service
 requires a provisioned database and explicit private catalogue before the live
 view can show jobs.
 
-A read-only Next.js App Router slice. The default mode uses explicitly fictional development evidence. The primary work surface is `/jobs`; `/` redirects there. The optional local service connection reads registered evidence through the Python operator service. It does not enable sourcing, writes, or production authentication.
+The default development mode still uses explicitly fictional evidence for the
+legacy Jobs views. In production live mode, `/` redirects to `/clients`; in
+fixture development mode it redirects to `/jobs`. Production mutation routes
+remain server-side and fail closed when their credentials/catalogue are absent.
 
 ## Run and verify
 
@@ -119,7 +152,9 @@ The API subset exposes convenience reads for one registered example brief, run a
 
 ## Work surfaces
 
-Navigation: Dashboard, Operations, Jobs, Review, Search Briefs, Runs, History, Diagnostics, Settings. Secondary routes are deliberately small read-only evidence views. Settings persist only theme, density and character-shortcut preferences.
+Navigation prioritizes Clients, Review and Operations for the production
+operator workflow, with Jobs and legacy evidence surfaces still available where
+enabled. Secondary routes are deliberately small read-only evidence views. Settings persist only theme, density and character-shortcut preferences.
 
 Desktop uses a 48px top bar, 200px navigation and a 400px contextual detail pane where room permits. At narrower widths detail becomes the full work surface with a URL-addressable selection. Mobile rows retain the primary facts; all evidence is available in detail. No bulk-selection checkboxes or unsupported mutation controls are rendered.
 

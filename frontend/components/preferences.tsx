@@ -44,6 +44,9 @@ const subscribe = (listener: () => void) => {
 export function usePreferences() {
   return useSyncExternalStore(subscribe, read, () => defaults);
 }
+export function keyboardShortcutsEnabled() {
+  return read().shortcuts;
+}
 export function savePreferences(patch: Partial<Preferences>) {
   cached = { ...read(), ...patch };
   document.documentElement.dataset.theme = cached.theme;

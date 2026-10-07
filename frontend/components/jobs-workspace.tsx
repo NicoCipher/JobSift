@@ -22,7 +22,7 @@ import {
 } from "@/lib/display";
 import { JobDetail } from "./job-detail";
 import { MatchStatus } from "./status";
-import { usePreferences } from "./preferences";
+import { keyboardShortcutsEnabled, usePreferences } from "./preferences";
 const decisions = Object.keys(decisionLabel) as Decision[];
 export function JobsWorkspace({
   client,
@@ -151,7 +151,7 @@ export function JobsWorkspace({
     const key = (e: KeyboardEvent) => {
       if (
         e.key === "/" &&
-        preferences.shortcuts &&
+        keyboardShortcutsEnabled() &&
         !e.metaKey &&
         !e.ctrlKey &&
         !e.altKey &&
@@ -405,7 +405,7 @@ export function JobsWorkspace({
               return;
             }
             if (
-              !preferences.shortcuts ||
+              !keyboardShortcutsEnabled() ||
               !["j", "k"].includes(e.key) ||
               isTyping(e.target) ||
               e.metaKey ||

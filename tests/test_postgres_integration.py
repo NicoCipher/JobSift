@@ -48,6 +48,20 @@ def repository():
     return PostgresRepository(POSTGRES_URL)
 
 
+def test_postgres_supports_repeatable_read_review_snapshot(repository):
+    with repository.connect() as connection:
+        connection.execute(
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+        )
+        row = connection.execute(
+            "SELECT clock_timestamp()::text AS observed_at "
+            "FROM jobsift_schema_metadata WHERE singleton=TRUE"
+        ).fetchone()
+
+    assert row is not None
+    assert datetime.fromisoformat(row["observed_at"]).tzinfo is not None
+
+
 def test_postgres_repository_preserves_scheduler_and_run_idempotency(repository):
     schedule = InventoryRefreshScheduleStore(repository, schedule_key="postgres-ci")
     now = datetime(2026, 10, 4, 9, 0, tzinfo=UTC)
