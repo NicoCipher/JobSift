@@ -12,6 +12,7 @@ from job_scout.delivery_profiles import (
 )
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.live_runner import LiveRunnerConfig, run_once
+from job_scout.operator_clients import OperatorClientStore
 from job_scout.sourcing_plan import load_sourcing_plan
 from job_scout.storage.factory import create_repository
 
@@ -88,6 +89,11 @@ def run_active_profiles(
 ) -> list[dict[str, object]]:
     repository = create_repository(database_path)
     profile_store = ClientDeliveryProfileStore(repository)
+    operator_clients = OperatorClientStore(repository)
+    operator_clients_by_profile = {
+        (client.client_id, client.destination_id): client
+        for client in operator_clients.list()
+    }
     if control_id is None:
         profiles = profile_store.active()
     else:
@@ -112,7 +118,26 @@ def run_active_profiles(
             reconciliation = profile_store.reconcile_destination_sheet(
                 profile, gateway=gateway
             )
-            plan_path = resolve_plan(plan_dir, profile.sourcing_plan_id)
+            managed = operator_clients_by_profile.get(
+                (profile.client_id, profile.destination_id)
+            )
+            runtime_kwargs: dict[str, object] = {}
+            if managed is not None:
+                if managed.sourcing_plan_id != profile.sourcing_plan_id:
+                    raise ValueError(
+                        "operator client sourcing identity does not match delivery profile"
+                    )
+                plan_path = Path("/tmp/jobsift-dynamic-shared-inventory.json")
+                runtime_kwargs = {
+                    "brief_override": managed.brief,
+                    "plan_id_override": managed.sourcing_plan_id,
+                    "brief_revision_id_override": (
+                        f"operator-r{managed.brief_revision}"
+                    ),
+                    "brief_sha256_override": managed.brief_sha256,
+                }
+            else:
+                plan_path = resolve_plan(plan_dir, profile.sourcing_plan_id)
             result = run_once(
                 LiveRunnerConfig(
                     plan_path=plan_path,
@@ -133,6 +158,7 @@ def run_active_profiles(
                     source_before_delivery=False,
                 ),
                 repository=repository,
+                **runtime_kwargs,
             )
             result["sheet_reconciliation"] = reconciliation
             results.append(_public_result(profile, result))

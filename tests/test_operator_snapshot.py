@@ -8,8 +8,9 @@ from job_scout.delivery_profiles import (
     delivery_profile_control_id,
 )
 from job_scout.domain.daily_batch import DailyBatchRequest
-from job_scout.domain.models import Job, JobMatch
+from job_scout.domain.models import Job, JobMatch, SearchBrief
 from job_scout.normalization.core import content_fingerprint
+from job_scout.operator_clients import OperatorClientStore
 from job_scout.operator_snapshot import snapshot
 from job_scout.orchestration.daily_batch import prepare_daily_batch
 from job_scout.review_snapshot import review_snapshot
@@ -29,6 +30,10 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path, monkeypa
     monkeypatch.setenv(
         "JOBSIFT_CONTROL_REQUEST_ID",
         "01234567-89ab-4cde-8fab-0123456789ab",
+    )
+    monkeypatch.setenv(
+        "JOBSIFT_PROVISIONING_KEY",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     )
     repo = SQLiteRepository(tmp_path / "jobs.db")
     destination = ClientSheetDestinationStore(repo).register_google_sheet(
@@ -54,6 +59,15 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path, monkeypa
         status="active",
         delivery_mode="review",
         timezone="Africa/Lagos",
+    )
+
+    OperatorClientStore(repo).upsert(
+        client_id="client-a",
+        display_name="Acme",
+        destination_id="jobs",
+        destination_name="Acme Jobs",
+        sourcing_plan_id="remote-software-v1",
+        brief=SearchBrief(client_id="client-a", target_roles=["Software Engineer"]),
     )
 
     now = datetime(2026, 10, 6, 18, 0, tzinfo=UTC)
@@ -114,6 +128,12 @@ def test_snapshot_keeps_prepared_batch_when_profile_is_paused(tmp_path, monkeypa
     assert state["truncated"] is False
     row = state["profiles"][0]
     assert row["profile_status"] == "paused"
+    assert row["operator_managed"] is True
+    assert row["sheet_ciphertext"].startswith("v1.")
+    serialized_state = __import__("json").dumps(state)
+    assert "sheet123" not in serialized_state
+    assert "gid=7" not in serialized_state
+    assert "sheet_url" not in serialized_state
     assert row["pending_batch"]["batch_id"] == prepared.batch_id
     assert row["pending_batch"]["selected_count"] == 1
     assert row["pending_batch"]["counts"]["selected_groups"] == 1

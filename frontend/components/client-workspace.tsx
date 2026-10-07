@@ -35,6 +35,11 @@ type ProfileSnapshot = {
   pending_items_truncated: boolean;
   recovery_required: boolean;
   client_funnel: FunnelSnapshot | null;
+  operator_managed: boolean;
+  client_name: string | null;
+  destination_name: string | null;
+  sheet_handle: string | null;
+  control_capability: string | null;
 };
 
 type OperatorSnapshot = {
@@ -47,7 +52,7 @@ type OperatorSnapshot = {
     status: string;
     conclusion: string | null;
     updated_at: string;
-    kind?: "inventory" | "delivery" | "configure";
+    kind?: "inventory" | "delivery" | "configure" | "provision";
   } | null;
   profiles: ProfileSnapshot[];
   truncated: boolean;
@@ -185,17 +190,32 @@ export function ClientWorkspace({
     latestSnapshot?.complete !== false &&
     latestSnapshot?.truncated !== true;
 
-  const configured = useMemo(
-    () =>
-      profiles.map((profile) => ({
-        config: profile,
-        state:
-          latestSnapshot?.profiles.find(
-            (snapshot) => snapshot.profile_id === profile.profile_id,
-          ) ?? null,
-      })),
-    [profiles, latestSnapshot],
-  );
+  const configured = useMemo(() => {
+    const catalogue = new Map(
+      profiles.map((profile) => [profile.profile_id, profile] as const),
+    );
+    for (const snapshot of latestSnapshot?.profiles ?? []) {
+      if (
+        snapshot.operator_managed &&
+        snapshot.client_name &&
+        snapshot.destination_name &&
+        !catalogue.has(snapshot.profile_id)
+      ) {
+        catalogue.set(snapshot.profile_id, {
+          profile_id: snapshot.profile_id,
+          client_name: snapshot.client_name,
+          destination_name: snapshot.destination_name,
+        });
+      }
+    }
+    return [...catalogue.values()].map((profile) => ({
+      config: profile,
+      state:
+        latestSnapshot?.profiles.find(
+          (snapshot) => snapshot.profile_id === profile.profile_id,
+        ) ?? null,
+    }));
+  }, [profiles, latestSnapshot]);
 
   const pending = configured.filter(
     ({ state }) => Boolean(state?.batch_id) && state?.delivery_mode === "review",
@@ -329,6 +349,7 @@ export function ClientWorkspace({
       command: "client-control",
       operation,
       profile_id: state.profile_id,
+      profile_capability: state.control_capability ?? "",
       daily_quota: String(state.daily_quota ?? 100),
       delivery_mode: state.delivery_mode ?? "review",
       timezone: "Africa/Lagos",
@@ -430,6 +451,7 @@ export function ClientWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profile_id: state.profile_id,
+          profile_capability: state.control_capability ?? "",
           batch_id: batchId,
         }),
       });
@@ -490,6 +512,7 @@ export function ClientWorkspace({
         command: "client-control",
         operation: "release-selection",
         profile_id: state.profile_id,
+        profile_capability: state.control_capability ?? "",
         daily_quota: String(state.daily_quota ?? 100),
         delivery_mode: state.delivery_mode ?? "review",
         timezone: "Africa/Lagos",
@@ -519,6 +542,7 @@ export function ClientWorkspace({
       command: "client-control",
       operation: "discard-batch",
       profile_id: state.profile_id,
+      profile_capability: state.control_capability ?? "",
       daily_quota: String(state.daily_quota ?? 100),
       delivery_mode: state.delivery_mode ?? "review",
       timezone: "Africa/Lagos",
@@ -537,13 +561,16 @@ export function ClientWorkspace({
               backend.
             </p>
           </div>
-          <button
-            type="button"
-            disabled={busy || !status?.control_ready || !stateVerified}
-            onClick={() => void findJobs()}
-          >
-            {busy ? "Starting…" : "Find jobs now"}
-          </button>
+          <div className="client-page-actions">
+            <Link href="/clients/new" className="secondary-link">Add client</Link>
+            <button
+              type="button"
+              disabled={busy || !status?.control_ready || !stateVerified}
+              onClick={() => void findJobs()}
+            >
+              {busy ? "Starting…" : "Find jobs now"}
+            </button>
+          </div>
         </section>
 
         {!status?.control_ready ? (
@@ -640,6 +667,15 @@ export function ClientWorkspace({
                     >
                       Check Sheet
                     </button>
+                    {state?.sheet_handle ? (
+                      <a
+                        href={`/api/control/sheet?handle=${encodeURIComponent(state.sheet_handle)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open Sheet
+                      </a>
+                    ) : null}
                     <button
                       type="button"
                       disabled={busy || !stateVerified || !state || state.profile_status !== "active"}

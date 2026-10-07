@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalTimeZone, validBatchId, validGenerationId, validRemovedOrdinals } from "../../../../lib/control-validation";
-import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
+import { verifyOperatorCapability } from "../../../../lib/operator-capability";
+import { configuredOperatorProfilesRaw, isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -188,6 +189,7 @@ export async function POST(request: NextRequest) {
     const timezone = clean(body.timezone, 80);
     const removedOrdinals = clean(body.removed_ordinals, 30000);
     const expectedGenerationId = clean(body.expected_generation_id, 80);
+    const profileCapability = clean(body.profile_capability, 240);
 
     if (!["list"].includes(operation) && !/^[0-9a-f]{16}$/.test(profileId)) {
       return invalid("A valid opaque delivery profile ID is required.");
@@ -195,8 +197,13 @@ export async function POST(request: NextRequest) {
     if (
       operation !== "list" &&
       !isOperatorProfileAllowed(
-        process.env.JOBSIFT_OPERATOR_PROFILES,
+        configuredOperatorProfilesRaw(),
         profileId,
+      ) &&
+      !verifyOperatorCapability(
+        githubToken(),
+        profileId,
+        profileCapability,
       )
     ) {
       return NextResponse.json(
@@ -211,8 +218,8 @@ export async function POST(request: NextRequest) {
     }
     if (operation === "set-quota") {
       const parsed = Number(quota);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5000) {
-        return invalid("Daily quota must be an integer from 1 to 5000.");
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 2000) {
+        return invalid("Daily quota must be an integer from 1 to 2000.");
       }
     }
     if (operation === "set-mode" && !["review", "auto"].includes(mode)) {

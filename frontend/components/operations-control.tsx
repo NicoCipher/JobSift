@@ -59,6 +59,11 @@ type ProfileSnapshot = {
   pending_items_truncated: boolean;
   recovery_required: boolean;
   client_funnel: FunnelSnapshot | null;
+  operator_managed: boolean;
+  client_name: string | null;
+  destination_name: string | null;
+  sheet_handle: string | null;
+  control_capability: string | null;
 };
 
 type OperatorSnapshot = {
@@ -75,7 +80,7 @@ type OperatorSnapshot = {
     created_at: string;
     updated_at: string;
     url: string;
-    kind?: "inventory" | "delivery" | "configure";
+    kind?: "inventory" | "delivery" | "configure" | "provision";
   } | null;
   profiles: ProfileSnapshot[];
   truncated: boolean;
@@ -304,6 +309,16 @@ export function OperationsControl({
   const latestProfile = latestSnapshot?.profiles[0];
 
   function profileLabel(profileId: string) {
+    const snapshot = latestSnapshot?.profiles.find(
+      (item) => item.profile_id === profileId,
+    );
+    if (
+      snapshot?.operator_managed &&
+      snapshot.client_name &&
+      snapshot.destination_name
+    ) {
+      return `${snapshot.client_name} — ${snapshot.destination_name}`;
+    }
     const profile = profiles.find((item) => item.profile_id === profileId);
     return profile ? `${profile.client_name} — ${profile.destination_name}` : null;
   }
@@ -435,6 +450,7 @@ export function OperationsControl({
       command: "client-control",
       operation,
       profile_id: profile.profile_id,
+      profile_capability: profile.control_capability ?? "",
       daily_quota: String(profile.daily_quota ?? 100),
       delivery_mode: profile.delivery_mode ?? "review",
       timezone: "Africa/Lagos",
@@ -459,6 +475,7 @@ export function OperationsControl({
       command: "client-control",
       operation,
       profile_id: profile.profile_id,
+      profile_capability: profile.control_capability ?? "",
       daily_quota: "100",
       delivery_mode: "review",
       timezone: "Africa/Lagos",
@@ -664,7 +681,9 @@ export function OperationsControl({
                     ? "Sourcing"
                     : latestSnapshot.run.kind === "delivery"
                       ? "Delivery"
-                      : "Client setup"}
+                      : latestSnapshot.run.kind === "provision"
+                        ? "Client onboarding"
+                        : "Client setup"}
                 </span>
               ) : null}
             </div>
@@ -1215,7 +1234,7 @@ export function OperationsControl({
                   name="daily_quota"
                   type="number"
                   min="1"
-                  max="5000"
+                  max="2000"
                   defaultValue="100"
                   disabled={busy || !status?.control_ready || !stateVerified}
                 />

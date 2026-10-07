@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { api } from "@/lib/api/client";
 import { liveMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
-import { parseOperatorProfiles } from "@/lib/operator-profiles";
+import { configuredOperatorProfilesRaw, parseOperatorProfiles } from "@/lib/operator-profiles";
 import { PresentationSettings } from "@/components/preferences";
 import {
   OperationsControl,
@@ -55,7 +55,7 @@ export default async function SectionPage({
   const clientId = session?.data.client_scopes[0]?.client_id ?? "";
   let content: React.ReactNode;
   if (operatorSurface) {
-    const configuredProfiles = parseOperatorProfiles(process.env.JOBSIFT_OPERATOR_PROFILES);
+    const configuredProfiles = parseOperatorProfiles(configuredOperatorProfilesRaw());
     let profiles = configuredProfiles;
     let catalogueIncomplete = false;
     if (!configuredProfiles.length && process.env.NODE_ENV !== "production") {

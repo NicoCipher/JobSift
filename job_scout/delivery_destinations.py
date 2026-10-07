@@ -288,7 +288,7 @@ class ClientSheetDestinationStore:
             ).fetchall()
         return tuple(self._from_row(row) for row in rows)
 
-    def register_google_sheet(
+    def prepare_google_sheet(
         self,
         *,
         client_id: str,
@@ -299,6 +299,11 @@ class ClientSheetDestinationStore:
         column_mapping: dict[str, str],
         gateway: SheetMetadataGateway,
     ) -> ClientSheetDestination:
+        """Verify one Google worksheet and build its immutable registration value.
+
+        This method performs no destination write. Callers that need a larger
+        atomic mutation can persist the returned value inside their transaction.
+        """
         spreadsheet_id = spreadsheet_id_from_value(spreadsheet)
         metadata = gateway.sheet_metadata(spreadsheet_id)
         matches = [
@@ -329,7 +334,7 @@ class ClientSheetDestinationStore:
             existing = self.get(client_id, destination_id, require_ready=False)
         except BatchConflict:
             pass
-        value = ClientSheetDestination(
+        return ClientSheetDestination(
             client_id=client_id,
             destination_id=destination_id,
             display_name=display_name,
@@ -344,77 +349,102 @@ class ClientSheetDestinationStore:
             created_at=existing.created_at if existing else now,
             updated_at=now,
         )
+
+    @staticmethod
+    def write_prepared(connection, value: ClientSheetDestination) -> None:
+        """Persist a verified destination using the caller's transaction."""
+        owner = connection.execute(
+            "SELECT client_id,destination_id FROM client_sheet_destinations "
+            "WHERE spreadsheet_id=? AND sheet_id=? "
+            "AND NOT (client_id=? AND destination_id=?)",
+            (
+                value.spreadsheet_id,
+                value.sheet_id,
+                value.client_id,
+                value.destination_id,
+            ),
+        ).fetchone()
+        if owner is not None:
+            raise BatchConflict(
+                "Google worksheet is already registered to another JobSift destination"
+            )
+        legacy_destination = (
+            f"gsheet://{value.spreadsheet_id}/"
+            + quote(value.tab_name, safe="")
+        )
+        logical = value.logical_uri
+        connection.execute(
+            "INSERT OR IGNORE INTO group_deliveries "
+            "(group_id,client_id,destination,job_id,exported_at) "
+            "SELECT group_id,client_id,?,job_id,exported_at "
+            "FROM group_deliveries "
+            "WHERE client_id=? AND destination=?",
+            (logical, value.client_id, legacy_destination),
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO exports "
+            "(job_id,client_id,destination,exported_at) "
+            "SELECT job_id,client_id,?,exported_at "
+            "FROM exports WHERE client_id=? AND destination=?",
+            (logical, value.client_id, legacy_destination),
+        )
+        connection.execute(
+            "INSERT INTO client_sheet_destinations "
+            "(client_id,destination_id,display_name,spreadsheet_id,sheet_id,tab_name,"
+            "header_json,header_sha256,column_mapping_json,config_sha256,status,"
+            "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(client_id,destination_id) DO UPDATE SET "
+            "display_name=excluded.display_name,"
+            "spreadsheet_id=excluded.spreadsheet_id,"
+            "sheet_id=excluded.sheet_id,"
+            "tab_name=excluded.tab_name,"
+            "header_json=excluded.header_json,"
+            "header_sha256=excluded.header_sha256,"
+            "column_mapping_json=excluded.column_mapping_json,"
+            "config_sha256=excluded.config_sha256,"
+            "status=excluded.status,"
+            "updated_at=excluded.updated_at",
+            (
+                value.client_id,
+                value.destination_id,
+                value.display_name,
+                value.spreadsheet_id,
+                value.sheet_id,
+                value.tab_name,
+                json.dumps(list(value.header), ensure_ascii=False),
+                value.header_sha256,
+                json.dumps(value.column_mapping, sort_keys=True, ensure_ascii=False),
+                value.config_sha256,
+                value.status,
+                value.created_at.isoformat(),
+                value.updated_at.isoformat(),
+            ),
+        )
+
+    def register_google_sheet(
+        self,
+        *,
+        client_id: str,
+        destination_id: str,
+        display_name: str,
+        spreadsheet: str,
+        tab_name: str,
+        column_mapping: dict[str, str],
+        gateway: SheetMetadataGateway,
+    ) -> ClientSheetDestination:
+        value = self.prepare_google_sheet(
+            client_id=client_id,
+            destination_id=destination_id,
+            display_name=display_name,
+            spreadsheet=spreadsheet,
+            tab_name=tab_name,
+            column_mapping=column_mapping,
+            gateway=gateway,
+        )
         try:
             with self.repository.connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
-                owner = connection.execute(
-                    "SELECT client_id,destination_id FROM client_sheet_destinations "
-                    "WHERE spreadsheet_id=? AND sheet_id=? "
-                    "AND NOT (client_id=? AND destination_id=?)",
-                    (
-                        value.spreadsheet_id,
-                        value.sheet_id,
-                        value.client_id,
-                        value.destination_id,
-                    ),
-                ).fetchone()
-                if owner is not None:
-                    raise BatchConflict(
-                        "Google worksheet is already registered to another JobSift destination"
-                    )
-                legacy_destination = (
-                    f"gsheet://{value.spreadsheet_id}/"
-                    + quote(value.tab_name, safe="")
-                )
-                logical = value.logical_uri
-                connection.execute(
-                    "INSERT OR IGNORE INTO group_deliveries "
-                    "(group_id,client_id,destination,job_id,exported_at) "
-                    "SELECT group_id,client_id,?,job_id,exported_at "
-                    "FROM group_deliveries "
-                    "WHERE client_id=? AND destination=?",
-                    (logical, value.client_id, legacy_destination),
-                )
-                connection.execute(
-                    "INSERT OR IGNORE INTO exports "
-                    "(job_id,client_id,destination,exported_at) "
-                    "SELECT job_id,client_id,?,exported_at "
-                    "FROM exports WHERE client_id=? AND destination=?",
-                    (logical, value.client_id, legacy_destination),
-                )
-
-                connection.execute(
-                    "INSERT INTO client_sheet_destinations "
-                    "(client_id,destination_id,display_name,spreadsheet_id,sheet_id,tab_name,"
-                    "header_json,header_sha256,column_mapping_json,config_sha256,status,"
-                    "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT(client_id,destination_id) DO UPDATE SET "
-                    "display_name=excluded.display_name,"
-                    "spreadsheet_id=excluded.spreadsheet_id,"
-                    "sheet_id=excluded.sheet_id,"
-                    "tab_name=excluded.tab_name,"
-                    "header_json=excluded.header_json,"
-                    "header_sha256=excluded.header_sha256,"
-                    "column_mapping_json=excluded.column_mapping_json,"
-                    "config_sha256=excluded.config_sha256,"
-                    "status=excluded.status,"
-                    "updated_at=excluded.updated_at",
-                    (
-                        value.client_id,
-                        value.destination_id,
-                        value.display_name,
-                        value.spreadsheet_id,
-                        value.sheet_id,
-                        value.tab_name,
-                        json.dumps(list(value.header), ensure_ascii=False),
-                        value.header_sha256,
-                        json.dumps(value.column_mapping, sort_keys=True, ensure_ascii=False),
-                        value.config_sha256,
-                        value.status,
-                        value.created_at.isoformat(),
-                        value.updated_at.isoformat(),
-                    ),
-                )
+                self.write_prepared(connection, value)
         except sqlite3.IntegrityError as error:
             raise BatchConflict(
                 "Google worksheet is already registered to another JobSift destination"

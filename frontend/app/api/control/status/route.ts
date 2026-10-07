@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { issueOperatorCapability } from "../../../../lib/operator-capability";
+import { decryptProvisioningPayload } from "../../../../lib/provisioning-crypto";
+import { issueSheetHandle } from "../../../../lib/sheet-handle";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +11,7 @@ const workflows = {
   inventory: "refresh-live-inventory.yml",
   delivery: "client-delivery-control.yml",
   configure: "configure-client-delivery-profile.yml",
+  provision: "operator-client-provision.yml",
 } as const;
 
 type GithubRun = {
@@ -85,6 +89,11 @@ type ProfileSnapshot = {
   pending_items_truncated: boolean;
   recovery_required: boolean;
   client_funnel: FunnelSnapshot | null;
+  operator_managed: boolean;
+  client_name: string | null;
+  destination_name: string | null;
+  sheet_ciphertext: string | null;
+  control_capability: string | null;
 };
 
 type OperatorState = {
@@ -308,6 +317,11 @@ function authoritativeProfile(value: unknown): ProfileSnapshot | null {
     pending_items_truncated: pending?.preview_truncated === true,
     recovery_required: pending?.recovery_required === true,
     client_funnel: null,
+    operator_managed: source.operator_managed === true,
+    client_name: textValue(source.client_name, 120),
+    destination_name: textValue(source.destination_name, 120),
+    sheet_ciphertext: textValue(source.sheet_ciphertext, 6000),
+    control_capability: null,
   };
 }
 
@@ -376,9 +390,9 @@ function parseEvaluationProfiles(logs: string): Map<string, FunnelSnapshot> {
 }
 
 type SnapshotCandidate = {
-  kind: "inventory" | "delivery" | "configure";
+  kind: "inventory" | "delivery" | "configure" | "provision";
   run: WorkflowRun;
-  jobName: "operator-snapshot" | "control" | "configure";
+  jobName: "operator-snapshot" | "control" | "configure" | "provision";
 };
 
 type SnapshotEvidence =
@@ -515,6 +529,7 @@ async function latestOperatorSnapshot(
   inventoryRuns: WorkflowRun[],
   deliveryRuns: WorkflowRun[],
   configureRuns: WorkflowRun[],
+  provisionRuns: WorkflowRun[],
   token: string,
   requestedControlRequestId: string | null,
 ) {
@@ -533,6 +548,11 @@ async function latestOperatorSnapshot(
       kind: "configure" as const,
       runs: configureRuns,
       jobName: "configure" as const,
+    },
+    {
+      kind: "provision" as const,
+      runs: provisionRuns,
+      jobName: "provision" as const,
     },
   ];
 
@@ -756,25 +776,72 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [inventory, delivery, configure] = await Promise.all([
+    const [inventory, delivery, configure, provision] = await Promise.all([
       workflowStatus(workflows.inventory, token),
       workflowStatus(workflows.delivery, token),
       workflowStatus(workflows.configure, token),
+      workflowStatus(workflows.provision, token),
     ]);
     const operatorSnapshot = await latestOperatorSnapshot(
       inventory.runs,
       delivery.runs,
       configure.runs,
+      provision.runs,
       token,
       requestedControlRequestId,
     );
+    const provisioningKey = process.env.JOBSIFT_PROVISIONING_KEY?.trim() ?? "";
+    const profilesWithCapabilities = operatorSnapshot.profiles.map((profile) => {
+      const { sheet_ciphertext: sheetCiphertext, ...safeProfile } = profile;
+      let sheetUrl: string | null = null;
+      if (profile.operator_managed && provisioningKey && sheetCiphertext) {
+        const plaintext = decryptProvisioningPayload(
+          provisioningKey,
+          sheetCiphertext,
+        );
+        if (plaintext) {
+          try {
+            const parsed = JSON.parse(plaintext) as Record<string, unknown>;
+            const profileId =
+              typeof parsed.profile_id === "string"
+                ? parsed.profile_id.trim().toLowerCase()
+                : "";
+            const candidate =
+              typeof parsed.sheet_url === "string"
+                ? parsed.sheet_url.trim()
+                : "";
+            if (
+              profileId === profile.profile_id &&
+              /^https:\/\/docs\.google\.com\/spreadsheets\//i.test(candidate)
+            ) {
+              sheetUrl = candidate;
+            }
+          } catch {
+            sheetUrl = null;
+          }
+        }
+      }
+      return {
+        ...safeProfile,
+        control_capability: profile.operator_managed
+          ? issueOperatorCapability(token, profile.profile_id)
+          : null,
+        sheet_handle:
+          profile.operator_managed && sheetUrl
+            ? issueSheetHandle(token, profile.profile_id, sheetUrl)
+            : null,
+      };
+    });
     return NextResponse.json(
       {
         data: {
           control_ready: true,
           inventory,
           delivery,
-          operator_snapshot: operatorSnapshot,
+          operator_snapshot: {
+            ...operatorSnapshot,
+            profiles: profilesWithCapabilities,
+          },
         },
       },
       { headers: { "Cache-Control": "no-store" } },

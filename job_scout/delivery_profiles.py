@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS client_delivery_profiles (
   client_id TEXT NOT NULL,
   destination_id TEXT NOT NULL,
   sourcing_plan_id TEXT NOT NULL,
-  daily_quota INTEGER NOT NULL CHECK(daily_quota >= 1 AND daily_quota <= 5000),
+  daily_quota INTEGER NOT NULL CHECK(daily_quota >= 1 AND daily_quota <= 2000),
   status TEXT NOT NULL CHECK(status IN ('active','paused')),
   delivery_mode TEXT NOT NULL CHECK(delivery_mode IN ('review','auto')),
   timezone TEXT NOT NULL,
@@ -43,7 +43,7 @@ class ClientDeliveryProfile(BaseModel):
     client_id: str
     destination_id: str
     sourcing_plan_id: str
-    daily_quota: int = Field(ge=1, le=5000)
+    daily_quota: int = Field(ge=1, le=2000)
     status: Literal["active", "paused"] = "paused"
     delivery_mode: Literal["review", "auto"] = "review"
     timezone: str = "Africa/Lagos"

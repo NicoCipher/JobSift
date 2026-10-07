@@ -6,11 +6,15 @@ operator frontend can safely consume through private GitHub Actions logs.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from job_scout.delivery_destinations import (
     ClientSheetDestinationStore,
@@ -27,6 +31,42 @@ from job_scout.storage.factory import create_repository
 
 MAX_PROFILE_SNAPSHOTS = 100
 MAX_BATCH_PREVIEW_ITEMS = 50
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
+
+
+def _sheet_ciphertext(
+    *,
+    profile_id: str,
+    spreadsheet_id: str,
+    sheet_id: int,
+) -> str | None:
+    raw_key = os.getenv("JOBSIFT_PROVISIONING_KEY", "").strip()
+    if not raw_key:
+        return None
+    try:
+        padded = raw_key + "=" * (-len(raw_key) % 4)
+        key = base64.urlsafe_b64decode(padded)
+    except (binascii.Error, ValueError):
+        return None
+    if len(key) != 32:
+        return None
+
+    iv = os.urandom(12)
+    url = (
+        "https://docs.google.com/spreadsheets/d/"
+        f"{spreadsheet_id}/edit#gid={sheet_id}"
+    )
+    payload = json.dumps(
+        {"profile_id": profile_id, "sheet_url": url},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    encrypted = AESGCM(key).encrypt(iv, payload, None)
+    ciphertext, tag = encrypted[:-16], encrypted[-16:]
+    return ".".join(("v1", _b64url(iv), _b64url(ciphertext), _b64url(tag)))
 
 
 def _profile_from_row(row) -> ClientDeliveryProfile:
@@ -205,11 +245,24 @@ def snapshot(repository) -> dict[str, object]:
         ).fetchall()
         truncated = len(profile_rows) > MAX_PROFILE_SNAPSHOTS
 
+        if getattr(connection, "is_postgres", False):
+            operator_table = connection.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name='operator_clients') AS present"
+            ).fetchone()
+            has_operator_clients = bool(operator_table and operator_table["present"])
+        else:
+            operator_table = connection.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='operator_clients'"
+            ).fetchone()
+            has_operator_clients = operator_table is not None
+
         rows: list[dict[str, object]] = []
         for profile_row in profile_rows[:MAX_PROFILE_SNAPSHOTS]:
             profile = _profile_from_row(profile_row)
             destination_row = connection.execute(
-                "SELECT status FROM client_sheet_destinations "
+                "SELECT status,spreadsheet_id,sheet_id FROM client_sheet_destinations "
                 "WHERE client_id=? AND destination_id=?",
                 (profile.client_id, profile.destination_id),
             ).fetchone()
@@ -217,6 +270,15 @@ def snapshot(repository) -> dict[str, object]:
                 raise RuntimeError("delivery profile destination is missing")
 
             destination = logical_destination(profile.destination_id)
+            operator_row = (
+                connection.execute(
+                    "SELECT display_name,destination_name FROM operator_clients "
+                    "WHERE client_id=? AND destination_id=?",
+                    (profile.client_id, profile.destination_id),
+                ).fetchone()
+                if has_operator_clients
+                else None
+            )
             rows.append(
                 {
                     "profile_id": delivery_profile_control_id(
@@ -227,6 +289,25 @@ def snapshot(repository) -> dict[str, object]:
                     "daily_quota": profile.daily_quota,
                     "timezone": profile.timezone,
                     "sheet_status": destination_row["status"],
+                    "operator_managed": operator_row is not None,
+                    "client_name": (
+                        operator_row["display_name"] if operator_row is not None else None
+                    ),
+                    "destination_name": (
+                        operator_row["destination_name"] if operator_row is not None else None
+                    ),
+                    "sheet_ciphertext": (
+                        _sheet_ciphertext(
+                            profile_id=delivery_profile_control_id(
+                                profile.client_id,
+                                profile.destination_id,
+                            ),
+                            spreadsheet_id=destination_row["spreadsheet_id"],
+                            sheet_id=destination_row["sheet_id"],
+                        )
+                        if operator_row is not None
+                        else None
+                    ),
                     "delivered_today": _delivered_today(
                         connection,
                         profile=profile,

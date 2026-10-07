@@ -18,11 +18,13 @@ The deployed Vercel project must remain protected by Vercel Authentication for
 all deployment targets. Do not treat a shareable deployment-protection bypass
 link as an operator session. POST controls also reject cross-origin requests.
 
-Production client labels and the opaque profile handles that may be controlled
-from `/operations` come from the server-only `JOBSIFT_OPERATOR_PROFILES`
-allowlist. This keeps the production control plane independent from fictional UI
-fixtures and prevents an unlisted backend profile from becoming actionable merely
-because it appears in a workflow snapshot. Example:
+Legacy/static production client labels and opaque profile handles may still come
+from the server-only `JOBSIFT_OPERATOR_PROFILES` allowlist. Frontend-created
+clients instead come from the durable `operator_clients` record in Postgres.
+Only an authoritative operator-managed snapshot may mint a short-lived
+profile-bound control capability, so an arbitrary backend profile does not become
+actionable merely because a browser submits its opaque handle. Example legacy
+allowlist:
 
 ```json
 [
@@ -35,12 +37,12 @@ because it appears in a workflow snapshot. Example:
 ```
 
 The variable contains no Sheet URL, spreadsheet ID, client ID, or credentials.
-When it is absent in production, JobSift may still show opaque backend state but
-client-specific mutations remain locked because no trusted human-readable target
-is configured. Development retains the authored fixture catalogue for tests.
-The same catalogue is enforced again inside the server-side dispatch and review
-routes, so an authenticated browser cannot bypass the UI by posting an unlisted
-opaque profile handle directly.
+When that legacy allowlist is absent, static profiles remain fail-closed, while
+durable operator-managed clients may be controlled only with the short-lived
+server-signed capability issued from authoritative state. Development retains the
+authored fixture catalogue for tests. Dispatch and review routes enforce either
+the explicit legacy allowlist or a valid dynamic-client capability, so an
+authenticated browser cannot make an arbitrary opaque profile actionable.
 
 Manual inventory refreshes preserve the existing workflow contract: choices are
 limited to Workday targets 1/5/10/20/25, detail concurrency 4/6/8, and a
@@ -52,20 +54,33 @@ Scheduled production uses 25 Workday targets and a 100-target yield bonus. Deliv
 directly. Client-Sheet controls intentionally use only an opaque delivery-profile
 ID: operators can check, disable, or verified-re-enable an already registered
 Sheet without exposing spreadsheet IDs, tab names, client IDs, or Google
-credentials through public workflow inputs. Registering a brand-new physical
-Sheet remains a private provisioning operation until a private registration
-transport is added.
+credentials through public workflow inputs.
+
+Brand-new client provisioning is available at `/clients/new`. The same
+32-byte base64url `JOBSIFT_PROVISIONING_KEY` must be configured as a
+server-only Vercel environment variable and GitHub Actions repository secret
+before onboarding is enabled. The Vercel route AES-256-GCM encrypts the client
+criteria and Sheet registration payload before dispatch; Actions receives
+ciphertext only and decrypts it inside the trusted runner. If either side lacks
+the key, Add Client fails closed instead of falling back to plaintext.
+
+Physical Google Sheet identifiers are also encrypted before operator snapshots
+are written to public workflow logs. The Vercel status route decrypts that
+server-side and gives the browser only a short-lived opaque Sheet handle.
 
 ## Normal operator workflow
 
 Production operators land on `/clients`. The normal path is now:
 
-`Clients → Find jobs → Review → Send to client Sheet`
+`Clients → Add client → Find jobs → Review → Send to client Sheet`
 
 `/clients` shows the human-readable client name, active/paused state,
 review/auto mode, daily limit, sent-today count, waiting review count, Sheet
-readiness and the latest client match result. Opaque profile and batch IDs remain
-server-side implementation details.
+readiness and the latest client match result. `/clients/new` guides the operator
+through Client → Criteria → Delivery → Google Sheet → Confirm. Client-local
+daily quota timezones accept any valid IANA timezone and onboarding cannot exceed
+the 2,000-links-per-client/day product ceiling. Opaque profile, batch,
+spreadsheet and worksheet IDs remain server-side implementation details.
 
 `/review` reads the exact prepared batch through a server-only review bridge.
 The browser does not recompute matching. JobSift only shows match explanations

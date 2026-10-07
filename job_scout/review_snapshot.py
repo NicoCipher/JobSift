@@ -13,6 +13,7 @@ from job_scout.delivery_profiles import (
 )
 from job_scout.domain.daily_batch import BatchConflict
 from job_scout.domain.models import MatchDecision
+from job_scout.operator_clients import OperatorClientStore
 from job_scout.posting_freshness import posting_freshness_disposition
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.factory import create_repository
@@ -180,6 +181,13 @@ def review_snapshot(repository, *, profile_id: str, batch_id: str) -> dict[str, 
         "schema_version": "operator-review-v1",
         "observed_at": observed_at.isoformat(),
         "profile_id": profile_id.strip().casefold(),
+        "operator_managed": (
+            OperatorClientStore(repository).get_for_profile(
+                profile.client_id,
+                profile.destination_id,
+            )
+            is not None
+        ),
         "batch_id": result.batch_id,
         "generation_id": result.generation_id,
         "batch_status": result.status,

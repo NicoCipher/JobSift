@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { validBatchId, validGenerationId } from "../../../../lib/control-validation";
-import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
+import { verifyOperatorCapability } from "../../../../lib/operator-capability";
+import { configuredOperatorProfilesRaw, isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ type ReviewItem = {
 type ReviewSnapshot = {
   observed_at: string;
   profile_id: string;
+  operator_managed: boolean;
   batch_id: string;
   generation_id: string;
   batch_status: string;
@@ -108,11 +110,13 @@ function sanitizeReview(raw: unknown): ReviewSnapshot | null {
   const profileId = cleanString(value.profile_id, 64).toLowerCase();
   const batchId = cleanString(value.batch_id, 160);
   const generationId = cleanString(value.generation_id, 80);
+  const operatorManaged = value.operator_managed === true;
   if (
     !/^[0-9a-f]{16}$/.test(profileId) ||
     !validBatchId(batchId) ||
     !validGenerationId(generationId) ||
-    !isOperatorProfileAllowed(process.env.JOBSIFT_OPERATOR_PROFILES, profileId)
+    (!operatorManaged &&
+      !isOperatorProfileAllowed(configuredOperatorProfilesRaw(), profileId))
   ) {
     return null;
   }
@@ -162,6 +166,7 @@ function sanitizeReview(raw: unknown): ReviewSnapshot | null {
   return {
     observed_at: cleanString(value.observed_at, 80),
     profile_id: profileId,
+    operator_managed: operatorManaged,
     batch_id: batchId,
     generation_id: generationId,
     batch_status: cleanString(value.batch_status, 40),
@@ -216,10 +221,14 @@ export async function POST(request: NextRequest) {
 
   const profileId = cleanString(body.profile_id, 64).toLowerCase();
   const batchId = cleanString(body.batch_id, 160);
+  const profileCapability = cleanString(body.profile_capability, 240);
   if (!/^[0-9a-f]{16}$/.test(profileId)) {
     return invalid("A valid delivery profile is required.");
   }
-  if (!isOperatorProfileAllowed(process.env.JOBSIFT_OPERATOR_PROFILES, profileId)) {
+  if (
+    !isOperatorProfileAllowed(configuredOperatorProfilesRaw(), profileId) &&
+    !verifyOperatorCapability(githubToken(), profileId, profileCapability)
+  ) {
     return noStore(
       { error: { code: "FORBIDDEN", message: "This client is not in the operator catalogue." } },
       403,
