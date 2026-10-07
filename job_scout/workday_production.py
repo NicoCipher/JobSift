@@ -119,6 +119,10 @@ def resolve_active_workday_brief_bindings(
         return []
 
     operator_clients = OperatorClientStore(repository)
+    operator_clients_by_profile = {
+        (client.client_id, client.destination_id): client
+        for client in operator_clients.list()
+    }
     plans_by_id: dict[str, list[tuple[Path, object]]] = {}
     for path in sorted(plan_dir.glob("*.json")):
         plan = load_sourcing_plan(path)
@@ -126,9 +130,8 @@ def resolve_active_workday_brief_bindings(
 
     bindings: dict[str, WorkdayBriefBinding] = {}
     for profile in profiles:
-        managed = operator_clients.get_for_profile(
-            profile.client_id,
-            profile.destination_id,
+        managed = operator_clients_by_profile.get(
+            (profile.client_id, profile.destination_id)
         )
         if managed is not None:
             if managed.sourcing_plan_id != profile.sourcing_plan_id:
