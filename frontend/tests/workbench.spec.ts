@@ -9,6 +9,7 @@ import {
   issueOperatorCapability,
   verifyOperatorCapability,
 } from "../lib/operator-capability";
+import { issueSheetHandle, readSheetHandle } from "../lib/sheet-handle";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
@@ -1562,6 +1563,37 @@ test("operator control capabilities are profile-bound and short-lived", () => {
   ).toBe(false);
 });
 
+test("Sheet handles hide physical identifiers and expire", () => {
+  const url = "https://docs.google.com/spreadsheets/d/private-sheet-id/edit#gid=17";
+  const handle = issueSheetHandle(
+    "server-secret",
+    "ad763a0336d92204",
+    url,
+    1_000_000_000_000,
+  );
+  expect(handle).not.toBeNull();
+  expect(handle).not.toContain("private-sheet-id");
+  expect(handle).not.toContain("gid=17");
+  expect(
+    readSheetHandle(
+      "server-secret",
+      handle ?? "",
+      1_000_000_010_000,
+    ),
+  ).toEqual({
+    profile_id: "ad763a0336d92204",
+    sheet_url: url,
+  });
+  expect(
+    readSheetHandle(
+      "server-secret",
+      handle ?? "",
+      1_000_000_700_001,
+    ),
+  ).toBeNull();
+});
+
+
 test("Add Client wizard inspects Sheet and creates a client without internal IDs", async ({
   page,
 }) => {
@@ -1629,8 +1661,6 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
             delivery_mode: "review",
             daily_limit: 250,
             sheet_status: "ready",
-            sheet_url:
-              "https://docs.google.com/spreadsheets/d/sheet123456/edit#gid=17",
             brief_revision: 1,
           },
         },
@@ -1669,10 +1699,6 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await expect(page.getByRole("link", { name: "Open client", exact: true })).toHaveAttribute(
     "href",
     "/clients",
-  );
-  await expect(page.getByRole("link", { name: "Open client Sheet" })).toHaveAttribute(
-    "href",
-    "https://docs.google.com/spreadsheets/d/sheet123456/edit#gid=17",
   );
   expect(createPayload).toMatchObject({
     client_name: "Acme Software",
