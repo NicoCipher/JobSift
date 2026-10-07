@@ -1234,7 +1234,7 @@ export function OperationsControl({
                   name="daily_quota"
                   type="number"
                   min="1"
-                  max="5000"
+                  max="2000"
                   defaultValue="100"
                   disabled={busy || !status?.control_ready || !stateVerified}
                 />
