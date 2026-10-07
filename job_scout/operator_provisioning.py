@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -11,6 +13,7 @@ from pathlib import Path
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from job_scout.delivery_destinations import (
@@ -50,6 +53,35 @@ def _safe_failure(error: Exception) -> tuple[str, str]:
         "PROVISIONING_ERROR",
         "JobSift could not verify the Google Sheet or save the client.",
     )
+
+
+def _encrypt_result(value: dict[str, object]) -> str:
+    raw_key = os.getenv("JOBSIFT_PROVISIONING_KEY", "").strip()
+    if not raw_key:
+        raise ProvisioningFailure("Secure onboarding result transport is unavailable.")
+    try:
+        padded = raw_key + "=" * (-len(raw_key) % 4)
+        key = base64.urlsafe_b64decode(padded)
+    except (binascii.Error, ValueError) as exc:
+        raise ProvisioningFailure(
+            "Secure onboarding result transport is unavailable."
+        ) from exc
+    if len(key) != 32:
+        raise ProvisioningFailure("Secure onboarding result transport is unavailable.")
+    iv = os.urandom(12)
+    plaintext = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    encrypted = AESGCM(key).encrypt(iv, plaintext, None)
+    ciphertext, tag = encrypted[:-16], encrypted[-16:]
+
+    def b64url(part: bytes) -> str:
+        return base64.urlsafe_b64encode(part).rstrip(b"=").decode()
+
+    return ".".join(("v1", b64url(iv), b64url(ciphertext), b64url(tag)))
 
 
 _REQUIRED_MAPPING = ("Job Title", "Company Name", "Job Link")
@@ -279,6 +311,8 @@ def _activate_operator_client(
         if request_row is None or request_row["state"] != "running":
             raise ValueError("provisioning request is not running")
 
+        ClientSheetDestinationStore.write_prepared(connection, destination)
+
         destination_row = connection.execute(
             "SELECT status,spreadsheet_id,sheet_id FROM client_sheet_destinations "
             "WHERE client_id=? AND destination_id=?",
@@ -460,7 +494,7 @@ def process_request(
                     "Sheet mapping is missing required fields: " + ", ".join(missing)
                 )
 
-            destination = ClientSheetDestinationStore(repository).register_google_sheet(
+            destination = ClientSheetDestinationStore(repository).prepare_google_sheet(
                 client_id=client_id,
                 destination_id=destination_id,
                 display_name=destination_name,
@@ -550,15 +584,13 @@ def main() -> None:
         raise SystemExit(1) from exc
 
     print(
-        "JOBSIFT_PROVISION_RESULT="
-        + json.dumps(
+        "JOBSIFT_PROVISION_RESULT_CIPHERTEXT="
+        + _encrypt_result(
             {
                 "request_id": request_id,
                 "operation": operation,
                 "result": result,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
+            }
         )
     )
 
