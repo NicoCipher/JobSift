@@ -194,7 +194,7 @@ def test_create_client_rolls_back_activation_if_request_completion_loses_race(
 
     monkeypatch.setattr(repo, "connect", connect)
 
-    with pytest.raises(ValueError, match="state changed before activation"):
+    with pytest.raises(ValueError, match="could not be validated"):
         process_request(
             repo,
             request_id=request_id,
