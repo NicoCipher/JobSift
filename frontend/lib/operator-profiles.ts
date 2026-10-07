@@ -60,3 +60,10 @@ export function isOperatorProfileAllowed(
     (profile) => profile.profile_id === profileId.trim().toLowerCase(),
   );
 }
+
+export function configuredOperatorProfilesRaw(): string | undefined {
+  return (
+    process.env.JOBSIFT_OPERATOR_PROFILES ??
+    process.env.JOBSIFT_OPERATOR_PROFILE_ALIASES
+  );
+}
