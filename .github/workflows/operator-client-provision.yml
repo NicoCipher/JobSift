@@ -1,0 +1,76 @@
+name: Provision Operator Client
+run-name: Provision operator client · ${{ inputs.control_request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Opaque provisioning request ID
+        required: true
+        type: string
+      operation:
+        description: Provisioning action
+        required: true
+        type: choice
+        options:
+          - inspect_sheet
+          - create_client
+      payload_b64:
+        description: Server-encoded provisioning payload
+        required: true
+        type: string
+      control_request_id:
+        description: Opaque correlation ID from the operator interface
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery-mutation
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift-provision.sqlite3
+      JOBSIFT_PERSISTENCE_BACKEND: postgres
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      JOBSIFT_PROVISION_REQUEST_ID: ${{ inputs.request_id }}
+      JOBSIFT_PROVISION_OPERATION: ${{ inputs.operation }}
+      JOBSIFT_PROVISION_PAYLOAD_B64: ${{ inputs.payload_b64 }}
+      JOBSIFT_CONTROL_REQUEST_ID: ${{ inputs.control_request_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[sheets,postgres]'
+
+      - name: Validate persistent runtime
+        run: |
+          test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+
+      - name: Configure Google credentials
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Process operator provisioning request
+        run: python -m job_scout.operator_provisioning
+
+      - name: Emit authoritative operator state
+        if: ${{ always() }}
+        run: python -m job_scout.operator_snapshot
