@@ -11,8 +11,8 @@ from job_scout.domain.daily_batch import DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
 from job_scout.normalization.core import content_fingerprint
 from job_scout.operator_snapshot import snapshot
-from job_scout.review_snapshot import review_snapshot
 from job_scout.orchestration.daily_batch import prepare_daily_batch
+from job_scout.review_snapshot import review_snapshot
 from job_scout.storage.daily_batches import DailyBatchStore
 from job_scout.storage.sqlite import SQLiteRepository
 
