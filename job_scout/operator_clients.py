@@ -157,16 +157,9 @@ class OperatorProvisioningRequest(BaseModel):
 class OperatorClientStore:
     def __init__(self, repository) -> None:
         self.repository = repository
-        if self._is_postgres():
-            self._ensure_postgres_schema()
-        else:
+        if not self._is_postgres():
             with self.repository.connect() as connection:
                 connection.executescript(OPERATOR_CLIENT_SCHEMA)
-
-    def _ensure_postgres_schema(self) -> None:
-        with self.repository.connect() as connection:
-            for statement in _POSTGRES_OPERATOR_CLIENT_DDL:
-                connection.execute(statement)
 
     def _is_postgres(self) -> bool:
         return self.repository.__class__.__name__ == "PostgresRepository"
