@@ -46,7 +46,10 @@ def _safe_failure(error: Exception) -> tuple[str, str]:
     if isinstance(error, ValidationError):
         return "VALIDATION_ERROR", "Some client setup fields are invalid."
     if isinstance(error, BatchConflict):
-        return "SHEET_OR_STATE_ERROR", str(error)[:500]
+        return (
+            "SHEET_OR_STATE_ERROR",
+            "JobSift could not verify the Sheet setup or client state. Check the Sheet and try again.",
+        )
     if isinstance(error, ValueError):
         return "VALIDATION_ERROR", "Client setup could not be validated."
     return (
