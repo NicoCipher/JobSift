@@ -38,7 +38,7 @@ export function encryptProvisioningPayload(
   ].join(".");
 }
 
-export function decryptProvisioningPayloadForTest(
+export function decryptProvisioningPayload(
   rawKey: string,
   envelope: string,
 ): string | null {
@@ -62,3 +62,5 @@ export function decryptProvisioningPayloadForTest(
     return null;
   }
 }
+
+export const decryptProvisioningPayloadForTest = decryptProvisioningPayload;
