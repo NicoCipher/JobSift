@@ -109,7 +109,11 @@ def _begin_write(connection) -> None:
     # SQLite still needs BEGIN IMMEDIATE for local writer serialization.
     # Production Postgres uses MVCC and constraints for these isolated
     # source_discovery_* tables; the discovery workflow itself is singleton.
-    statement = "BEGIN" if getattr(connection, "is_postgres", False) else "BEGIN IMMEDIATE"
+    statement = (
+        "BEGIN"
+        if getattr(connection, "is_postgres", False)
+        else "BEGIN IMMEDIATE"
+    )
     connection.execute(statement)
 
 
