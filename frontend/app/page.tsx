@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { liveMode } from "@/lib/api/client";
+import { liveMode, operatorMode } from "@/lib/api/client";
 
 export default function Home() {
-  redirect(liveMode ? "/clients" : "/jobs");
+  redirect(operatorMode || liveMode ? "/clients" : "/jobs");
 }
