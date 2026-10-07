@@ -255,9 +255,7 @@ def test_active_profile_bindings_ignore_unbound_example_plans(tmp_path, monkeypa
     monkeypatch.setattr(
         workday_production,
         "OperatorClientStore",
-        lambda _repository: SimpleNamespace(
-            get_for_profile=lambda _client_id, _destination_id: None
-        ),
+        lambda _repository: SimpleNamespace(list=lambda: ()),
     )
 
     bindings = workday_production.resolve_active_workday_brief_bindings(
