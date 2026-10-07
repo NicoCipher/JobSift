@@ -19,3 +19,7 @@ export function validGenerationId(value: string): boolean {
     value,
   );
 }
+
+export function validRemovedOrdinals(value: string): boolean {
+  return value === "" || /^\d+(?:,\d+)*$/.test(value);
+}
