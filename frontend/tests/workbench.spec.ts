@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { canonicalTimeZone, validBatchId, validGenerationId } from "../lib/control-validation";
+import { canonicalTimeZone, validBatchId, validGenerationId, validRemovedOrdinals } from "../lib/control-validation";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
@@ -120,6 +120,11 @@ test("control validation canonicalizes timezones and generated batch IDs", () =>
   expect(validBatchId("\"; echo pwned; #")).toBe(false);
   expect(validGenerationId("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).toBe(true);
   expect(validGenerationId("01234567-89ab-5cde-8fab-0123456789ab")).toBe(false);
+  expect(validRemovedOrdinals("")).toBe(true);
+  expect(validRemovedOrdinals("1")).toBe(true);
+  expect(validRemovedOrdinals("1,2,17")).toBe(true);
+  expect(validRemovedOrdinals("\\d")).toBe(false);
+  expect(validRemovedOrdinals("1,0x2")).toBe(false);
 });
 
 test("operator profile catalogue rejects unlisted production controls", () => {
