@@ -458,22 +458,6 @@ export function ClientWorkspace({
     }
   }
 
-  useEffect(() => {
-    if (
-      surface !== "review" ||
-      !stateVerified ||
-      pending.length === 0 ||
-      pending.some(({ state }) => state?.batch_id && reviews[state.batch_id]?.state === "ready")
-    ) {
-      return;
-    }
-    const first = pending.find(
-      ({ state }) => state?.batch_id && !reviews[state.batch_id],
-    );
-    if (first?.state) void startReview(first.state);
-    // reviews intentionally participates to avoid dispatching the same batch twice.
-  }, [surface, stateVerified, pending, reviews]);
-
   async function sendSelection(
     config: ManagedProfile,
     state: ProfileSnapshot,
