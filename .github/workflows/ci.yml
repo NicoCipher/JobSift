@@ -64,6 +64,35 @@ jobs:
         run: npm run lint
       - name: Frontend build
         run: npm run build
+      - name: Production operator build
+        env:
+          NEXT_PUBLIC_JOBSIFT_OPERATOR: "1"
+          NEXT_PUBLIC_JOBSIFT_LIVE: "0"
+        run: npm run build
+      - name: Production operator smoke
+        env:
+          NEXT_PUBLIC_JOBSIFT_OPERATOR: "1"
+          NEXT_PUBLIC_JOBSIFT_LIVE: "0"
+          PORT: "3100"
+        run: |
+          set -euo pipefail
+          npm run start > /tmp/jobsift-operator.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3100/clients/new > /tmp/jobsift-clients-new.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q "Production" /tmp/jobsift-clients-new.html
+          grep -q "Add client" /tmp/jobsift-clients-new.html
+          if grep -q "Development fixtures" /tmp/jobsift-clients-new.html; then
+            echo "Fixture shell leaked into production operator mode"
+            exit 1
+          fi
+          location="$(curl -sS -o /dev/null -D - http://127.0.0.1:3100/jobs | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
+          test "$location" = "/clients"
       - name: Install browser
         run: npx playwright install --with-deps chrome
       - name: Frontend tests
