@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { validBatchId } from "../../../../lib/control-validation";
+import { validBatchId, validGenerationId } from "../../../../lib/control-validation";
 import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ type ReviewSnapshot = {
   observed_at: string;
   profile_id: string;
   batch_id: string;
+  generation_id: string;
   batch_status: string;
   selected_count: number;
   requested_quota: number;
@@ -106,9 +107,11 @@ function sanitizeReview(raw: unknown): ReviewSnapshot | null {
   const value = raw as Record<string, unknown>;
   const profileId = cleanString(value.profile_id, 64).toLowerCase();
   const batchId = cleanString(value.batch_id, 160);
+  const generationId = cleanString(value.generation_id, 80);
   if (
     !/^[0-9a-f]{16}$/.test(profileId) ||
     !validBatchId(batchId) ||
+    !validGenerationId(generationId) ||
     !isOperatorProfileAllowed(process.env.JOBSIFT_OPERATOR_PROFILES, profileId)
   ) {
     return null;
@@ -160,6 +163,7 @@ function sanitizeReview(raw: unknown): ReviewSnapshot | null {
     observed_at: cleanString(value.observed_at, 80),
     profile_id: profileId,
     batch_id: batchId,
+    generation_id: generationId,
     batch_status: cleanString(value.batch_status, 40),
     selected_count: selectedCount,
     requested_quota: requestedQuota,
