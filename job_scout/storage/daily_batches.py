@@ -347,6 +347,104 @@ class DailyBatchStore:
             raise BatchConflict("batch revision changed")
         return row["export_before_sha256"], row["export_after_sha256"]
 
+    def remove_prepared_items(
+        self,
+        batch_id: str,
+        ordinals: tuple[int, ...],
+        *,
+        expected_generation_id: str | None,
+    ) -> DailyBatchResult:
+        """Remove operator-rejected rows from an unpublished prepared batch.
+
+        The mutation is generation-bound so a review decision cannot silently
+        apply to a newer batch revision. Candidate evidence remains immutable;
+        removed representatives are retained in the candidate journal with an
+        explicit operator_removed disposition.
+        """
+        if expected_generation_id is None:
+            raise BatchConflict("batch generation missing")
+        requested = tuple(sorted(set(ordinals)))
+        if not requested:
+            return self.get(batch_id)
+        if any(value < 1 for value in requested):
+            raise BatchConflict("review item ordinals must be positive")
+
+        with self.repository.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            result = self._load(c, batch_id)
+            if result.generation_id != expected_generation_id:
+                raise BatchConflict("batch revision changed")
+            journal = c.execute(
+                "SELECT status,delivered_at,export_before_sha256,export_after_sha256 "
+                "FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+            if (
+                journal is None
+                or journal["status"] != "prepared"
+                or journal["delivered_at"] is not None
+                or journal["export_before_sha256"] is not None
+                or journal["export_after_sha256"] is not None
+            ):
+                raise BatchConflict("only an unpublished prepared batch can be edited")
+
+            rows = c.execute(
+                "SELECT * FROM daily_batch_items WHERE batch_id=? ORDER BY ordinal",
+                (batch_id,),
+            ).fetchall()
+            known = {int(row["ordinal"]) for row in rows}
+            unknown = set(requested) - known
+            if unknown:
+                raise BatchConflict("review selection contains an unknown batch item")
+            if len(requested) >= len(rows):
+                raise BatchConflict("cannot remove every job; discard the batch instead")
+
+            removed = [row for row in rows if int(row["ordinal"]) in requested]
+            kept = [row for row in rows if int(row["ordinal"]) not in requested]
+            removed_job_ids = [row["representative_job_id"] for row in removed]
+
+            if removed_job_ids:
+                placeholders = ",".join("?" for _ in removed_job_ids)
+                c.execute(
+                    "UPDATE daily_batch_candidates SET disposition='operator_removed' "
+                    f"WHERE batch_id=? AND job_id IN ({placeholders})",
+                    [batch_id, *removed_job_ids],
+                )
+
+            c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
+            c.executemany(
+                "INSERT INTO daily_batch_items VALUES (?,?,?,?,?,?,?)",
+                [
+                    (
+                        batch_id,
+                        ordinal,
+                        row["delivery_group_id"],
+                        row["representative_job_id"],
+                        row["evidence_sha256"],
+                        row["matcher_version"],
+                        row["export_row_json"],
+                    )
+                    for ordinal, row in enumerate(kept, 1)
+                ],
+            )
+            counts = result.counts.model_copy(update={"selected_groups": len(kept)})
+            new_generation = str(uuid4())
+            c.execute(
+                "UPDATE daily_batches SET generation_id=?,selected_count=?,shortfall=?,"
+                "counts_json=? WHERE batch_id=? AND generation_id=?",
+                (
+                    new_generation,
+                    len(kept),
+                    result.request.requested_quota - len(kept),
+                    counts.model_dump_json(),
+                    batch_id,
+                    expected_generation_id,
+                ),
+            )
+            if c.rowcount != 1:
+                raise BatchConflict("batch revision changed")
+            return self._load(c, batch_id)
+
     def discard_prepared(
         self, batch_id: str, *, expected_generation_id: str | None
     ) -> DailyBatchResult:
