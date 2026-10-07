@@ -38,6 +38,7 @@ def create_payload():
         },
         "daily_limit": 250,
         "delivery_mode": "review",
+        "timezone": "America/New_York",
         "sheet": {
             "url": "https://docs.google.com/spreadsheets/d/sheet123456/edit",
             "tab": "Jobs",
@@ -122,6 +123,7 @@ def test_create_client_persists_sheet_brief_and_active_profile(tmp_path):
     assert profile.status == "active"
     assert profile.delivery_mode == "review"
     assert profile.daily_quota == 250
+    assert profile.timezone == "America/New_York"
     assert profile.sourcing_plan_id == client.sourcing_plan_id
 
 
@@ -219,4 +221,43 @@ def test_create_client_rolls_back_activation_if_request_completion_loses_race(
                 "SELECT COUNT(*) FROM client_sheet_destinations"
             ).fetchone()[0]
             == 1
+        )
+
+
+def test_create_client_rejects_changed_payload_for_same_request_id(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    request_id = str(uuid4())
+    payload = create_payload()
+    process_request(
+        repo,
+        request_id=request_id,
+        operation="create_client",
+        payload=payload,
+        gateway=FakeSheet(),
+    )
+    changed = create_payload()
+    changed["daily_limit"] = 251
+
+    with pytest.raises(ValueError, match="payload changed"):
+        process_request(
+            repo,
+            request_id=request_id,
+            operation="create_client",
+            payload=changed,
+            gateway=FakeSheet(),
+        )
+
+
+def test_create_client_rejects_daily_limit_above_product_ceiling(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    payload = create_payload()
+    payload["daily_limit"] = 2001
+
+    with pytest.raises(ValueError):
+        process_request(
+            repo,
+            request_id=str(uuid4()),
+            operation="create_client",
+            payload=payload,
+            gateway=FakeSheet(),
         )
