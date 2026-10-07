@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalTimeZone, validBatchId } from "../../../../lib/control-validation";
+import { isOperatorProfileAllowed } from "../../../../lib/operator-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -187,6 +188,24 @@ export async function POST(request: NextRequest) {
 
     if (!["list"].includes(operation) && !/^[0-9a-f]{16}$/.test(profileId)) {
       return invalid("A valid opaque delivery profile ID is required.");
+    }
+    if (
+      operation !== "list" &&
+      !isOperatorProfileAllowed(
+        process.env.JOBSIFT_OPERATOR_PROFILES,
+        profileId,
+        process.env.NODE_ENV !== "production",
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "This client is not in the operator control catalogue.",
+          },
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
     }
     if (operation === "set-quota") {
       const parsed = Number(quota);
