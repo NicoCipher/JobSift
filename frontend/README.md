@@ -72,7 +72,7 @@ server-side and gives the browser only a short-lived opaque Sheet handle.
 
 Production operators land on `/clients`. The normal path is now:
 
-`Clients → Add/Edit client criteria → Find jobs → Review → Send to client Sheet`
+`Clients → Add client → Find jobs → Review → Send to client Sheet`
 
 `/clients` shows the human-readable client name, active/paused state,
 review/auto mode, daily limit, sent-today count, waiting review count, Sheet
