@@ -39,10 +39,11 @@ on:
         required: false
         type: string
   schedule:
-    # One off-peak trigger per hour avoids paying for three deliberate no-op
-    # retries. The durable logical scheduler still resumes the oldest missed
-    # cohort after a delayed or dropped GitHub schedule.
-    - cron: "17 * * * *"
+    # Two off-peak trigger opportunities per hour halve scheduled planner
+    # starts (from four) while retaining spare capacity to catch up after a
+    # dropped event or failed cohort. The persistent scheduler selects the
+    # oldest due hour and prevents duplicate completion.
+    - cron: "17,47 * * * *"
 
 permissions:
   contents: read
