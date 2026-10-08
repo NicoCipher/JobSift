@@ -742,7 +742,7 @@ def test_live_refresh_workflow_enforces_logical_scheduler_contract():
     scheduler_block = workflow[resolver:build]
     completion_block = workflow[complete:prune]
 
-    assert '- cron: "17 * * * *"' in workflow
+    assert '- cron: "17,47 * * * *"' in workflow
     assert "2,17,32,47" not in workflow
     assert workflow.count("group: jobsift-live-inventory-refresh") == 1
     assert "python -m job_scout.inventory_refresh schedule-next" in scheduler_block
