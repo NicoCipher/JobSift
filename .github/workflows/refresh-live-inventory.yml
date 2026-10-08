@@ -39,10 +39,11 @@ on:
         required: false
         type: string
   schedule:
-    # GitHub scheduled workflows are best-effort. Four staggered trigger
-    # opportunities per hour let the persistent logical scheduler recover
-    # delayed/dropped events without processing an hour twice.
-    - cron: "2,17,32,47 * * * *"
+    # Two off-peak trigger opportunities per hour halve scheduled planner
+    # starts (from four) while retaining spare capacity to catch up after a
+    # dropped event or failed cohort. The persistent scheduler selects the
+    # oldest due hour and prevents duplicate completion.
+    - cron: "17,47 * * * *"
 
 permissions:
   contents: read
@@ -55,6 +56,7 @@ concurrency:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       JOBSIFT_DATABASE: /tmp/jobsift-plan.sqlite3
       JOBSIFT_PERSISTENCE_BACKEND: postgres
@@ -126,6 +128,7 @@ jobs:
           echo "should_run=${{ steps.schedule.outputs.should_run }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
+        if: ${{ steps.schedule.outputs.should_run == 'true' }}
         with:
           name: jobsift-refresh-plan-${{ github.run_id }}
           path: refresh-plan/
