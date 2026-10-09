@@ -1,5 +1,47 @@
 # JobSift operator frontend — JOB-31
 
+## Owner-only access (public GitHub repository)
+
+**Configure BOTH owner secrets before deploying this owner-auth change.**
+Keep Vercel Authentication enabled for all deployment targets. Vercel shareable
+links and automation bypasses are not owner identity checks.
+
+An independent server-side gate protects the operator pages and ALL control,
+status, review, onboarding, Sheet, and local evidence endpoints, including GET.
+A signed 24-hour, HttpOnly, Secure (HTTPS), SameSite=Strict owner-session cookie
+is required. The sign-in form is at `/owner-login`. Owner auth fails closed
+on production builds, Vercel, and operator-mode dev sessions. Local isolated
+fixture development retains existing behavior unless the owner gate is forced.
+
+Server-only Vercel environment variables (production AND any protected preview
+environment that serves the operator app):
+
+- `JOBSIFT_OWNER_ACCESS_KEY_SHA256`: lowercase hexadecimal SHA-256 digest of
+  an independently generated 32-byte **random base64url owner key**. Store the
+  RAW key in your password manager, NEVER in Git, Vercel public env, or logs.
+- `JOBSIFT_OWNER_SESSION_SECRET`: a second independently generated random
+  32-byte base64url secret, different from the login key.
+
+To generate values locally in a **private terminal** (do not copy output to
+an issue, PR, or chat), run:
+
+```sh
+node -e "const c=require('node:crypto'); const k=c.randomBytes(32).toString('base64url'); console.log('PRIVATE_LOGIN_KEY='+k); console.log('JOBSIFT_OWNER_ACCESS_KEY_SHA256='+c.createHash('sha256').update(k).digest('hex')); console.log('JOBSIFT_OWNER_SESSION_SECRET='+c.randomBytes(32).toString('base64url'))"
+```
+
+Paste only the digest and the session secret into Vercel **server-only**
+environment settings. After deployment, Vercel Authentication prompts for
+Vercel sign-in and JobSift then prompts for the private login key. Remove any
+old Vercel shareable/bypass links that are not required. Rotating the session
+secret invalidates existing app sessions immediately; rotating the owner key
+prevents future logins with the old key.
+
+No external identity provider is used for this lightweight second factor: the
+32-byte key is the authorization credential. Anyone who steals it AND accesses
+the site could impersonate the operator. Treat the key like a password and
+never distribute it. For identity-bound MFA, replace this gate with an audited
+provider (e.g. Auth.js with GitHub OAuth restricted to one stable GitHub user ID).
+
 ## Production Operations control
 
 `/operations` is a separate production control surface. It does not turn the

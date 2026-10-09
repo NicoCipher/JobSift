@@ -6,7 +6,12 @@ test("production operator opens Operations and hides obsolete demo routes", asyn
     "Run with NEXT_PUBLIC_JOBSIFT_OPERATOR=1 to verify production operator routing.",
   );
 
+  const ownerTestKey = process.env.JOBSIFT_OWNER_TEST_KEY;
+  expect(ownerTestKey, "Set a temporary owner key for operator browser tests").toMatch(/^[A-Za-z0-9_-]{43}$/);
   await page.goto("/");
+  await expect(page).toHaveURL(/\/owner-login/);
+  await page.getByLabel("Owner access key").fill(ownerTestKey!);
+  await page.getByRole("button", { name: "Unlock JobSift" }).click();
   await expect(page).toHaveURL(/\/operations\/?$/);
   const nav = page.getByRole("navigation", { name: "Primary navigation" });
   await expect(nav.getByRole("link", { name: "Operations" })).toHaveAttribute(

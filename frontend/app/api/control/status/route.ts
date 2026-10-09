@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ownerApiGuard } from "../../../../lib/owner-auth";
 import { issueOperatorCapability } from "../../../../lib/operator-capability";
 import { decryptProvisioningPayload } from "../../../../lib/provisioning-crypto";
 import { issueSheetHandle } from "../../../../lib/sheet-handle";
@@ -729,6 +730,8 @@ async function latestOperatorSnapshot(
 }
 
 export async function GET(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   const requestedControlRequestIdRaw = request.nextUrl.searchParams.get("control_request_id");
   const requestedControlRequestId = requestedControlRequestIdRaw
     ? controlRequestId(requestedControlRequestIdRaw)

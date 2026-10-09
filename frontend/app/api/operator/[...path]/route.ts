@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ownerApiGuard } from "../../../../lib/owner-auth";
 
 export const dynamic = "force-dynamic";
 
 async function read(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   const base = process.env.JOBSIFT_SERVICE_URL;
   if (!base || !/^http:\/\/127\.0\.0\.1:\d+$/.test(base)) {
     return NextResponse.json({ error: { code: "EVIDENCE_UNAVAILABLE", message: "Local operator service is not configured." } }, { status: 503 });

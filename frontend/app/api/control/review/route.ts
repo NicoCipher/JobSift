@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ownerApiGuard } from "../../../../lib/owner-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { validBatchId, validGenerationId } from "../../../../lib/control-validation";
 import { verifyOperatorCapability } from "../../../../lib/operator-capability";
@@ -201,6 +202,8 @@ async function github(path: string, init?: RequestInit) {
 }
 
 export async function POST(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   if (!sameOrigin(request)) {
     return noStore(
       { error: { code: "FORBIDDEN", message: "Cross-origin review requests are not allowed." } },
@@ -267,6 +270,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   if (!githubToken()) return unavailable();
   const controlRequestId =
     request.nextUrl.searchParams.get("control_request_id")?.trim().toLowerCase() ?? "";

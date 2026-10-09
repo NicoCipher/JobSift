@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ownerApiGuard } from "../../../../lib/owner-auth";
 import { readSheetHandle } from "../../../../lib/sheet-handle";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,8 @@ function githubToken() {
 }
 
 export async function GET(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   const handle = request.nextUrl.searchParams.get("handle") ?? "";
   const value = readSheetHandle(githubToken(), handle);
   if (!value) {

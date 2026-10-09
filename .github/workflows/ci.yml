@@ -80,23 +80,57 @@ jobs:
           PORT: "3100"
         run: |
           set -euo pipefail
+          # Create throwaway owner credentials only inside this CI job.
+          # Do not print the raw key, hash or signing secret to logs.
+          read -r owner_key owner_hash owner_session_secret < <(node -e 'const c=require("node:crypto");const k=c.randomBytes(32).toString("base64url");console.log(k+" "+c.createHash("sha256").update(k).digest("hex")+" "+c.randomBytes(32).toString("base64url"))')
+          export JOBSIFT_OWNER_ACCESS_KEY_SHA256="$owner_hash"
+          export JOBSIFT_OWNER_SESSION_SECRET="$owner_session_secret"
           npm run start > /tmp/jobsift-operator.log 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          cookie_file="$(mktemp)"
+          trap 'kill "$server_pid" 2>/dev/null || true; rm -f "$cookie_file" /tmp/jobsift-clients-new.html' EXIT
           for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3100/clients/new > /tmp/jobsift-clients-new.html; then
+            if curl -fsS http://127.0.0.1:3100/owner-login > /dev/null; then
               break
             fi
             sleep 1
           done
-          grep -q "Production" /tmp/jobsift-clients-new.html
-          grep -q "Add client" /tmp/jobsift-clients-new.html
+          # Unauthenticated API and page access must fail closed.
+          echo "Owner-auth smoke: testing unauthenticated API and page access"
+          unauthenticated_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/control/status)"
+          if [[ "$unauthenticated_status" != "401" ]]; then
+            echo "Owner-auth smoke failed: unauthenticated status API returned HTTP $unauthenticated_status, expected 401"
+            exit 1
+          fi
+          page_redirect="$(curl -sS -o /dev/null -D - http://127.0.0.1:3100/clients/new | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
+          case "$page_redirect" in */owner-login) ;; *) echo "Owner-auth smoke failed: unauthenticated client route returned redirect ${page_redirect:-<none>}"; exit 1 ;; esac
+
+          # Authenticate with temporary credentials and preserve the signed cookie.
+          echo "Owner-auth smoke: signing in with ephemeral credentials"
+          login_status="$(curl -sS -o /dev/null -w '%{http_code}' -c "$cookie_file" \
+            -H 'Origin: http://127.0.0.1:3100' \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "access_key=$owner_key" \
+            http://127.0.0.1:3100/api/owner/session)"
+          if [[ "$login_status" != "303" ]]; then
+            echo "Owner-auth smoke failed: sign-in returned HTTP $login_status, expected 303"
+            exit 1
+          fi
+          if ! curl -fsS -b "$cookie_file" http://127.0.0.1:3100/clients/new > /tmp/jobsift-clients-new.html; then
+            echo "Owner-auth smoke failed: signed-in client page was not accessible"
+            exit 1
+          fi
+          grep -q "Production" /tmp/jobsift-clients-new.html || { echo "Owner-auth smoke failed: production marker missing"; exit 1; }
+          grep -q "Add client" /tmp/jobsift-clients-new.html || { echo "Owner-auth smoke failed: client creation marker missing"; exit 1; }
           if grep -q "Development fixtures" /tmp/jobsift-clients-new.html; then
             echo "Fixture shell leaked into production operator mode"
             exit 1
           fi
-          location="$(curl -sS -o /dev/null -D - http://127.0.0.1:3100/jobs | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
-          test "$location" = "/operations"
+          location="$(curl -sS -b "$cookie_file" -o /dev/null -D - http://127.0.0.1:3100/jobs | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
+          if [[ "$location" != "/operations" ]]; then
+            echo "Owner-auth smoke failed: signed-in jobs redirect was ${location:-<none>}, expected /operations"
+            exit 1
+          fi
       - name: Install browser
         run: npx playwright install --with-deps chrome
       - name: Frontend tests
@@ -105,4 +139,12 @@ jobs:
         env:
           NEXT_PUBLIC_JOBSIFT_OPERATOR: "1"
           NEXT_PUBLIC_JOBSIFT_LIVE: "0"
-        run: npx playwright test tests/operator-home.spec.ts
+        run: |
+          set -euo pipefail
+          # Isolated test-only credentials; never print them or put them in artifacts.
+          read -r owner_key owner_hash owner_session_secret < <(node -e 'const c=require("node:crypto");const k=c.randomBytes(32).toString("base64url");console.log(k+" "+c.createHash("sha256").update(k).digest("hex")+" "+c.randomBytes(32).toString("base64url"))')
+          export JOBSIFT_OWNER_TEST_KEY="$owner_key"
+          export JOBSIFT_OWNER_ACCESS_KEY_SHA256="$owner_hash"
+          export JOBSIFT_OWNER_SESSION_SECRET="$owner_session_secret"
+          export JOBSIFT_REQUIRE_OWNER_AUTH="1"
+          npx playwright test tests/operator-home.spec.ts tests/owner-auth.spec.ts
