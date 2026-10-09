@@ -281,7 +281,7 @@ export function OperationsControl({
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
-  const [failedCommand, setFailedCommand] = useState<RememberedFailedOperation | null>(null);
+  const [failedCommand, setFailedCommand] = useState<RememberedFailedOperation | null>(() => typeof window === "undefined" ? null : readRememberedFailure());
   const [busy, setBusy] = useState(false);
   const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
     profiles.length ? "listed" : "manual",
@@ -440,7 +440,6 @@ export function OperationsControl({
   useEffect(() => {
     let cancelled = false;
     const remembered = readRememberedFailure();
-    if (remembered) setFailedCommand(remembered);
     const query = remembered
       ? "?control_request_id=" + encodeURIComponent(remembered.requestId)
       : "";
