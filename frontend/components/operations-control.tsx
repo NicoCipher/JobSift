@@ -442,6 +442,7 @@ export function OperationsControl({
       return;
     }
     setBusy(true);
+    setMessageTone("info");
     setMessage("");
     try {
       const response = await fetch("/api/control/dispatch", {
