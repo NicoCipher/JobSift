@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { OperatorNotice } from "@/components/operator-notice";
 import { UiIcon } from "@/components/ui-icon";
+import { readOperatorJson } from "@/lib/operator-response";
 import { FormEvent, useMemo, useRef, useState } from "react";
 
 type SheetInspection = {
@@ -26,7 +27,6 @@ type PendingAction = {
   control_request_id: string;
 };
 
-type ApiError = { error?: { message?: string } };
 
 const mappingFields = [
   { key: "Job Title", label: "Job title", required: true },
@@ -55,13 +55,8 @@ function validTimeZone(value: string) {
 }
 
 async function readJson(response: Response) {
-  const body = (await response.json()) as ApiError & { data?: unknown };
-  if (!response.ok) {
-    throw new Error(body.error?.message ?? "JobSift request failed.");
-  }
-  return body;
+  return readOperatorJson(response, "JobSift onboarding request failed.");
 }
-
 function validRequestId(value: unknown): value is string {
   return (
     typeof value === "string" &&
