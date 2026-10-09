@@ -339,17 +339,17 @@ export function OperationsControl({
     if (pendingBatches.some((profile) => profile.recovery_required)) {
       return { tone: "caution", title: "A delivery needs safe recovery", detail: "JobSift reported an unfinished Sheet delivery. Inspect it before retrying so jobs are not sent twice.", action: "review", label: "Inspect delivery" };
     }
-    if (pendingBatches.length) {
-      return { tone: "attention", title: "Jobs are waiting for your decision", detail: "Review the prepared jobs below. Only your approval can release a review-mode batch.", action: "review", label: "Review waiting jobs" };
-    }
     if (latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure") {
       return { tone: "caution", title: "The last reported operation failed", detail: "Open the recorded activity to see what failed before deciding whether to try again.", action: "activity", label: "View last activity" };
     }
+    if (latestSnapshot?.profiles.some((profile) => profile.profile_status === "paused")) {
+      return { tone: "attention", title: "A client is paused", detail: "At least one client cannot receive new deliveries yet. Check which client is paused before reviewing or sending more jobs.", action: "link", label: "View paused clients", href: "/clients" };
+    }
+    if (pendingBatches.length) {
+      return { tone: "attention", title: "Jobs are waiting for your decision", detail: "Review the prepared jobs below. Only your approval can release a review-mode batch.", action: "review", label: "Review waiting jobs" };
+    }
     if (latestSnapshot?.profiles.length === 0) {
       return { tone: "neutral", title: "No client delivery state reported yet", detail: "Set up a client or check its status. JobSift will not invent results.", action: "link", label: "Open clients", href: "/clients" };
-    }
-    if (latestSnapshot?.profiles.some((profile) => profile.profile_status === "paused")) {
-      return { tone: "attention", title: "A client is paused", detail: "At least one client is not receiving new deliveries. Check the client before restarting anything.", action: "link", label: "View clients", href: "/clients" };
     }
     if (status.inventory.state !== "active") {
       return { tone: "caution", title: "Automatic sourcing is not confirmed active", detail: "The reported sourcing workflow is not active. Check the schedule before expecting new jobs.", action: "controls", label: "View sourcing controls" };
