@@ -1764,7 +1764,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await page.getByRole("button", { name: "Create client" }).click();
 
   await expect(page.getByRole("heading", { name: "Acme Software is ready" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open client", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "View clients", exact: true })).toHaveAttribute(
     "href",
     "/clients",
   );
