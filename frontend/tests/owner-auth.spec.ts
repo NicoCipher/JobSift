@@ -2,14 +2,14 @@ import { createHash, randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { issueOwnerSession, verifyOwnerSession } from "../lib/owner-auth";
 
-test("owner session signatures cannot be forged or replayed after expiration", () => {
+test("owner session signatures cannot be forged or used after expiration", () => {
   const secret = randomBytes(32);
   const issuedAt = 1791500000000;
   const session = issueOwnerSession(secret, issuedAt);
   expect(verifyOwnerSession(session, secret, issuedAt + 1000)).toBe(true);
   expect(verifyOwnerSession(session, randomBytes(32), issuedAt + 1000)).toBe(false);
   expect(verifyOwnerSession(session, secret, issuedAt + 24 * 60 * 60 * 1000 + 1)).toBe(false);
-  expect(verifyOwnerSession(session.slice(0, -1) + "A", secret, issuedAt + 1000)).toBe(false);
+  expect(verifyOwnerSession(session.slice(0, -1) + (session.endsWith("A") ? "B" : "A"), secret, issuedAt + 1000)).toBe(false);
 });
 
 test("owner-only API rejects unauthenticated commands and accepts a signed session", async ({ page }) => {
