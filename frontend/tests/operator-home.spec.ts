@@ -80,7 +80,7 @@ test("an unavailable operator status shows a retry without opening unsafe contro
     }),
   );
   await page.goto("/operations");
-  await expect(page.getByRole("alert")).toContainText("Temporary status outage");
+  await expect(page.locator(".operator-notice[data-tone=error]")).toContainText("Temporary status outage");
   await expect(page.locator(".operations-primary-action")).toBeHidden();
   isUnavailable = false;
   await page.getByRole("button", { name: "Try again" }).click();
