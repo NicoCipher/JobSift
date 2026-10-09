@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readOperatorJson } from "../lib/operator-response";
 
 test("production operator opens Operations and hides obsolete demo routes", async ({ page }) => {
   test.skip(
@@ -45,6 +46,45 @@ test("production operator opens Operations and hides obsolete demo routes", asyn
   await expect(page).toHaveURL(/\/operations\/?$/);
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/operations\/?$/);
+});
+
+
+test("unexpected upstream replies never imply a delivery was confirmed", async () => {
+  await expect(readOperatorJson(new Response("<html>Gateway unavailable</html>", {
+    status: 503, headers: { "Content-Type": "text/html" },
+  }))).rejects.toThrow(/temporarily unavailable/);
+  await expect(readOperatorJson(new Response("not JSON", {
+    status: 202, headers: { "Content-Type": "text/plain" },
+  }))).rejects.toThrow(/not be verified/);
+  await expect(readOperatorJson(new Response(JSON.stringify({ error: { message: "Client state has changed" } }), {
+    status: 409, headers: { "Content-Type": "application/json" },
+  }))).rejects.toThrow("Client state has changed");
+});
+
+test("an unavailable operator status shows a retry without opening unsafe controls", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  let isUnavailable = true;
+  await page.route("**/api/control/status**", (route) =>
+    route.fulfill({
+      status: isUnavailable ? 503 : 200,
+      contentType: "application/json",
+      body: isUnavailable
+        ? JSON.stringify({error: {message: "Temporary status outage"}})
+        : JSON.stringify({data: {
+            control_ready: true,
+            inventory: {name: "Sourcing", state: "active", url: "https://example.com", runs: []},
+            delivery: {name: "Delivery", state: "active", url: "https://example.com", runs: []},
+            operator_snapshot: {complete: true, truncated: false, profiles: [],
+              run: null, observed_at: null, confirmed_control_request_id: null, state_error: null},
+          }}),
+    }),
+  );
+  await page.goto("/operations");
+  await expect(page.getByRole("alert")).toContainText("Temporary status outage");
+  await expect(page.locator(".operations-primary-action")).toBeHidden();
+  isUnavailable = false;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: "No client delivery state reported yet" })).toBeVisible();
 });
 
 test("fixture development mode retains its authored Jobs test surface", async ({ page }) => {
