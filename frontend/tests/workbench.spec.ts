@@ -926,6 +926,10 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await expect.poll(() => dispatched.length).toBe(1);
   // Latest unrelated run is green; the correlated requested delivery failed.
   await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=error]")).toContainText("failed operation");
+  const hero = page.locator(".operator-driving-home");
+  await expect(hero.getByRole("heading", { name: "Your requested operation failed" })).toBeVisible();
+  await expect(hero.getByRole("link", { name: "View failed operation" })).toHaveAttribute("href", "https://example.invalid/correlated");
+  await expect(hero.getByRole("heading", { name: "No approval is needed right now" })).toHaveCount(0);
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
@@ -942,6 +946,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=success]")).toContainText("successful operation");
+  await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toHaveCount(0);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(sheetTarget).toBeEnabled();
