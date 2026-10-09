@@ -13,7 +13,20 @@ test("production operator opens Operations and hides obsolete demo routes", asyn
     "aria-current",
     "page",
   );
-  await expect(nav.getByRole("link", { name: "Jobs", exact: true })).toHaveCount(0);
+  await expect(nav.locator("a")).toHaveText([
+    "Operations",
+    "Clients",
+    "Review",
+    "Settings",
+  ]);
+  await expect(page.getByRole("link", { name: "JobSift" })).toHaveAttribute(
+    "href",
+    "/operations",
+  );
+
+  await page.goto("/clients");
+  await page.getByRole("link", { name: "JobSift" }).click();
+  await expect(page).toHaveURL(/\/operations\/?$/);
 
   await page.goto("/jobs");
   await expect(page).toHaveURL(/\/operations\/?$/);
