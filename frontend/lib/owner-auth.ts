@@ -5,6 +5,27 @@ import { NextResponse } from "next/server";
 export const OWNER_COOKIE = "jobsift_owner_session";
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
+// Host and Origin come from the actual HTTP request. Next.js may normalize
+// request.nextUrl.origin to localhost even when the request Host is 127.0.0.1.
+// For a browser CSRF attempt, Host is the target site and Origin is the
+// attacker's site, so require an exact match and reject missing origins.
+export function validOwnerLoginOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+  const site = request.headers.get("sec-fetch-site");
+  if (!origin || !host || (site && site !== "same-origin")) return false;
+  try {
+    const url = new URL(origin);
+    if (url.origin !== origin || url.host !== host) return false;
+    // Vercel is HTTPS. Plain HTTP is only for isolated local testing.
+    return url.protocol === "https:" ||
+      (url.protocol === "http:" &&
+        (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"));
+  } catch {
+    return false;
+  }
+}
+
 export function ownerAuthRequired(): boolean {
   // Never rely on an operator-mode UI switch to protect production API credentials.
   return (
