@@ -426,3 +426,56 @@ main { padding: 38px var(--gutter) 72px; }
   html { scroll-behavior: auto; }
   button { transition: none; }
 }
+
+
+/* Finishing details for compact phones and dark client surfaces. */
+.operator-command-center .control-heading h2,
+.client-page-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+}
+.operator-command-center .control-heading h2 svg,
+.client-page-head h2 svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.client-primary-button,
+.client-primary-action {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.client-primary-button {
+  display: inline-flex;
+}
+:root[data-theme="dark"] .client-avatar {
+  background: #302c62;
+  color: #c1b8ff;
+}
+:root[data-theme="dark"] .page-title-symbol {
+  background: #302c62;
+  border-color: #49437e;
+  color: #c4bbff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .client-avatar {
+    background: #302c62;
+    color: #c1b8ff;
+  }
+  :root:not([data-theme="light"]) .page-title-symbol {
+    background: #302c62;
+    border-color: #49437e;
+    color: #c4bbff;
+  }
+}
+@media (max-width: 479px) {
+  .client-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 13px;
+  }
+  .client-state {
+    align-self: flex-start;
+  }
+}
