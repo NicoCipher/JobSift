@@ -313,11 +313,13 @@ export function OperationsControl({
   const sentToday =
     verifiedSnapshot &&
     latestSnapshot &&
+    latestSnapshot.profiles.length > 0 &&
     latestSnapshot.profiles.every((profile) => typeof profile.delivered_today === "number")
       ? latestSnapshot.profiles.reduce((total, profile) => total + (profile.delivered_today ?? 0), 0)
       : null;
   const batchesNeedingAttention = verifiedSnapshot ? pendingBatches.length : null;
   const [showManualControls, setShowManualControls] = useState(false);
+  const [showLastActivity, setShowLastActivity] = useState(false);
 
   // The overview describes only verified, reported facts. It never treats an
   // enabled schedule as proof that jobs were found or delivered successfully.
@@ -341,7 +343,7 @@ export function OperationsControl({
       return { tone: "attention", title: "Jobs are waiting for your decision", detail: "Review the prepared jobs below. Only your approval can release a review-mode batch.", action: "review", label: "Review waiting jobs" };
     }
     if (latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure") {
-      return { tone: "caution", title: "The last reported operation failed", detail: "Check the activity details. This does not prove that the regular schedule is working.", action: "controls", label: "View activity" };
+      return { tone: "caution", title: "The last reported operation failed", detail: "Open the recorded activity to see what failed before deciding whether to try again.", action: "activity", label: "View last activity" };
     }
     if (latestSnapshot?.profiles.length === 0) {
       return { tone: "neutral", title: "No client delivery state reported yet", detail: "Set up a client or check its status. JobSift will not invent results.", action: "link", label: "Open clients", href: "/clients" };
@@ -653,6 +655,10 @@ export function OperationsControl({
             <a className="operator-main-link" href="#manual-controls" onClick={() => setShowManualControls(true)}>
               {nextStep.label}
             </a>
+          ) : nextStep.action === "activity" ? (
+            <a className="operator-main-link" href="#last-activity" onClick={() => setShowLastActivity(true)}>
+              {nextStep.label}
+            </a>
           ) : nextStep.action === "review" ? (
             <a className="operator-main-link" href="#review-queue">{nextStep.label}</a>
           ) : nextStep.action === "link" && "href" in nextStep ? (
@@ -939,7 +945,12 @@ export function OperationsControl({
             </div>
           </details>
         ) : null}
-        <details className="operator-optional">
+        <details
+          className="operator-optional"
+          id="last-activity"
+          open={showLastActivity}
+          onToggle={(event) => setShowLastActivity(event.currentTarget.open)}
+        >
           <summary>Last recorded activity</summary>
         {latestSnapshot?.run ? (
           <div className="operator-run-strip">
