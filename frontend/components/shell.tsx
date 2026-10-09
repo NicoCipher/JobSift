@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { liveMode, operatorMode } from "@/lib/api/client";
+import { UiIcon, type IconName } from "@/components/ui-icon";
 import type { Client, Session } from "@/lib/contracts/service";
 
 const navigation = [
@@ -20,11 +21,24 @@ const navigation = [
 ];
 
 const operatorNavigation = [
-  ["Operations", "/operations"],
+  ["Home", "/operations"],
   ["Clients", "/clients"],
   ["Review", "/review"],
   ["Settings", "/settings"],
 ];
+
+const navIcons: Record<string, IconName> = {
+  "/dashboard": "home",
+  "/operations": "home",
+  "/clients": "users",
+  "/review": "review",
+  "/jobs": "briefcase",
+  "/briefs": "review",
+  "/runs": "activity",
+  "/history": "clock",
+  "/diagnostics": "activity",
+  "/settings": "settings",
+};
 
 const localServiceNavigation = navigation.filter(([, path]) =>
   ["/clients", "/review", "/operations", "/jobs", "/settings"].includes(path),
@@ -56,6 +70,7 @@ export function Shell({
         : navigation;
     return (
       <nav
+        className={mobile ? "menu-navigation" : "workspace-navigation"}
         aria-label={mobile ? "Mobile primary navigation" : "Primary navigation"}
       >
         {items.map(([name, path]) => (
@@ -65,7 +80,8 @@ export function Shell({
             aria-current={pathname === path ? "page" : undefined}
             onClick={mobile ? close : undefined}
           >
-            {name}
+            <UiIcon name={navIcons[path] ?? "layers"} size={20} />
+            <span>{name}</span>
           </Link>
         ))}
       </nav>
@@ -85,24 +101,33 @@ export function Shell({
         Skip to main content
       </a>
       <header className="topbar">
-        <button
-          ref={menu}
-          className="menu-button"
-          onClick={() => dialog.current?.showModal()}
-          aria-haspopup="dialog"
-        >
-          Menu
-        </button>
+        {!operatorMode ? (
+          <button
+            ref={menu}
+            className="menu-button"
+            onClick={() => dialog.current?.showModal()}
+            aria-haspopup="dialog"
+            aria-label="Open menu"
+          >
+            <UiIcon name="menu" />
+          </button>
+        ) : null}
         <Link href={operatorMode ? "/operations" : liveMode ? "/clients" : "/jobs"} className="wordmark">
-          JobSift
+          <span className="brand-symbol"><UiIcon name="layers" size={23} /></span>
+          <span className="brand-name">Job<span>Sift</span></span>
         </Link>
-        <span className="client-scope">{clientScope}</span>
+        <span className="workspace-chip"><UiIcon name="lock" size={15}/>{clientScope}</span>
         <span className="operator">{operatorLabel}</span>
       </header>
       <div className="shell">
         <aside className="sidebar">
+          <p className="sidebar-heading">YOUR WORKSPACE</p>
           {links()}
-          
+          <div className="sidebar-foot">
+            <div className="sidebar-foot-icon"><UiIcon name="sparkles" size={20} /></div>
+            <strong>Less noise. More progress.</strong>
+            <p>Focus on what matters today.</p>
+          </div>
         </aside>
         <main id="main" tabIndex={-1}>
           <div className={operatorMode ? "sr-only" : "evidence-label"}>
@@ -124,6 +149,16 @@ export function Shell({
           {children}
         </main>
       </div>
+      {operatorMode ? (
+        <nav className="mobile-dock" aria-label="Mobile primary navigation">
+          {operatorNavigation.map(([name, path]) => (
+            <Link key={path} href={path} aria-current={pathname === path ? "page" : undefined}>
+              <UiIcon name={navIcons[path] ?? "home"} size={22} />
+              <span>{name}</span>
+            </Link>
+          ))}
+        </nav>
+      ) : null}
       <dialog
         ref={dialog}
         className="mobile-menu"
@@ -132,7 +167,7 @@ export function Shell({
       >
         <div className="dialog-head">
           <strong>JobSift</strong>
-          <button onClick={close}>Close menu</button>
+          <button onClick={close}><UiIcon name="close" /> Close menu</button>
         </div>
         <p className="secondary">
           {operatorMode
