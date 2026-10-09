@@ -51,6 +51,12 @@ type OperatorSnapshot = {
   complete: boolean;
   observed_at: string | null;
   confirmed_control_request_id: string | null;
+  confirmed_run?: {
+    status: string;
+    conclusion: string | null;
+    run_number: number;
+    url: string;
+  } | null;
   state_error: string | null;
   run: {
     run_number: number;
@@ -244,7 +250,7 @@ export function ClientWorkspace({
         setAwaitingFreshState(false);
         const context = mutationContext.current;
         mutationContext.current = null;
-        const run = body.data.operator_snapshot.run;
+        const run = body.data.operator_snapshot.confirmed_run;
         if (run?.status === "completed" && run.conclusion === "failure") {
           setMessageTone("error");
           setMessage("JobSift reported a failed delivery operation. Inspect the current Sheet and client state before trying again; the result may be uncertain.");
