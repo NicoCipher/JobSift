@@ -33,12 +33,16 @@ class _TransactionRecorder:
         self.statements.append(statement)
 
 
-def test_discovery_postgres_write_avoids_global_compatibility_lock() -> None:
+def test_discovery_postgres_write_uses_scoped_transaction_lock() -> None:
     connection = _TransactionRecorder(is_postgres=True)
 
     _begin_write(connection)
 
-    assert connection.statements == ["BEGIN"]
+    assert connection.statements == [
+        "BEGIN",
+        "SELECT pg_advisory_xact_lock(1246971974, 1)",
+    ]
+    assert "BEGIN IMMEDIATE" not in connection.statements
 
 
 def test_discovery_sqlite_write_keeps_immediate_writer_lock() -> None:
