@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { UiIcon } from "@/components/ui-icon";
 
 type Run = {
   id: number;
@@ -650,19 +651,28 @@ export function OperationsControl({
         data-urgency={nextStep.tone}
         aria-labelledby="driving-home-title"
       >
-        <p className="operator-eyebrow">
-          {nextStep.tone === "caution"
-            ? "Needs a check"
-            : nextStep.tone === "attention"
-              ? "Needs your attention"
-              : "Today at a glance"}
-        </p>
+        <div className="operator-hero-heading">
+          <span className="operator-hero-emblem">
+            <UiIcon name={nextStep.tone === "caution" ? "alert" : nextStep.tone === "attention" ? "bolt" : "sparkles"} size={27} />
+          </span>
+          <p className="operator-eyebrow">
+            {nextStep.tone === "caution"
+              ? "NEEDS A CHECK"
+              : nextStep.tone === "attention"
+                ? "NEEDS YOUR ATTENTION"
+                : "TODAY AT A GLANCE"}
+          </p>
+          <span className="hero-state-badge">
+            <UiIcon name={nextStep.tone === "caution" ? "alert" : "shield"} size={15}/>
+            {nextStep.tone === "caution" ? "Action needed" : nextStep.tone === "attention" ? "Your decision" : "Status overview"}
+          </span>
+        </div>
         <h2 id="driving-home-title" aria-live="polite">{nextStep.title}</h2>
         <p className="operator-driving-description">{nextStep.detail}</p>
         <div className="operator-driving-actions">
           {nextStep.action === "refresh" ? (
             <button type="button" disabled={busy} onClick={() => void loadStatus()}>
-              {nextStep.label}
+              {nextStep.label} <UiIcon name="refresh" size={17} />
             </button>
           ) : nextStep.action === "controls" ? (
             <a
@@ -677,27 +687,27 @@ export function OperationsControl({
                 });
               }}
             >
-              {nextStep.label}
+              {nextStep.label} <UiIcon name="arrow-right" size={17} />
             </a>
           ) : nextStep.action === "activity" ? (
             <a className="operator-main-link" href="#last-activity" onClick={() => setShowLastActivity(true)}>
-              {nextStep.label}
+              {nextStep.label} <UiIcon name="arrow-right" size={17} />
             </a>
           ) : nextStep.action === "review" ? (
-            <a className="operator-main-link" href="#review-queue">{nextStep.label}</a>
+            <a className="operator-main-link" href="#review-queue">{nextStep.label} <UiIcon name="arrow-right" size={17} /></a>
           ) : nextStep.action === "link" && "href" in nextStep ? (
-            <a className="operator-main-link" href={nextStep.href}>{nextStep.label}</a>
+            <a className="operator-main-link" href={nextStep.href}>{nextStep.label} <UiIcon name="arrow-right" size={17} /></a>
           ) : null}
           {nextStep.action !== "refresh" ? (
             <button type="button" className="secondary-action" disabled={busy} onClick={() => void loadStatus()}>
-              Refresh status
+              <UiIcon name="refresh" size={17} /> Refresh status
             </button>
           ) : null}
         </div>
         <dl className="operator-driving-metrics" aria-label="Verified client summary">
-          <div><dt>Delivery setups</dt><dd>{countLabel(reportedClients)}</dd></div>
-          <div><dt>Jobs sent today</dt><dd>{countLabel(sentToday)}</dd></div>
-          <div><dt>Reviews to handle</dt><dd>{countLabel(batchesNeedingAttention)}</dd></div>
+          <div><dt><UiIcon name="users" size={17} /> Delivery setups</dt><dd>{countLabel(reportedClients)}</dd></div>
+          <div><dt><UiIcon name="send" size={17} /> Jobs sent today</dt><dd>{countLabel(sentToday)}</dd></div>
+          <div><dt><UiIcon name="review" size={17} /> Reviews to handle</dt><dd>{countLabel(batchesNeedingAttention)}</dd></div>
         </dl>
         <p className="metadata">
           {verifiedSnapshot && latestSnapshot?.observed_at && !Number.isNaN(Date.parse(latestSnapshot.observed_at))
@@ -712,7 +722,7 @@ export function OperationsControl({
       <section className="section-block operator-command-center" id="review-queue" aria-labelledby="operator-now-title">
         <div className="control-heading">
           <div>
-            <h2 id="operator-now-title">Your next steps</h2>
+            <h2 id="operator-now-title"><UiIcon name="bolt" size={23} /> Your next steps</h2>
             <p>Only the decisions that actually need you appear here.</p>
           </div>
         </div>
