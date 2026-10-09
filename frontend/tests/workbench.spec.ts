@@ -865,12 +865,20 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
               id: 100 + stateVersion,
               run_number: 100 + stateVersion,
               status: "completed",
-              conclusion: stateVersion === 1 ? "failure" : "success",
+              conclusion: "success", // deliberately newer, unrelated run
               created_at: "2026-10-06T20:00:00Z",
               updated_at: `2026-10-06T20:00:0${stateVersion}Z`,
               url: "https://example.invalid/state",
               kind: "delivery",
             },
+            confirmed_run: lastControlRequestId
+              ? {
+                  status: "completed",
+                  conclusion: stateVersion === 1 ? "failure" : "success",
+                  run_number: 90 + stateVersion,
+                  url: "https://example.invalid/correlated",
+                }
+              : null,
             truncated: false,
             profiles: [],
           },
@@ -916,6 +924,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await expect(confirmPause).toContainText("Example client — Example delivery destination");
   await confirmPause.getByRole("button", { name: "Pause delivery" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
+  // Latest unrelated run is green; the correlated requested delivery failed.
   await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=error]")).toContainText("failed operation");
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
