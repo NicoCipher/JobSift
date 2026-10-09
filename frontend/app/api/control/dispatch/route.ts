@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ownerApiGuard } from "../../../../lib/owner-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalTimeZone, validBatchId, validGenerationId, validRemovedOrdinals } from "../../../../lib/control-validation";
 import { verifyOperatorCapability } from "../../../../lib/operator-capability";
@@ -140,6 +141,8 @@ async function dispatch(workflow: string, inputs: Record<string, string>) {
 }
 
 export async function POST(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   if (!sameOrigin(request)) {
     return NextResponse.json(
       { error: { code: "FORBIDDEN", message: "Cross-origin control requests are not allowed." } },

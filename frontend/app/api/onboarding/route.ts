@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ownerApiGuard } from "../../../lib/owner-auth";
 import {
   decryptProvisioningPayload,
   encryptProvisioningPayload,
@@ -237,6 +238,8 @@ function parseTextMarker(logs: string, marker: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   if (!sameOrigin(request)) {
     return response(
       { error: { code: "FORBIDDEN", message: "Cross-origin onboarding requests are not allowed." } },
@@ -316,6 +319,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) return ownerDenied;
   if (!token()) {
     return response(
       { error: { code: "CONTROL_NOT_CONFIGURED", message: "Production onboarding is not configured." } },
