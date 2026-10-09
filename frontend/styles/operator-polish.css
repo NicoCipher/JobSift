@@ -27,7 +27,7 @@ html[data-jobsift-operator="true"] summary:focus-visible,
 html[data-jobsift-operator="true"] input:focus-visible,
 html[data-jobsift-operator="true"] select:focus-visible,
 html[data-jobsift-operator="true"] textarea:focus-visible {
-  outline: 3px solid #a496fb;
+  outline: 3px solid var(--accent);
   outline-offset: 3px;
   box-shadow: 0 0 0 5px var(--base);
 }
