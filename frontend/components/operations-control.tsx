@@ -273,6 +273,7 @@ export function OperationsControl({
   const { ask, confirmationDialog } = useOperatorConfirmation();
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
   const [busy, setBusy] = useState(false);
   const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
     profiles.length ? "listed" : "manual",
@@ -434,6 +435,7 @@ export function OperationsControl({
       (payload.command === "client-control" && payload.operation !== "list");
     const waitForState = needsVerifiedState || options.waitForState === true;
     if (needsVerifiedState && !stateVerified) {
+      setMessageTone("error");
       setMessage(
         "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish before changing delivery.",
       );
@@ -455,6 +457,7 @@ export function OperationsControl({
         const requestId = result.data?.control_request_id;
         if (!validControlRequestId(requestId)) {
           pendingControlRequestId.current = null;
+          setMessageTone("warning");
           setMessage(
             "Command accepted, but JobSift could not correlate its confirmation. Controls stay locked until you reload after the workflow finishes.",
           );
@@ -467,6 +470,7 @@ export function OperationsControl({
         setMessage("Command accepted by GitHub Actions.");
       }
     } catch (error) {
+      setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "Command failed.");
     } finally {
       setBusy(false);
@@ -479,6 +483,7 @@ export function OperationsControl({
   ) {
     const label = profileLabel(profile.profile_id);
     if (!label) {
+      setMessageTone("error");
       setMessage("Client name is unavailable, so JobSift will not run this client action.");
       return;
     }
@@ -504,6 +509,7 @@ export function OperationsControl({
     if (!profile.batch_id) return;
     const label = profileLabel(profile.profile_id);
     if (!label) {
+      setMessageTone("error");
       setMessage("Client name is unavailable, so JobSift will not allow an irreversible batch action.");
       return;
     }
@@ -549,6 +555,7 @@ export function OperationsControl({
       deliveryTargetMode === "manual" &&
       !validProfileId(overrideProfileId)
     ) {
+      setMessageTone("error");
       setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
       return;
     }
@@ -559,6 +566,7 @@ export function OperationsControl({
           ? overrideProfileId
           : selectedProfileId;
     if (operation !== "list" && !validProfileId(profileId)) {
+      setMessageTone("error");
       setMessage("Choose a listed delivery profile or enter a valid profile ID.");
       return;
     }
@@ -593,12 +601,14 @@ export function OperationsControl({
       data.get("sheet_profile_id_override") ?? "",
     ).trim();
     if (sheetTargetMode === "manual" && !validProfileId(overrideProfileId)) {
+      setMessageTone("error");
       setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
       return;
     }
     const profileId =
       sheetTargetMode === "manual" ? overrideProfileId : selectedProfileId;
     if (!validProfileId(profileId)) {
+      setMessageTone("error");
       setMessage("Choose a listed client Sheet or enter a valid profile ID.");
       return;
     }
@@ -698,7 +708,7 @@ export function OperationsControl({
             : "Last verified update: not available."}
           {" "}A dash means JobSift cannot confirm that figure.
         </p>
-        <OperatorFeedback error={statusError} message={message} onRetry={() => void loadStatus()} />
+        <OperatorFeedback error={statusError} message={message} messageTone={messageTone} onRetry={() => void loadStatus()} />
       </section>
 
       <section className="section-block operator-command-center" id="review-queue" aria-labelledby="operator-now-title">
