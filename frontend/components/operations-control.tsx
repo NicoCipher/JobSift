@@ -386,8 +386,17 @@ export function OperationsControl({
       ) {
         pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
-        setMessageTone("success");
-        setMessage("JobSift confirmed the updated state. You can continue.");
+        const run = body.data.operator_snapshot.run;
+        if (run?.status === "completed" && run.conclusion === "success") {
+          setMessageTone("success");
+          setMessage("JobSift confirmed the successful operation. You can continue.");
+        } else if (run?.status === "completed" && run.conclusion === "failure") {
+          setMessageTone("error");
+          setMessage("JobSift reported a failed operation. Check the recorded activity and current client state before trying again.");
+        } else {
+          setMessageTone("warning");
+          setMessage("The latest state was received, but the operation result is not confirmed. Check activity before repeating any delivery.");
+        }
       }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
