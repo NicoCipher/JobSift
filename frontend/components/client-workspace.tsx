@@ -339,11 +339,17 @@ export function ClientWorkspace({
   async function clientAction(
     config: ManagedProfile,
     state: ProfileSnapshot,
-    operation: "pause" | "resume" | "sheet-check" | "run-now",
+    operation: "pause" | "resume" | "sheet-check" | "sheet-enable" | "run-now",
   ) {
     if (
       operation === "pause" &&
       !window.confirm(`Pause ${config.client_name}? New deliveries will stop until you resume them.`)
+    ) {
+      return;
+    }
+    if (
+      operation === "sheet-enable" &&
+      !window.confirm(`Verify and re-enable ${config.client_name}'s Google Sheet? JobSift will check the destination before it allows delivery.`)
     ) {
       return;
     }
@@ -659,9 +665,9 @@ export function ClientWorkspace({
                         className="client-primary-button"
                         type="button"
                         disabled={busy || !state}
-                        onClick={() => state ? void clientAction(config, state, "sheet-check") : undefined}
+                        onClick={() => state ? void clientAction(config, state, state.sheet_status === "disabled" ? "sheet-enable" : "sheet-check") : undefined}
                       >
-                        Check Google Sheet
+                        {state?.sheet_status === "disabled" ? "Verify and re-enable Sheet" : "Check Google Sheet"}
                       </button>
                     ) : stateVerified && state?.profile_status === "paused" ? (
                       <button
