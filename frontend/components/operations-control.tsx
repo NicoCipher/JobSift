@@ -172,21 +172,15 @@ function deliveryOperationButton(operation: string) {
   return "Check status";
 }
 
-function deliveryConfirmation(
-  operation: string,
-  profileId: string,
-  profileLabel: string,
-  batchId: string,
-) {
-  const target = `${profileLabel} (${profileId})`;
+function deliveryConfirmation(operation: string, profileLabel: string) {
   if (operation === "pause") {
-    return `Pause ${target}? New deliveries for this profile will stop until you resume it.`;
+    return "Pause deliveries to " + profileLabel + "? New jobs will wait until you resume deliveries. Already sent jobs stay in the Sheet.";
   }
   if (operation === "release-batch") {
-    return `Release batch ${batchId} for ${target}? This publishes the reviewed batch to the client's registered Sheet and counts it toward today's quota.`;
+    return "Send the current reviewed batch for " + profileLabel + "? JobSift will check the jobs and Sheet again before delivery.";
   }
   if (operation === "discard-batch") {
-    return `Discard batch ${batchId} for ${target}? This permanently removes the unpublished prepared batch.`;
+    return "Discard the waiting batch for " + profileLabel + "? Jobs in this unpublished batch will not be sent.";
   }
   return null;
 }
@@ -577,12 +571,7 @@ export function OperationsControl({
       deliveryTargetMode === "manual"
         ? "Manual delivery profile"
         : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
-    const confirmation = deliveryConfirmation(
-      operation,
-      profileId,
-      profileLabel,
-      batchId,
-    );
+    const confirmation = deliveryConfirmation(operation, profileLabel);
     if (confirmation && !(await ask({title: "Confirm delivery action", description: confirmation, confirmLabel: deliveryOperationButton(operation), tone: operation === "discard-batch" || operation === "pause" ? "danger" : "primary"}))) return;
     await send({
       command: "client-control",
@@ -1079,9 +1068,14 @@ export function OperationsControl({
               type="button"
               disabled={busy || !status?.control_ready || status?.inventory.state !== "active"}
               onClick={() => {
-                if (window.confirm("Pause scheduled inventory refreshes?")) {
-                  void send({ command: "inventory-schedule-pause" });
-                }
+                void ask({
+                  title: "Pause automatic sourcing?",
+                  description: "JobSift will stop scheduled sourcing runs until you resume them. Existing jobs and client deliveries will not be deleted.",
+                  confirmLabel: "Pause sourcing",
+                  tone: "danger",
+                }).then((confirmed) => {
+                  if (confirmed) void send({ command: "inventory-schedule-pause" });
+                });
               }}
             >
               Pause automatic sourcing
