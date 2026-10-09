@@ -956,6 +956,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => localStorage.getItem("jobsift:unresolved-failed-operation:v1"))).toBeNull();
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
+  await page.locator("#manual-controls > summary").click();
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(sheetTarget).toBeEnabled();
 
