@@ -70,8 +70,8 @@ export function PresentationSettings() {
     loaded = true;
     document.documentElement.dataset.theme = cached.theme;
     document.documentElement.dataset.density = cached.density;
-    setReady(true);
     const notify = window.setTimeout(() => {
+      setReady(true);
       window.dispatchEvent(new Event("jobsift-preferences"));
     }, 0);
     return () => window.clearTimeout(notify);
