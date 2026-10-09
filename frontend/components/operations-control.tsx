@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { UiIcon } from "@/components/ui-icon";
+import { readOperatorJson } from "@/lib/operator-response";
 import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
 import { ExternalLink } from "@/components/external-link";
 import { useOperatorConfirmation } from "@/components/operator-confirmation";
@@ -97,7 +98,6 @@ type ControlStatus = {
   operator_snapshot: OperatorSnapshot;
 };
 
-type ApiError = { error?: { message?: string } };
 
 export type ManagedProfile = {
   profile_id: string;
@@ -132,11 +132,8 @@ function validProfileId(value: string) {
 }
 
 async function readJson(response: Response) {
-  const body = (await response.json()) as ApiError & { data?: unknown };
-  if (!response.ok) throw new Error(body.error?.message ?? "JobSift control request failed.");
-  return body;
+  return readOperatorJson(response, "JobSift control request failed.");
 }
-
 function runLabel(run: Run) {
   if (run.status !== "completed") return run.status;
   return run.conclusion ?? "completed";
