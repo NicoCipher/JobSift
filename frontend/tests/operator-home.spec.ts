@@ -14,15 +14,20 @@ test("production operator opens Operations and hides obsolete demo routes", asyn
   await page.getByRole("button", { name: "Unlock JobSift" }).click();
   await expect(page).toHaveURL(/\/operations\/?$/);
   await expect(page.locator(".operator-driving-home")).toBeVisible();
+  await expect(page.locator(".brand-symbol svg")).toHaveCount(1);
+  await expect(page.locator(".page-title-symbol svg")).toHaveCount(1);
+  await expect(page.locator(".operator-hero-emblem svg")).toHaveCount(1);
+  await expect(page.locator(".operator-driving-metrics svg")).toHaveCount(3);
+
   await expect(page.locator("#manual-controls")).not.toHaveAttribute("open", "");
   await expect(page.locator(".operations-primary-action")).toBeHidden();
   const nav = page.getByRole("navigation", { name: "Primary navigation" });
-  await expect(nav.getByRole("link", { name: "Operations" })).toHaveAttribute(
+  await expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute(
     "aria-current",
     "page",
   );
   await expect(nav.locator("a")).toHaveText([
-    "Operations",
+    "Home",
     "Clients",
     "Review",
     "Settings",
@@ -207,6 +212,11 @@ test("mobile owner overview stays readable without exposing manual controls", as
     }),
   );
   await page.goto("/operations");
+  await expect(page.locator(".mobile-dock")).toBeVisible();
+  await expect(page.locator(".mobile-dock a")).toHaveCount(4);
+  await expect(page.locator(".mobile-dock a[aria-current=page]")).toContainText("Home");
+  await expect(page.locator(".workspace-navigation")).toBeHidden();
+
   await expect(page.locator(".operator-driving-home")).toBeVisible();
   await expect(page.locator(".operations-primary-action")).toBeHidden();
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
