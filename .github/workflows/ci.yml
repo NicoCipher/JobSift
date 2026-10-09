@@ -101,3 +101,8 @@ jobs:
         run: npx playwright install --with-deps chrome
       - name: Frontend tests
         run: npm test
+      - name: Operator routing browser tests
+        env:
+          NEXT_PUBLIC_JOBSIFT_OPERATOR: "1"
+          NEXT_PUBLIC_JOBSIFT_LIVE: "0"
+        run: npx playwright test tests/operator-home.spec.ts
