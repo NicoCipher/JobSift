@@ -101,8 +101,11 @@ test("read-only capabilities expose no mutation controls and URLs keep their kin
 });
 test("operations control fails closed without server command credentials", async ({ page }) => {
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What do you want to do?" })).toBeVisible();
+  await expect(page.locator(".operator-driving-home")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Find Jobs" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Clients & Sheets" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "System Status" })).toBeVisible();
@@ -303,6 +306,9 @@ test("operator command center exposes pending review batch without opaque IDs", 
 
   page.on("dialog", (dialog) => void dialog.accept());
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
 
   await expect(page.getByRole("heading", { name: "Right now" })).toBeVisible();
   await expect(page.getByText("1 job is waiting for approval")).toBeVisible();
@@ -385,6 +391,9 @@ test("pending batch actions fail closed when the client label is unavailable", a
     });
   });
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   await expect(
     page.locator(".operator-batch-card").getByText("Client name unavailable", { exact: true }),
   ).toBeVisible();
@@ -439,6 +448,9 @@ test("journaled delivery recovery is visible and cannot be discarded", async ({ 
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   await expect(page.getByText("A Sheet delivery needs safe recovery")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry safe delivery" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Discard" })).toBeDisabled();
@@ -503,6 +515,9 @@ test("unverified latest operator state locks state-dependent controls", async ({
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   await expect(
     page.locator(".operator-command-center").getByRole("alert"),
   ).toContainText("Client state could not be verified");
@@ -511,7 +526,8 @@ test("unverified latest operator state locks state-dependent controls", async ({
   await expect(page.getByRole("button", { name: "Check Sheet", exact: true }).last()).toBeDisabled();
   await expect(page.getByLabel("What do you want to do?")).toBeDisabled();
 
-  const sync = page.getByRole("button", { name: "Sync current state" });
+  await page.getByText("Advanced recovery (may use Neon)", { exact: true }).click();
+  const sync = page.getByRole("button", { name: "Request client snapshot" });
   await expect(sync).toBeEnabled();
   await sync.click();
   await expect.poll(() => dispatched.length).toBe(1);
@@ -590,11 +606,14 @@ test("failed status refresh locks actions from the previous verified snapshot", 
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   const release = page.getByRole("button", { name: "Release 1 job" });
   await expect(release).toBeEnabled();
 
   failStatus = true;
-  await page.getByRole("button", { name: "Refresh status" }).click();
+  await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(page.getByText("Could not load JobSift workflow status.")).toBeVisible();
   await expect(release).toBeDisabled();
 });
@@ -666,12 +685,15 @@ test("a newer authoritative snapshot can prove a dispatched command was supersed
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   const runNow = page.getByRole("button", { name: "Run sourcing now" });
   await expect(runNow).toBeEnabled();
   await runNow.click();
   await expect(runNow).toBeDisabled();
 
-  await page.getByRole("button", { name: "Refresh status" }).click();
+  await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(runNow).toBeEnabled();
 });
 
@@ -721,6 +743,9 @@ test("truncated operator state never claims all clients are clear", async ({ pag
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   await expect(page.getByText(/Client state is incomplete/)).toBeVisible();
   await expect(page.getByText(/No review batch is blocking/)).toHaveCount(0);
 });
@@ -761,12 +786,15 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   const statusSection = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "System Status" }) });
   await expect(statusSection.getByText("Yield-aware scheduling", { exact: true })).toBeVisible();
   await expect(statusSection.getByText(/72-hour evidence window/)).toBeVisible();
-  await expect(statusSection.getByText(/100 scheduled bonus targets/)).toBeVisible();
+  await expect(statusSection.getByText(/100 bonus targets/)).toBeVisible();
 
   const findJobsSection = page
     .locator("section")
@@ -841,6 +869,9 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   });
 
   await page.goto("/operations");
+  // Technical controls stay hidden during normal use; open them explicitly
+  // for legacy backend-control regression coverage.
+  await page.locator("#manual-controls > summary").click();
   const deliveryProfile = page.getByRole("combobox", { name: "Delivery profile", exact: true });
   const clientSheet = page.getByRole("combobox", { name: "Client Sheet", exact: true });
   await expect(deliveryProfile).toHaveValue("ad763a0336d92204");
@@ -864,7 +895,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
-  await page.getByRole("button", { name: "Refresh status" }).click();
+  await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
 
   const sheetBlock = page
     .locator(".operations-client-block")
@@ -877,7 +908,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
-  await page.getByRole("button", { name: "Refresh status" }).click();
+  await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(sheetTarget).toBeEnabled();
 
   await sheetTarget.selectOption("listed");
@@ -885,7 +916,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(3);
   expect(dispatched[2]?.profile_id).toBe("ad763a0336d92204");
-  await page.getByRole("button", { name: "Refresh status" }).click();
+  await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
 
   const deliveryBlock = page
     .locator(".operations-client-block")
@@ -899,7 +930,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await deliveryBlock.getByRole("button", { name: "Save daily limit" }).click();
   await expect.poll(() => dispatched.length).toBe(4);
   expect(dispatched[3]?.profile_id).toBe("fedcba9876543210");
-  await page.getByRole("button", { name: "Refresh status" }).click();
+  await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(deliveryTarget).toBeEnabled();
 
   await deliveryTarget.selectOption("listed");
@@ -1226,7 +1257,8 @@ test("Clients page shows operator state without exposing opaque identifiers", as
   await expect(page.getByRole("heading", { name: "Clients", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Example client" })).toBeVisible();
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
-  await expect(page.locator(".client-card").getByText("Review", { exact: true })).toBeVisible();
+  await page.locator(".client-card").getByText("Delivery details", { exact: true }).click();
+  await expect(page.locator(".client-card").getByText("Review first", { exact: true })).toBeVisible();
   await expect(page.getByText("17", { exact: true })).toBeVisible();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await expect(page.getByText("63 jobs", { exact: true })).toBeVisible();
