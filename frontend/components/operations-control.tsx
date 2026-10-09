@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { UiIcon } from "@/components/ui-icon";
+import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
+import { ExternalLink } from "@/components/external-link";
+import { useOperatorConfirmation } from "@/components/operator-confirmation";
 
 type Run = {
   id: number;
@@ -230,11 +233,7 @@ function WorkflowRuns({
             {workflow ? `Workflow: ${workflow.state}` : "Workflow status unavailable."}
           </p>
         </div>
-        {workflow ? (
-          <a href={workflow.url} target="_blank" rel="noreferrer">
-            Open in GitHub
-          </a>
-        ) : null}
+        {workflow ? <ExternalLink href={workflow.url}>Open in GitHub</ExternalLink> : null}
       </div>
       {workflow?.runs.length ? (
         <div className="table-scroll">
@@ -252,9 +251,7 @@ function WorkflowRuns({
               {workflow.runs.map((run) => (
                 <tr key={run.id}>
                   <td>
-                    <a href={run.url} target="_blank" rel="noreferrer">
-                      #{run.run_number}
-                    </a>
+                    <ExternalLink href={run.url}>#{run.run_number}</ExternalLink>
                   </td>
                   <td>{run.event}</td>
                   <td>{runLabel(run)}</td>
@@ -282,6 +279,7 @@ export function OperationsControl({
   catalogueIncomplete?: boolean;
 }) {
   const [status, setStatus] = useState<ControlStatus | null>(null);
+  const { ask, confirmationDialog } = useOperatorConfirmation();
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -495,7 +493,7 @@ export function OperationsControl({
     }
     if (
       operation === "pause" &&
-      !window.confirm(`Pause ${label}? New deliveries will stop until you resume them.`)
+      !(await ask({ title: "Pause client deliveries?", description: `New deliveries for ${label} will stop until you resume them. Existing Sheet entries will not be removed.`, confirmLabel: "Pause deliveries", tone: "danger" }))
     ) {
       return;
     }
@@ -523,7 +521,7 @@ export function OperationsControl({
       operation === "release-batch"
         ? "This sends the reviewed jobs to the client's Sheet."
         : "This removes the unpublished batch without sending it.";
-    if (!window.confirm(`${verb} this batch for ${label}? ${effect}`)) return;
+    if (!(await ask({ title: `${verb} jobs for ${label}?`, description: effect, confirmLabel: operation === "release-batch" ? "Send to Sheet" : "Discard prepared jobs", tone: operation === "discard-batch" ? "danger" : "primary" }))) return;
     await send({
       command: "client-control",
       operation,
@@ -585,7 +583,7 @@ export function OperationsControl({
       profileLabel,
       batchId,
     );
-    if (confirmation && !window.confirm(confirmation)) return;
+    if (confirmation && !(await ask({title: "Confirm delivery action", description: confirmation, confirmLabel: deliveryOperationButton(operation), tone: operation === "discard-batch" || operation === "pause" ? "danger" : "primary"}))) return;
     await send({
       command: "client-control",
       operation,
@@ -627,9 +625,7 @@ export function OperationsControl({
         : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     if (
       operation === "sheet-disable" &&
-      !window.confirm(
-        `Disable ${profileLabel} (${profileId})? This pauses the profile and blocks new deliveries until the Sheet is verified, re-enabled, and the profile is resumed.`,
-      )
+      !(await ask({ title: "Disable this Google Sheet?", description: `This pauses ${profileLabel} and blocks new deliveries until the Sheet is verified, re-enabled and the client is resumed. No rows are deleted.`, confirmLabel: "Disable Sheet", tone: "danger" }))
     ) {
       return;
     }
@@ -646,6 +642,7 @@ export function OperationsControl({
 
   return (
     <>
+      {confirmationDialog}
       <section
         className="section-block operator-driving-home"
         data-urgency={nextStep.tone}
@@ -715,8 +712,7 @@ export function OperationsControl({
             : "Last verified update: not available."}
           {" "}A dash means JobSift cannot confirm that figure.
         </p>
-        {statusError ? <p className="error" role="alert">{statusError}</p> : null}
-        {message ? <p className="control-message" role="status">{message}</p> : null}
+        <OperatorFeedback error={statusError} message={message} onRetry={() => void loadStatus()} />
       </section>
 
       <section className="section-block operator-command-center" id="review-queue" aria-labelledby="operator-now-title">
@@ -728,12 +724,14 @@ export function OperationsControl({
         </div>
 
         {latestSnapshot?.complete === false ? (
-          <div className="error operator-state-recovery" role="alert">
+          <div className="operator-state-recovery">
+            <OperatorNotice tone="error" title="Client state could not be verified">
             <div>
               <strong>Client state could not be verified.</strong>{" "}
               {latestSnapshot.state_error ??
                 "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
             </div>
+            </OperatorNotice>
             <details className="operations-advanced">
               <summary>Advanced recovery (may use Neon)</summary>
               <p>Only try this when database usage is available. It requests a new authoritative client snapshot.</p>
@@ -780,9 +778,7 @@ export function OperationsControl({
               <span className="metadata">Latest state update</span>
               <strong>#{latestSnapshot.run.run_number}</strong>
               {latestSnapshot.run.url ? (
-                <a href={latestSnapshot.run.url} target="_blank" rel="noopener noreferrer">
-                  Open full activity details
-                </a>
+                <ExternalLink href={latestSnapshot.run.url}>Open full activity details</ExternalLink>
               ) : (
                 <span className="metadata">Full activity link unavailable</span>
               )}
@@ -860,9 +856,7 @@ export function OperationsControl({
                           </p>
                         </div>
                         {item.link ? (
-                          <a href={item.link} target="_blank" rel="noopener noreferrer">
-                            Open job
-                          </a>
+                          <ExternalLink href={item.link}>Open job</ExternalLink>
                         ) : (
                           <span className="metadata">Job link unavailable</span>
                         )}
