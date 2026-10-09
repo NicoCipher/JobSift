@@ -876,7 +876,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
                   status: "completed",
                   conclusion: stateVersion === 1 ? "failure" : "success",
                   run_number: 90 + stateVersion,
-                  url: "https://example.invalid/correlated",
+                  url: "https://github.com/NicoCipher/JobSift/actions/runs/900001",
                 }
               : null,
             truncated: false,
@@ -928,13 +928,18 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=error]")).toContainText("failed operation");
   const hero = page.locator(".operator-driving-home");
   await expect(hero.getByRole("heading", { name: "Your requested operation failed" })).toBeVisible();
-  await expect(hero.getByRole("link", { name: "View failed operation" })).toHaveAttribute("href", "https://example.invalid/correlated");
+  await expect(hero.getByRole("link", { name: "View failed operation" })).toHaveAttribute("href", "https://github.com/NicoCipher/JobSift/actions/runs/900001");
+  // The warning survives a full remount; the newer unrelated green run must not erase it.
+  await page.reload();
+  await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toBeVisible();
+  await expect(page.locator(".operator-driving-home").getByRole("link", { name: "View failed operation" })).toHaveAttribute("href", "https://github.com/NicoCipher/JobSift/actions/runs/900001");
   await expect(hero.getByRole("heading", { name: "No approval is needed right now" })).toHaveCount(0);
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
 
+  await page.locator("#manual-controls > summary").click();
   const sheetBlock = page
     .locator(".operations-client-block")
     .filter({ has: page.getByRole("heading", { name: "Google Sheet" }) });
@@ -947,6 +952,9 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await expect.poll(() => dispatched.length).toBe(2);
   await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=success]")).toContainText("successful operation");
   await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("jobsift:unresolved-failed-operation:v1"))).toBeNull();
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(sheetTarget).toBeEnabled();
