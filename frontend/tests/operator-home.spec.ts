@@ -119,6 +119,6 @@ test("the guided home prioritises a real review batch and keeps tuning hidden", 
   await expect(home.getByRole("heading", { name: "Jobs are waiting for your decision" })).toBeVisible();
   await expect(home.locator(".operator-driving-metrics dd")).toHaveText(["1", "7", "1"]);
   await expect(home.getByRole("link", { name: "Review waiting jobs" })).toHaveAttribute("href", "#review-queue");
-  await expect(page.getByRole("heading", { name: /job is waiting for approval|review batches are waiting/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "2 jobs are waiting for approval" })).toBeVisible();
   await expect(page.locator("#manual-controls")).not.toHaveAttribute("open", "");
 });
