@@ -236,3 +236,51 @@ def test_recent_inventory_persists_revision_scoped_matches(tmp_path, monkeypatch
         match_scope_id="brief-revision-a",
     )
 
+
+
+
+def test_recent_inventory_snapshot_preserves_retention_and_matching(tmp_path, monkeypatch):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    now = datetime.now(UTC)
+    recent = posting("recent-snapshot", "Software Engineer")
+    old_time = now - timedelta(hours=80)
+    stale = posting("stale-snapshot", "Software Engineer").model_copy(
+        update={
+            "posted_at": old_time,
+            "discovered_at": old_time,
+            "last_seen_at": now,
+        }
+    )
+    repo.upsert_jobs([recent, stale])
+
+    snapshot = sourcing_plan.load_recent_inventory_snapshot(
+        repository=repo,
+        retention_hours=72,
+        evaluated_at=now,
+    )
+
+    assert tuple(job.id for job in snapshot.jobs) == ("recent-snapshot",)
+
+    monkeypatch.setattr(
+        sourcing_plan,
+        "match_job",
+        lambda job, _brief: JobMatch(
+            job_id=job.id,
+            client_id="client-a",
+            decision="strong_match",
+            evaluated_at=now,
+            matcher_version="test",
+        ),
+    )
+
+    report, candidate_ids = sourcing_plan.evaluate_recent_inventory(
+        repository=repo,
+        brief=SimpleNamespace(client_id="client-a"),
+        retention_hours=72,
+        evaluated_at=now,
+        snapshot=snapshot,
+    )
+
+    assert report.total_evaluated == 1
+    assert report.total_matched == 1
+    assert candidate_ids == ("recent-snapshot",)

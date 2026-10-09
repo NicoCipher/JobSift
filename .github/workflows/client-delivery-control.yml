@@ -65,13 +65,22 @@ on:
 permissions:
   contents: read
 
+# Run-now consumes a cached inventory snapshot: serialize with every inventory
+# writer. Other profile operations retain the shorter delivery-mutation queue.
 concurrency:
-  group: jobsift-client-delivery-mutation
+  group: ${{ inputs.operation == 'run-now' && 'jobsift-live-inventory-refresh' || 'jobsift-client-delivery-mutation' }}
   queue: max
   cancel-in-progress: false
 
 jobs:
   control:
+    # For run-now acquire the delivery mutation lock AFTER the inventory lock,
+    # matching refresh's lock order. Other operations already own delivery at
+    # workflow level, so use a unique harmless job group to avoid self-deadlock.
+    concurrency:
+      group: ${{ inputs.operation == 'run-now' && 'jobsift-client-delivery-mutation' || format('jobsift-control-job-{0}', github.run_id) }}
+      queue: max
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       JOBSIFT_DATABASE: /tmp/jobsift.sqlite3

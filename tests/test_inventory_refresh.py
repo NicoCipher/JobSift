@@ -773,14 +773,47 @@ def test_live_refresh_workflow_enforces_logical_scheduler_contract():
 
 
 def test_profile_mutation_workflows_queue_all_pending_changes():
-    for path in (
-        Path(".github/workflows/client-delivery-control.yml"),
-        Path(".github/workflows/configure-client-delivery-profile.yml"),
-    ):
-        workflow = path.read_text(encoding="utf-8")
-        assert "group: jobsift-client-delivery-mutation" in workflow
-        assert "queue: max" in workflow
-        assert "cancel-in-progress: false" in workflow
+    # Ordinary controls still hold the delivery queue at workflow level.
+    control = Path(".github/workflows/client-delivery-control.yml").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "inputs.operation == 'run-now' && 'jobsift-live-inventory-refresh' "
+        "|| 'jobsift-client-delivery-mutation'"
+    ) in control
+    assert (
+        "inputs.operation == 'run-now' && 'jobsift-client-delivery-mutation' "
+        "|| format('jobsift-control-job-{0}', github.run_id)"
+    ) in control
+    assert control.count("queue: max") == 2
+    assert control.count("cancel-in-progress: false") == 2
+
+    config = Path(".github/workflows/configure-client-delivery-profile.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "group: jobsift-client-delivery-mutation" in config
+    assert "queue: max" in config
+    assert "cancel-in-progress: false" in config
+
+
+def test_production_snapshot_consumers_hold_inventory_then_delivery_locks():
+    refresh = Path(".github/workflows/refresh-live-inventory.yml").read_text(
+        encoding="utf-8"
+    )
+    live = Path(".github/workflows/live-jobs.yml").read_text(encoding="utf-8")
+    control = Path(".github/workflows/client-delivery-control.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "group: jobsift-live-inventory-refresh" in refresh
+    assert "group: jobsift-client-delivery-mutation" in refresh
+    assert "'jobsift-live-inventory-refresh'" in live
+    assert "'jobsift-client-delivery-mutation'" in live
+    assert "'jobsift-live-inventory-refresh'" in control
+    assert "'jobsift-client-delivery-mutation'" in control
+    # Read-only SQLite validation must not queue behind production.
+    assert "inputs.validate && 'jobsift-live-validation'" in live
+    assert "inputs.validate && format('jobsift-validation-job-{0}'" in live
+    assert "queue: max" in live
 
 
 def test_delivery_profile_cli_restricts_remote_mutations_to_queued_workflows():

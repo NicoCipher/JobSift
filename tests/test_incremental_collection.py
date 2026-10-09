@@ -407,3 +407,68 @@ def test_snapshot_includes_live_job_identity_and_posted_at_without_retention_evi
     assert len(states) == 1
     assert states[0].known_source_job_ids == ["1"]
     assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
+
+
+
+def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
+    posted_at = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+    queries = []
+
+    class Cursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class Connection:
+        is_postgres = True
+
+        def execute(self, statement, _parameters=()):
+            queries.append(statement)
+            if "FROM jobs" in statement:
+                return Cursor(
+                    [
+                        {
+                            "source": "greenhouse",
+                            "source_board_id": "acme",
+                            "source_job_id": "1",
+                            "posted_at": posted_at.isoformat(),
+                        }
+                    ]
+                )
+            return Cursor([])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class Repository:
+        def connect(self):
+            return Connection()
+
+    registry = ProductionSourceRegistry(
+        registry_id="incremental-postgres-test",
+        target_universe_git_blob_sha="0" * 40,
+        health_manifest_sha256="1" * 64,
+        health_evidence_updated_at="2026-10-07T00:00:00Z",
+        target_counts_by_source={"greenhouse": 1},
+        targets=[
+            ProductionTarget(
+                target_identity="greenhouse:acme",
+                source="greenhouse",
+                coordinates={"board": "acme"},
+                company_hint="Acme Inc",
+            )
+        ],
+    )
+
+    states = snapshot_incremental_target_state(Repository(), registry)
+
+    assert states[0].known_source_job_ids == ["1"]
+    assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
+    jobs_query = next(statement for statement in queries if "FROM jobs" in statement)
+    assert "payload_json::jsonb->>'posted_at'" in jobs_query
+    assert "source_job_id,payload_json FROM jobs" not in jobs_query
