@@ -107,7 +107,7 @@ export function Shell({
             className="menu-button"
             onClick={() => dialog.current?.showModal()}
             aria-haspopup="dialog"
-            aria-label="Open menu"
+            aria-label="Menu"
           >
             <UiIcon name="menu" />
           </button>
