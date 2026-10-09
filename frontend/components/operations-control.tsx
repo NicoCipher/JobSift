@@ -7,6 +7,7 @@ import { readOperatorJson } from "@/lib/operator-response";
 import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
 import { ExternalLink } from "@/components/external-link";
 import { useOperatorConfirmation } from "@/components/operator-confirmation";
+import { readRememberedFailure, rememberFailedOperation, clearRememberedFailure, type RememberedFailedOperation } from "@/lib/remembered-operator-failure";
 
 type Run = {
   id: number;
@@ -280,7 +281,7 @@ export function OperationsControl({
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
-  const [failedCommand, setFailedCommand] = useState<{ runNumber: number; url: string } | null>(null);
+  const [failedCommand, setFailedCommand] = useState<RememberedFailedOperation | null>(null);
   const [busy, setBusy] = useState(false);
   const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
     profiles.length ? "listed" : "manual",
@@ -384,7 +385,9 @@ export function OperationsControl({
 
   const loadStatus = useCallback(async () => {
     try {
-      const requestId = pendingControlRequestId.current;
+      const pendingId = pendingControlRequestId.current;
+      const remembered = readRememberedFailure();
+      const requestId = pendingId ?? remembered?.requestId ?? null;
       const statusUrl = requestId
         ? `/api/control/status?control_request_id=${encodeURIComponent(requestId)}`
         : "/api/control/status";
@@ -405,16 +408,29 @@ export function OperationsControl({
         const run = body.data.operator_snapshot.confirmed_run;
         if (run?.status === "completed" && run.conclusion === "success") {
           setFailedCommand(null);
+          clearRememberedFailure();
           setMessageTone("success");
           setMessage("JobSift confirmed the successful operation. You can continue.");
         } else if (run?.status === "completed" && run.conclusion === "failure") {
-          setFailedCommand({ runNumber: run.run_number, url: run.url });
+          const failure = { requestId: confirmedRequestId, runNumber: run.run_number, url: run.url };
+          setFailedCommand(failure);
+          rememberFailedOperation(failure);
           setMessageTone("error");
           setMessage("JobSift reported a failed operation. Check the recorded activity and current client state before trying again.");
         } else {
           setMessageTone("warning");
           setMessage("The latest state was received, but the operation result is not confirmed. Check activity before repeating any delivery.");
         }
+      } else if (remembered && hasConfirmedControlRequest(body.data.operator_snapshot, remembered.requestId)) {
+        // An unrelated newer workflow is never evidence that this command succeeded.
+        const correlated = body.data.operator_snapshot.confirmed_run;
+        if (correlated?.status === "completed" && correlated.conclusion === "failure") {
+          const failure = { requestId: remembered.requestId, runNumber: correlated.run_number, url: correlated.url };
+          setFailedCommand(failure);
+          rememberFailedOperation(failure);
+        }
+        // If historical correlation is missing or inconclusive, keep the warning.
+        // Only a newly requested command's separately confirmed success clears it.
       }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
@@ -423,12 +439,27 @@ export function OperationsControl({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/control/status", { cache: "no-store" })
+    const remembered = readRememberedFailure();
+    if (remembered) setFailedCommand(remembered);
+    const query = remembered
+      ? "?control_request_id=" + encodeURIComponent(remembered.requestId)
+      : "";
+    void fetch("/api/control/status" + query, { cache: "no-store" })
       .then(readJson)
       .then((body) => {
         if (cancelled) return;
-        setStatus((body as { data: ControlStatus }).data);
+        const data = (body as { data: ControlStatus }).data;
+        setStatus(data);
         setStatusError("");
+        if (remembered && hasConfirmedControlRequest(data.operator_snapshot, remembered.requestId)) {
+          const run = data.operator_snapshot.confirmed_run;
+          if (run?.status === "completed" && run.conclusion === "failure") {
+            const failure = { requestId: remembered.requestId, runNumber: run.run_number, url: run.url };
+            setFailedCommand(failure);
+            rememberFailedOperation(failure);
+          }
+          // Neither a missing correlation nor another run's success clears this warning.
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
