@@ -181,6 +181,8 @@ test("failed operation gives one direct link to its recorded activity", async ({
   await home.getByRole("link", { name: "View last activity" }).click();
   await expect(activity).toHaveAttribute("open", "");
   await expect(activity.getByText("failure")).toBeVisible();
+  await expect(activity.getByRole("link", { name: "Open full activity details" }))
+    .toHaveAttribute("href", "https://example.com/failure");
   await expect(page.locator("#manual-controls")).not.toHaveAttribute("open", "");
 });
 
@@ -290,4 +292,70 @@ test("client details and maintenance actions stay closed by default", async ({ p
   await actions.locator("summary").click();
   await expect(actions.getByRole("button", { name: "Check Google Sheet" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Find jobs now" })).toBeHidden();
+});
+
+
+test("connection guidance opens the real System Status panel", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  await page.route("**/api/control/status**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({
+      data: {
+        control_ready: false,
+        inventory: { name: "Sourcing", state: "inactive", url: "https://example.com", runs: [] },
+        delivery: { name: "Delivery", state: "inactive", url: "https://example.com", runs: [] },
+        operator_snapshot: {
+          complete: false, observed_at: null, confirmed_control_request_id: null,
+          state_error: "Controls are not configured.", run: null, profiles: [], truncated: false,
+        },
+      },
+    }),
+  }));
+  await page.goto("/operations");
+  const link = page.locator(".operator-driving-home").getByRole("link", { name: "View connection details" });
+  await expect(link).toHaveAttribute("href", "#system-status");
+  await link.click();
+  await expect(page.locator("#manual-controls")).toHaveAttribute("open", "");
+  await expect(page.getByRole("heading", { name: "System Status" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("system-status");
+});
+
+test("disabled client Sheet has a guarded re-enable action, not a repeated status check", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  const operations: string[] = [];
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.route("**/api/control/dispatch", (route) => {
+    operations.push((route.request().postDataJSON() as { operation: string }).operation);
+    return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({
+      data: { accepted: true, control_request_id: "11111111-1111-4111-8111-111111111111" },
+    }) });
+  });
+  await page.route("**/api/control/status**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({
+      data: {
+        control_ready: true,
+        inventory: { name: "Sourcing", state: "active", url: "https://example.com", runs: [] },
+        delivery: { name: "Delivery", state: "active", url: "https://example.com", runs: [] },
+        operator_snapshot: {
+          complete: true, observed_at: "2026-10-09T12:00:00Z", state_error: null,
+          confirmed_control_request_id: null, run: null, truncated: false,
+          profiles: [{
+            action: "status", profile_id: "0123456789abcdef", profile_status: "paused",
+            delivery_mode: "review", daily_quota: 100, sheet_status: "disabled",
+            delivered_today: 0, batch_id: null, batch_status: null,
+            requested_quota: null, selected_count: null, shortfall: null,
+            pending_items: [], pending_items_truncated: false, recovery_required: false,
+            client_funnel: null, operator_managed: true, client_name: "Test Client",
+            destination_name: "Test Sheet", sheet_handle: null, control_capability: null,
+          }],
+        },
+      },
+    }),
+  }));
+  await page.goto("/clients");
+  const card = page.locator(".client-card").filter({ hasText: "Test Client" });
+  await card.getByRole("button", { name: "Verify and re-enable Sheet" }).click();
+  await expect.poll(() => operations.length).toBe(1);
+  expect(operations).toEqual(["sheet-enable"]);
 });
