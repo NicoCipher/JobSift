@@ -251,6 +251,9 @@ test("operator command center exposes pending review batch without opaque IDs", 
             runs: [],
           },
           operator_snapshot: {
+            complete: true,
+            state_error: null,
+            truncated: false,
             run: {
               id: 43,
               run_number: 43,
@@ -310,7 +313,7 @@ test("operator command center exposes pending review batch without opaque IDs", 
   // for legacy backend-control regression coverage.
   await page.locator("#manual-controls > summary").click();
 
-  await expect(page.getByRole("heading", { name: "Right now" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your next steps" })).toBeVisible();
   await expect(page.getByText("1 job is waiting for approval")).toBeVisible();
   await expect(page.getByText("Software Engineer", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute(
@@ -323,12 +326,11 @@ test("operator command center exposes pending review batch without opaque IDs", 
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(page.getByText(/pending review batch stopped a new client evaluation/)).toBeVisible();
 
   const release = page.getByRole("button", { name: "Release 1 job" });
   await release.click();
   await expect.poll(() => dispatched.length).toBe(1);
-  await expect(release).toBeDisabled();
+  await expect(release).toHaveCount(0); // Pending commands hide actions until state is verified.
   expect(dispatched[0]).toMatchObject({
     command: "client-control",
     operation: "release-batch",
@@ -348,6 +350,9 @@ test("pending batch actions fail closed when the client label is unavailable", a
           inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
           delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
           operator_snapshot: {
+            complete: true,
+            state_error: null,
+            truncated: false,
             run: {
               id: 44,
               run_number: 44,
@@ -413,6 +418,8 @@ test("journaled delivery recovery is visible and cannot be discarded", async ({ 
           inventory: { name: "Inventory", state: "active", url: "https://example.invalid/inventory", runs: [] },
           delivery: { name: "Delivery", state: "active", url: "https://example.invalid/delivery", runs: [] },
           operator_snapshot: {
+            complete: true,
+            state_error: null,
             run: null,
             truncated: false,
             profiles: [
@@ -615,7 +622,7 @@ test("failed status refresh locks actions from the previous verified snapshot", 
   failStatus = true;
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(page.getByText("Could not load JobSift workflow status.")).toBeVisible();
-  await expect(release).toBeDisabled();
+  await expect(release).toHaveCount(0); // A failed refresh removes actions based on stale evidence.
 });
 
 test("a newer authoritative snapshot can prove a dispatched command was superseded", async ({ page }) => {
@@ -769,6 +776,14 @@ test("yield-aware scheduling is visible and dispatches guarded bonus capacity", 
             state: "active",
             url: "https://example.invalid/delivery",
             runs: [],
+          },
+          operator_snapshot: {
+            complete: true,
+            observed_at: "2026-10-09T12:00:00Z",
+            state_error: null,
+            truncated: false,
+            run: null,
+            profiles: [],
           },
         },
       }),
