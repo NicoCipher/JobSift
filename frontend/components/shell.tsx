@@ -73,10 +73,10 @@ export function Shell({
   };
 
   const clientScope = operatorMode
-    ? "Clients: production"
+    ? "Private workspace"
     : `Client: ${client?.display_name ?? "Unavailable"}`;
   const operatorLabel = operatorMode
-    ? "Production workspace"
+    ? "Owner only"
     : `${session?.display_name ?? "Operator"} · ${liveMode ? "trusted local session" : "fixture session"}`;
 
   return (
@@ -102,16 +102,10 @@ export function Shell({
       <div className="shell">
         <aside className="sidebar">
           {links()}
-          {operatorMode ? (
-            <p className="sidebar-note metadata">
-              Operations is your home
-              <br />
-              Clients and Review support delivery
-            </p>
-          ) : null}
+          
         </aside>
         <main id="main" tabIndex={-1}>
-          <div className="evidence-label">
+          <div className={operatorMode ? "sr-only" : "evidence-label"}>
             <span className="fixture-tag">
               {operatorMode
                 ? "Production"
