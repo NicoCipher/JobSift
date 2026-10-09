@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { OperatorNotice } from "@/components/operator-notice";
+import { UiIcon } from "@/components/ui-icon";
+import { readOperatorJson } from "@/lib/operator-response";
 import { FormEvent, useMemo, useRef, useState } from "react";
 
 type SheetInspection = {
@@ -24,7 +27,6 @@ type PendingAction = {
   control_request_id: string;
 };
 
-type ApiError = { error?: { message?: string } };
 
 const mappingFields = [
   { key: "Job Title", label: "Job title", required: true },
@@ -53,13 +55,8 @@ function validTimeZone(value: string) {
 }
 
 async function readJson(response: Response) {
-  const body = (await response.json()) as ApiError & { data?: unknown };
-  if (!response.ok) {
-    throw new Error(body.error?.message ?? "JobSift request failed.");
-  }
-  return body;
+  return readOperatorJson(response, "JobSift onboarding request failed.");
 }
-
 function validRequestId(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -111,6 +108,18 @@ export function ClientOnboardingWizard() {
       Number(dailyLimit) <= 2000 &&
       timezoneValid) ||
     (step === 4 && inspection !== null && requiredMapped);
+
+  const canCreate =
+    clientName.trim().length > 0 &&
+    roleTitles.length > 0 &&
+    /^[A-Z]{2}$/.test(country.trim().toUpperCase()) &&
+    workModes.length > 0 &&
+    Number.isInteger(Number(dailyLimit)) &&
+    Number(dailyLimit) >= 1 &&
+    Number(dailyLimit) <= 2000 &&
+    timezoneValid &&
+    inspection !== null &&
+    requiredMapped;
 
   function toggleMode(mode: string) {
     setWorkModes((current) =>
@@ -259,14 +268,14 @@ export function ClientOnboardingWizard() {
           <div><span>Criteria revision</span><strong>{created.brief_revision ?? "—"}</strong></div>
         </div>
         <div className="onboarding-actions">
-          <Link href="/clients">Open client</Link>
+          <Link href="/clients" className="client-primary-action"><UiIcon name="users" size={17}/> View clients</Link>
         </div>
       </section>
     );
   }
 
   return (
-    <div className="onboarding-wizard">
+    <div className="onboarding-wizard" aria-busy={busy}>
       <section className="section-block onboarding-head">
         <div>
           <p className="eyebrow">Add client · Step {step} of 5</p>
@@ -282,7 +291,7 @@ export function ClientOnboardingWizard() {
                     : "Confirm this client"}
           </h2>
         </div>
-        <Link href="/clients">Cancel</Link>
+        <Link href="/clients" className="operator-text-link"><UiIcon name="arrow-right" size={16}/> Cancel setup</Link>
       </section>
 
       <ol className="onboarding-steps" aria-label="Client setup progress">
@@ -296,7 +305,7 @@ export function ClientOnboardingWizard() {
         ))}
       </ol>
 
-      {message ? <div className="error" role="alert">{message}</div> : null}
+      {message ? <OperatorNotice tone="error" title="Please check this step"><p>{message}</p></OperatorNotice> : null}
 
       {step === 1 ? (
         <section className="section-block onboarding-panel">
@@ -570,7 +579,7 @@ export function ClientOnboardingWizard() {
             Continue
           </button>
         ) : (
-          <button type="button" disabled={busy} onClick={() => void createClient()}>
+          <button type="button" disabled={busy || !canCreate} onClick={() => void createClient()}>
             {busy ? "Creating client…" : "Create client"}
           </button>
         )}

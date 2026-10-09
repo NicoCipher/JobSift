@@ -3,6 +3,7 @@ import { Shell } from "@/components/shell";
 import { api, liveMode, operatorMode } from "@/lib/api/client";
 import "@/styles/global.css";
 import "@/styles/visual-refresh.css";
+import "@/styles/operator-polish.css";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {

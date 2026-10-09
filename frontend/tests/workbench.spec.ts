@@ -307,7 +307,6 @@ test("operator command center exposes pending review batch without opaque IDs", 
     });
   });
 
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.goto("/operations");
   // Technical controls stay hidden during normal use; open them explicitly
   // for legacy backend-control regression coverage.
@@ -320,6 +319,8 @@ test("operator command center exposes pending review batch without opaque IDs", 
     "href",
     "https://example.invalid/job-1",
   );
+  await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute("target", "_blank");
+  await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute("rel", /noopener/);
   await expect(
     page.locator(".operator-batch-card").getByText(
       "Example client — Example delivery destination",
@@ -329,6 +330,19 @@ test("operator command center exposes pending review batch without opaque IDs", 
 
   const release = page.getByRole("button", { name: "Release 1 job" });
   await release.click();
+  const confirmRelease = page.getByRole("dialog", { name: "Release jobs for Example client — Example delivery destination?" });
+  await expect(confirmRelease).toBeVisible();
+  expect(dispatched).toHaveLength(0);
+  await confirmRelease.getByRole("button", { name: "Cancel" }).click();
+  expect(dispatched).toHaveLength(0);
+  await release.click();
+  await expect(confirmRelease).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirmRelease).not.toBeVisible();
+  expect(dispatched).toHaveLength(0);
+  await expect(release).toBeFocused();
+  await release.click();
+  await confirmRelease.getByRole("button", { name: "Send to Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
   await expect(release).toHaveCount(0); // Pending commands hide actions until state is verified.
   expect(dispatched[0]).toMatchObject({
@@ -851,12 +865,20 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
               id: 100 + stateVersion,
               run_number: 100 + stateVersion,
               status: "completed",
-              conclusion: "success",
+              conclusion: "success", // deliberately newer, unrelated run
               created_at: "2026-10-06T20:00:00Z",
               updated_at: `2026-10-06T20:00:0${stateVersion}Z`,
               url: "https://example.invalid/state",
               kind: "delivery",
             },
+            confirmed_run: lastControlRequestId
+              ? {
+                  status: "completed",
+                  conclusion: stateVersion === 1 ? "failure" : "success",
+                  run_number: 90 + stateVersion,
+                  url: "https://github.com/NicoCipher/JobSift/actions/runs/900001",
+                }
+              : null,
             truncated: false,
             profiles: [],
           },
@@ -895,23 +917,29 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     "Example client — Example delivery destination",
   );
 
-  const dialogs: string[] = [];
-  page.on("dialog", async (dialog) => {
-    dialogs.push(dialog.message());
-    await dialog.accept();
-  });
-
   await page.getByRole("combobox", { name: "What do you want to do?" }).selectOption("pause");
   await page.getByRole("button", { name: "Pause delivery" }).click();
-  await expect.poll(() => dialogs.length).toBe(1);
-  expect(dialogs[0]).toContain("Example client — Example delivery destination");
-  expect(dialogs[0]).toContain("ad763a0336d92204");
+  const confirmPause = page.getByRole("dialog", { name: "Confirm delivery action" });
+  await expect(confirmPause).toBeVisible();
+  await expect(confirmPause).toContainText("Example client — Example delivery destination");
+  await confirmPause.getByRole("button", { name: "Pause delivery" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
+  // Latest unrelated run is green; the correlated requested delivery failed.
+  await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=error]")).toContainText("failed operation");
+  const hero = page.locator(".operator-driving-home");
+  await expect(hero.getByRole("heading", { name: "Your requested operation failed" })).toBeVisible();
+  await expect(hero.getByRole("link", { name: "View failed operation" })).toHaveAttribute("href", "https://github.com/NicoCipher/JobSift/actions/runs/900001");
+  // The warning survives a full remount; the newer unrelated green run must not erase it.
+  await page.reload();
+  await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toBeVisible();
+  await expect(page.locator(".operator-driving-home").getByRole("link", { name: "View failed operation" })).toHaveAttribute("href", "https://github.com/NicoCipher/JobSift/actions/runs/900001");
+  await expect(hero.getByRole("heading", { name: "No approval is needed right now" })).toHaveCount(0);
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
 
+  await page.locator("#manual-controls > summary").click();
   const sheetBlock = page
     .locator(".operations-client-block")
     .filter({ has: page.getByRole("heading", { name: "Google Sheet" }) });
@@ -922,7 +950,14 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await sheetBlock.getByRole("textbox", { name: "Profile ID" }).fill("0123456789abcdef");
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
+  await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=success]")).toContainText("successful operation");
+  await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".operator-driving-home").getByRole("heading", { name: "Your requested operation failed" })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("jobsift:unresolved-failed-operation:v1"))).toBeNull();
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
+  await page.locator("#manual-controls > summary").click();
+  await sheetBlock.getByText("Advanced target", { exact: true }).click();
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(sheetTarget).toBeEnabled();
 
@@ -1417,7 +1452,6 @@ test("Review shows authoritative evidence and sends only kept jobs", async ({ pa
     });
   });
 
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.goto("/review");
   await page.getByRole("button", { name: "Load jobs to review" }).click();
 
@@ -1439,6 +1473,10 @@ test("Review shows authoritative evidence and sends only kept jobs", async ({ pa
   });
   await expect(send).toBeEnabled();
   await send.click();
+  const confirmation = page.getByRole("dialog", { name: "Send approved jobs?" });
+  await expect(confirmation).toBeVisible();
+  expect(dispatched).toHaveLength(0);
+  await confirmation.getByRole("button", { name: "Send 1 job" }).click();
 
   await expect.poll(() => dispatched.length).toBe(1);
   expect(dispatched[0]).toMatchObject({
@@ -1752,7 +1790,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await page.getByRole("button", { name: "Create client" }).click();
 
   await expect(page.getByRole("heading", { name: "Acme Software is ready" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open client", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "View clients", exact: true })).toHaveAttribute(
     "href",
     "/clients",
   );

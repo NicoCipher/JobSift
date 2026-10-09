@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { UiIcon } from "@/components/ui-icon";
+import { readOperatorJson } from "@/lib/operator-response";
+import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
+import { ExternalLink } from "@/components/external-link";
+import { useOperatorConfirmation } from "@/components/operator-confirmation";
+import { readRememberedFailure, rememberFailedOperation, clearRememberedFailure, type RememberedFailedOperation } from "@/lib/remembered-operator-failure";
 
 type Run = {
   id: number;
@@ -72,6 +77,12 @@ type OperatorSnapshot = {
   observed_at: string | null;
   control_request_id: string | null;
   confirmed_control_request_id: string | null;
+  confirmed_run?: {
+    status: string;
+    conclusion: string | null;
+    run_number: number;
+    url: string;
+  } | null;
   state_error: string | null;
   run: {
     id: number;
@@ -94,7 +105,6 @@ type ControlStatus = {
   operator_snapshot: OperatorSnapshot;
 };
 
-type ApiError = { error?: { message?: string } };
 
 export type ManagedProfile = {
   profile_id: string;
@@ -129,11 +139,8 @@ function validProfileId(value: string) {
 }
 
 async function readJson(response: Response) {
-  const body = (await response.json()) as ApiError & { data?: unknown };
-  if (!response.ok) throw new Error(body.error?.message ?? "JobSift control request failed.");
-  return body;
+  return readOperatorJson(response, "JobSift control request failed.");
 }
-
 function runLabel(run: Run) {
   if (run.status !== "completed") return run.status;
   return run.conclusion ?? "completed";
@@ -169,21 +176,15 @@ function deliveryOperationButton(operation: string) {
   return "Check status";
 }
 
-function deliveryConfirmation(
-  operation: string,
-  profileId: string,
-  profileLabel: string,
-  batchId: string,
-) {
-  const target = `${profileLabel} (${profileId})`;
+function deliveryConfirmation(operation: string, profileLabel: string) {
   if (operation === "pause") {
-    return `Pause ${target}? New deliveries for this profile will stop until you resume it.`;
+    return "Pause deliveries to " + profileLabel + "? New jobs will wait until you resume deliveries. Already sent jobs stay in the Sheet.";
   }
   if (operation === "release-batch") {
-    return `Release batch ${batchId} for ${target}? This publishes the reviewed batch to the client's registered Sheet and counts it toward today's quota.`;
+    return "Send the current reviewed batch for " + profileLabel + "? JobSift will check the jobs and Sheet again before delivery.";
   }
   if (operation === "discard-batch") {
-    return `Discard batch ${batchId} for ${target}? This permanently removes the unpublished prepared batch.`;
+    return "Discard the waiting batch for " + profileLabel + "? Jobs in this unpublished batch will not be sent.";
   }
   return null;
 }
@@ -230,11 +231,7 @@ function WorkflowRuns({
             {workflow ? `Workflow: ${workflow.state}` : "Workflow status unavailable."}
           </p>
         </div>
-        {workflow ? (
-          <a href={workflow.url} target="_blank" rel="noreferrer">
-            Open in GitHub
-          </a>
-        ) : null}
+        {workflow ? <ExternalLink href={workflow.url}>Open in GitHub</ExternalLink> : null}
       </div>
       {workflow?.runs.length ? (
         <div className="table-scroll">
@@ -252,9 +249,7 @@ function WorkflowRuns({
               {workflow.runs.map((run) => (
                 <tr key={run.id}>
                   <td>
-                    <a href={run.url} target="_blank" rel="noreferrer">
-                      #{run.run_number}
-                    </a>
+                    <ExternalLink href={run.url}>#{run.run_number}</ExternalLink>
                   </td>
                   <td>{run.event}</td>
                   <td>{runLabel(run)}</td>
@@ -282,8 +277,11 @@ export function OperationsControl({
   catalogueIncomplete?: boolean;
 }) {
   const [status, setStatus] = useState<ControlStatus | null>(null);
+  const { ask, confirmationDialog } = useOperatorConfirmation();
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
+  const [failedCommand, setFailedCommand] = useState<RememberedFailedOperation | null>(() => typeof window === "undefined" ? null : readRememberedFailure());
   const [busy, setBusy] = useState(false);
   const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
     profiles.length ? "listed" : "manual",
@@ -340,6 +338,15 @@ export function OperationsControl({
     if (pendingBatches.some((profile) => profile.recovery_required)) {
       return { tone: "caution", title: "A delivery needs safe recovery", detail: "JobSift reported an unfinished Sheet delivery. Inspect it before retrying so jobs are not sent twice.", action: "review", label: "Inspect delivery" };
     }
+    if (failedCommand) {
+      return {
+        tone: "caution",
+        title: "Your requested operation failed",
+        detail: "JobSift confirmed that your command failed. A newer unrelated successful run does not clear this failure. Check the failed operation and the client state before trying again.",
+        action: "failed-command",
+        label: "View failed operation",
+      };
+    }
     if (latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure") {
       return { tone: "caution", title: "The last reported operation failed", detail: "Open the recorded activity to see what failed before deciding whether to try again.", action: "activity", label: "View last activity" };
     }
@@ -378,7 +385,9 @@ export function OperationsControl({
 
   const loadStatus = useCallback(async () => {
     try {
-      const requestId = pendingControlRequestId.current;
+      const pendingId = pendingControlRequestId.current;
+      const remembered = readRememberedFailure();
+      const requestId = pendingId ?? remembered?.requestId ?? null;
       const statusUrl = requestId
         ? `/api/control/status?control_request_id=${encodeURIComponent(requestId)}`
         : "/api/control/status";
@@ -396,6 +405,32 @@ export function OperationsControl({
       ) {
         pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
+        const run = body.data.operator_snapshot.confirmed_run;
+        if (run?.status === "completed" && run.conclusion === "success") {
+          setFailedCommand(null);
+          clearRememberedFailure();
+          setMessageTone("success");
+          setMessage("JobSift confirmed the successful operation. You can continue.");
+        } else if (run?.status === "completed" && run.conclusion === "failure") {
+          const failure = { requestId: confirmedRequestId, runNumber: run.run_number, url: run.url };
+          setFailedCommand(failure);
+          rememberFailedOperation(failure);
+          setMessageTone("error");
+          setMessage("JobSift reported a failed operation. Check the recorded activity and current client state before trying again.");
+        } else {
+          setMessageTone("warning");
+          setMessage("The latest state was received, but the operation result is not confirmed. Check activity before repeating any delivery.");
+        }
+      } else if (remembered && hasConfirmedControlRequest(body.data.operator_snapshot, remembered.requestId)) {
+        // An unrelated newer workflow is never evidence that this command succeeded.
+        const correlated = body.data.operator_snapshot.confirmed_run;
+        if (correlated?.status === "completed" && correlated.conclusion === "failure") {
+          const failure = { requestId: remembered.requestId, runNumber: correlated.run_number, url: correlated.url };
+          setFailedCommand(failure);
+          rememberFailedOperation(failure);
+        }
+        // If historical correlation is missing or inconclusive, keep the warning.
+        // Only a newly requested command's separately confirmed success clears it.
       }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
@@ -404,12 +439,26 @@ export function OperationsControl({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/control/status", { cache: "no-store" })
+    const remembered = readRememberedFailure();
+    const query = remembered
+      ? "?control_request_id=" + encodeURIComponent(remembered.requestId)
+      : "";
+    void fetch("/api/control/status" + query, { cache: "no-store" })
       .then(readJson)
       .then((body) => {
         if (cancelled) return;
-        setStatus((body as { data: ControlStatus }).data);
+        const data = (body as { data: ControlStatus }).data;
+        setStatus(data);
         setStatusError("");
+        if (remembered && hasConfirmedControlRequest(data.operator_snapshot, remembered.requestId)) {
+          const run = data.operator_snapshot.confirmed_run;
+          if (run?.status === "completed" && run.conclusion === "failure") {
+            const failure = { requestId: remembered.requestId, runNumber: run.run_number, url: run.url };
+            setFailedCommand(failure);
+            rememberFailedOperation(failure);
+          }
+          // Neither a missing correlation nor another run's success clears this warning.
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -445,12 +494,14 @@ export function OperationsControl({
       (payload.command === "client-control" && payload.operation !== "list");
     const waitForState = needsVerifiedState || options.waitForState === true;
     if (needsVerifiedState && !stateVerified) {
+      setMessageTone("error");
       setMessage(
         "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish before changing delivery.",
       );
       return;
     }
     setBusy(true);
+    setMessageTone("info");
     setMessage("");
     try {
       const response = await fetch("/api/control/dispatch", {
@@ -466,6 +517,7 @@ export function OperationsControl({
         const requestId = result.data?.control_request_id;
         if (!validControlRequestId(requestId)) {
           pendingControlRequestId.current = null;
+          setMessageTone("warning");
           setMessage(
             "Command accepted, but JobSift could not correlate its confirmation. Controls stay locked until you reload after the workflow finishes.",
           );
@@ -478,6 +530,7 @@ export function OperationsControl({
         setMessage("Command accepted by GitHub Actions.");
       }
     } catch (error) {
+      setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "Command failed.");
     } finally {
       setBusy(false);
@@ -490,12 +543,13 @@ export function OperationsControl({
   ) {
     const label = profileLabel(profile.profile_id);
     if (!label) {
+      setMessageTone("error");
       setMessage("Client name is unavailable, so JobSift will not run this client action.");
       return;
     }
     if (
       operation === "pause" &&
-      !window.confirm(`Pause ${label}? New deliveries will stop until you resume them.`)
+      !(await ask({ title: "Pause client deliveries?", description: `New deliveries for ${label} will stop until you resume them. Existing Sheet entries will not be removed.`, confirmLabel: "Pause deliveries", tone: "danger" }))
     ) {
       return;
     }
@@ -515,6 +569,7 @@ export function OperationsControl({
     if (!profile.batch_id) return;
     const label = profileLabel(profile.profile_id);
     if (!label) {
+      setMessageTone("error");
       setMessage("Client name is unavailable, so JobSift will not allow an irreversible batch action.");
       return;
     }
@@ -523,7 +578,7 @@ export function OperationsControl({
       operation === "release-batch"
         ? "This sends the reviewed jobs to the client's Sheet."
         : "This removes the unpublished batch without sending it.";
-    if (!window.confirm(`${verb} this batch for ${label}? ${effect}`)) return;
+    if (!(await ask({ title: `${verb} jobs for ${label}?`, description: effect, confirmLabel: operation === "release-batch" ? "Send to Sheet" : "Discard prepared jobs", tone: operation === "discard-batch" ? "danger" : "primary" }))) return;
     await send({
       command: "client-control",
       operation,
@@ -560,6 +615,7 @@ export function OperationsControl({
       deliveryTargetMode === "manual" &&
       !validProfileId(overrideProfileId)
     ) {
+      setMessageTone("error");
       setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
       return;
     }
@@ -570,6 +626,7 @@ export function OperationsControl({
           ? overrideProfileId
           : selectedProfileId;
     if (operation !== "list" && !validProfileId(profileId)) {
+      setMessageTone("error");
       setMessage("Choose a listed delivery profile or enter a valid profile ID.");
       return;
     }
@@ -579,13 +636,8 @@ export function OperationsControl({
       deliveryTargetMode === "manual"
         ? "Manual delivery profile"
         : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
-    const confirmation = deliveryConfirmation(
-      operation,
-      profileId,
-      profileLabel,
-      batchId,
-    );
-    if (confirmation && !window.confirm(confirmation)) return;
+    const confirmation = deliveryConfirmation(operation, profileLabel);
+    if (confirmation && !(await ask({title: "Confirm delivery action", description: confirmation, confirmLabel: deliveryOperationButton(operation), tone: operation === "discard-batch" || operation === "pause" ? "danger" : "primary"}))) return;
     await send({
       command: "client-control",
       operation,
@@ -609,12 +661,14 @@ export function OperationsControl({
       data.get("sheet_profile_id_override") ?? "",
     ).trim();
     if (sheetTargetMode === "manual" && !validProfileId(overrideProfileId)) {
+      setMessageTone("error");
       setMessage("Profile ID must be exactly 16 lowercase hexadecimal characters.");
       return;
     }
     const profileId =
       sheetTargetMode === "manual" ? overrideProfileId : selectedProfileId;
     if (!validProfileId(profileId)) {
+      setMessageTone("error");
       setMessage("Choose a listed client Sheet or enter a valid profile ID.");
       return;
     }
@@ -627,9 +681,7 @@ export function OperationsControl({
         : profileSelect?.selectedOptions[0]?.textContent?.trim() ?? profileId;
     if (
       operation === "sheet-disable" &&
-      !window.confirm(
-        `Disable ${profileLabel} (${profileId})? This pauses the profile and blocks new deliveries until the Sheet is verified, re-enabled, and the profile is resumed.`,
-      )
+      !(await ask({ title: "Disable this Google Sheet?", description: `This pauses ${profileLabel} and blocks new deliveries until the Sheet is verified, re-enabled and the client is resumed. No rows are deleted.`, confirmLabel: "Disable Sheet", tone: "danger" }))
     ) {
       return;
     }
@@ -646,6 +698,7 @@ export function OperationsControl({
 
   return (
     <>
+      {confirmationDialog}
       <section
         className="section-block operator-driving-home"
         data-urgency={nextStep.tone}
@@ -689,6 +742,10 @@ export function OperationsControl({
             >
               {nextStep.label} <UiIcon name="arrow-right" size={17} />
             </a>
+          ) : nextStep.action === "failed-command" ? (
+            <ExternalLink className="operator-main-link" href={failedCommand?.url}>
+              {nextStep.label}
+            </ExternalLink>
           ) : nextStep.action === "activity" ? (
             <a className="operator-main-link" href="#last-activity" onClick={() => setShowLastActivity(true)}>
               {nextStep.label} <UiIcon name="arrow-right" size={17} />
@@ -715,8 +772,7 @@ export function OperationsControl({
             : "Last verified update: not available."}
           {" "}A dash means JobSift cannot confirm that figure.
         </p>
-        {statusError ? <p className="error" role="alert">{statusError}</p> : null}
-        {message ? <p className="control-message" role="status">{message}</p> : null}
+        <OperatorFeedback error={statusError} message={message} messageTone={messageTone} onRetry={() => void loadStatus()} />
       </section>
 
       <section className="section-block operator-command-center" id="review-queue" aria-labelledby="operator-now-title">
@@ -728,12 +784,14 @@ export function OperationsControl({
         </div>
 
         {latestSnapshot?.complete === false ? (
-          <div className="error operator-state-recovery" role="alert">
+          <div className="operator-state-recovery">
+            <OperatorNotice tone="error" title="Client state could not be verified">
             <div>
               <strong>Client state could not be verified.</strong>{" "}
               {latestSnapshot.state_error ??
                 "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
             </div>
+            </OperatorNotice>
             <details className="operations-advanced">
               <summary>Advanced recovery (may use Neon)</summary>
               <p>Only try this when database usage is available. It requests a new authoritative client snapshot.</p>
@@ -780,9 +838,7 @@ export function OperationsControl({
               <span className="metadata">Latest state update</span>
               <strong>#{latestSnapshot.run.run_number}</strong>
               {latestSnapshot.run.url ? (
-                <a href={latestSnapshot.run.url} target="_blank" rel="noopener noreferrer">
-                  Open full activity details
-                </a>
+                <ExternalLink href={latestSnapshot.run.url}>Open full activity details</ExternalLink>
               ) : (
                 <span className="metadata">Full activity link unavailable</span>
               )}
@@ -860,9 +916,7 @@ export function OperationsControl({
                           </p>
                         </div>
                         {item.link ? (
-                          <a href={item.link} target="_blank" rel="noopener noreferrer">
-                            Open job
-                          </a>
+                          <ExternalLink href={item.link}>Open job</ExternalLink>
                         ) : (
                           <span className="metadata">Job link unavailable</span>
                         )}
@@ -1085,9 +1139,14 @@ export function OperationsControl({
               type="button"
               disabled={busy || !status?.control_ready || status?.inventory.state !== "active"}
               onClick={() => {
-                if (window.confirm("Pause scheduled inventory refreshes?")) {
-                  void send({ command: "inventory-schedule-pause" });
-                }
+                void ask({
+                  title: "Pause automatic sourcing?",
+                  description: "JobSift will stop scheduled sourcing runs until you resume them. Existing jobs and client deliveries will not be deleted.",
+                  confirmLabel: "Pause sourcing",
+                  tone: "danger",
+                }).then((confirmed) => {
+                  if (confirmed) void send({ command: "inventory-schedule-pause" });
+                });
               }}
             >
               Pause automatic sourcing

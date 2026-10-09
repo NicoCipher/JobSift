@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ManagedProfile } from "@/components/operations-control";
 import { UiIcon } from "@/components/ui-icon";
+import { readOperatorJson } from "@/lib/operator-response";
+import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
+import { ExternalLink } from "@/components/external-link";
+import { useOperatorConfirmation } from "@/components/operator-confirmation";
 
 type PendingItem = {
   ordinal: number;
@@ -47,6 +51,12 @@ type OperatorSnapshot = {
   complete: boolean;
   observed_at: string | null;
   confirmed_control_request_id: string | null;
+  confirmed_run?: {
+    status: string;
+    conclusion: string | null;
+    run_number: number;
+    url: string;
+  } | null;
   state_error: string | null;
   run: {
     run_number: number;
@@ -105,7 +115,6 @@ type ReviewLoad = {
   message?: string;
 };
 
-type ApiError = { error?: { message?: string } };
 
 function validControlRequestId(value: unknown): value is string {
   return (
@@ -117,13 +126,8 @@ function validControlRequestId(value: unknown): value is string {
 }
 
 async function readJson(response: Response) {
-  const body = (await response.json()) as ApiError & { data?: unknown };
-  if (!response.ok) {
-    throw new Error(body.error?.message ?? "JobSift request failed.");
-  }
-  return body;
+  return readOperatorJson(response, "JobSift request failed.");
 }
-
 function count(value: number | null | undefined) {
   return value === null || value === undefined ? "—" : value.toLocaleString();
 }
@@ -167,8 +171,10 @@ export function ClientWorkspace({
   surface: "clients" | "review";
 }) {
   const [status, setStatus] = useState<ControlStatus | null>(null);
+  const { ask, confirmationDialog } = useOperatorConfirmation();
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
   const [busy, setBusy] = useState(false);
   const [awaitingFreshState, setAwaitingFreshState] = useState(false);
   const [reviews, setReviews] = useState<Record<string, ReviewLoad>>({});
@@ -244,22 +250,32 @@ export function ClientWorkspace({
         setAwaitingFreshState(false);
         const context = mutationContext.current;
         mutationContext.current = null;
-        if (context?.expectedSent && context.profileId) {
+        const run = body.data.operator_snapshot.confirmed_run;
+        if (run?.status === "completed" && run.conclusion === "failure") {
+          setMessageTone("error");
+          setMessage("JobSift reported a failed delivery operation. Inspect the current Sheet and client state before trying again; the result may be uncertain.");
+        } else if (run?.status !== "completed" || run.conclusion !== "success") {
+          setMessageTone("warning");
+          setMessage("The new client state is available, but the operation result is not confirmed. Do not retry a Sheet delivery until it is verified.");
+        } else if (context?.expectedSent && context.profileId) {
           const next = body.data.operator_snapshot.profiles.find(
             (profile) => profile.profile_id === context.profileId,
           );
           const delivered = next?.delivered_today ?? 0;
           const before = context.beforeDelivered ?? 0;
           if (!next?.batch_id && delivered >= before + context.expectedSent) {
+            setMessageTone("success");
             setMessage(
               `${context.expectedSent} job${context.expectedSent === 1 ? "" : "s"} sent to ${context.clientName ?? "the client"}'s Sheet.`,
             );
           } else {
+            setMessageTone("warning");
             setMessage(
               "JobSift finished the command. Check the client state below before taking another action.",
             );
           }
         } else {
+          setMessageTone("success");
           setMessage("JobSift confirmed the updated client state.");
         }
       }
@@ -301,12 +317,14 @@ export function ClientWorkspace({
     },
   ) {
     if (!stateVerified) {
+      setMessageTone("error");
       setMessage(
         "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish.",
       );
       return;
     }
     setBusy(true);
+    setMessageTone("info");
     setMessage("");
     try {
       const response = await fetch("/api/control/dispatch", {
@@ -319,6 +337,7 @@ export function ClientWorkspace({
       };
       const requestId = body.data?.control_request_id;
       if (!validControlRequestId(requestId)) {
+        setMessageTone("warning");
         setMessage(
           "Command accepted, but JobSift could not correlate the confirmation. Controls remain locked until you reload after it finishes.",
         );
@@ -331,6 +350,7 @@ export function ClientWorkspace({
       setMessage("JobSift is applying the change…");
       pollForFreshState();
     } catch (error) {
+      setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "The JobSift command failed.");
     } finally {
       setBusy(false);
@@ -344,13 +364,13 @@ export function ClientWorkspace({
   ) {
     if (
       operation === "pause" &&
-      !window.confirm(`Pause ${config.client_name}? New deliveries will stop until you resume them.`)
+      !(await ask({ title: "Pause deliveries?", description: `New deliveries to ${config.client_name} will stop until you resume them. Jobs already sent to the Sheet remain there.`, confirmLabel: "Pause client", tone: "danger" }))
     ) {
       return;
     }
     if (
       operation === "sheet-enable" &&
-      !window.confirm(`Verify and re-enable ${config.client_name}'s Google Sheet? JobSift will check the destination before it allows delivery.`)
+      !(await ask({ title: "Reconnect Google Sheet?", description: `JobSift will verify ${config.client_name}'s destination before it allows new deliveries. It will not send jobs as part of this check.`, confirmLabel: "Verify and enable" }))
     ) {
       return;
     }
@@ -499,10 +519,12 @@ export function ClientWorkspace({
     const removedOrdinals = removed[state.batch_id] ?? [];
     const kept = review.items.filter((item) => !removedOrdinals.includes(item.ordinal));
     if (!kept.length) {
+      setMessageTone("error");
       setMessage("No jobs are selected. Use Discard batch if you want to send none.");
       return;
     }
     if (kept.some((item) => !item.release_ready)) {
+      setMessageTone("error");
       setMessage(
         "One or more kept jobs are no longer safe to release. Remove those jobs or refresh the review evidence.",
       );
@@ -510,9 +532,7 @@ export function ClientWorkspace({
     }
     const label = `${config.client_name}'s Sheet`;
     if (
-      !window.confirm(
-        `Send ${kept.length} job${kept.length === 1 ? "" : "s"} to ${label}? JobSift will re-check freshness, quota, dedupe and Sheet state before writing.`,
-      )
+      !(await ask({title: "Send approved jobs?", description: `Send ${kept.length} job${kept.length === 1 ? "" : "s"} to ${label}? JobSift will re-check freshness, the daily limit, duplicates and Sheet readiness before writing.`, confirmLabel: `Send ${kept.length} ${kept.length === 1 ? "job" : "jobs"}`}))
     ) {
       return;
     }
@@ -541,9 +561,7 @@ export function ClientWorkspace({
   async function discardBatch(config: ManagedProfile, state: ProfileSnapshot) {
     if (!state.batch_id || state.recovery_required) return;
     if (
-      !window.confirm(
-        `Discard the waiting jobs for ${config.client_name}? Nothing in this batch will be sent.`,
-      )
+      !(await ask({title: "Discard this batch?", description: `All waiting jobs for ${config.client_name} will be removed from this unpublished batch. Nothing will be sent to the Sheet.`, confirmLabel: "Discard all jobs", tone: "danger"}))
     ) {
       return;
     }
@@ -562,6 +580,7 @@ export function ClientWorkspace({
   if (surface === "clients") {
     return (
       <div className="operator-workspace">
+        {confirmationDialog}
         <section className="section-block client-page-head">
           <div>
             <h2><UiIcon name="users" size={23}/> Clients</h2>
@@ -590,8 +609,7 @@ export function ClientWorkspace({
             Client controls are unavailable. Return Home to check what&apos;s happening before making changes.
           </div>
         ) : null}
-        {statusError ? <div className="error">{statusError}</div> : null}
-        {message ? <p className="control-message">{message}</p> : null}
+        <OperatorFeedback error={statusError} message={message} messageTone={messageTone} onRetry={() => void loadStatus()} />
         {!stateVerified && status ? (
           <div className="notice">
             Current client state is not fully verified. Actions stay locked until the
@@ -748,6 +766,7 @@ export function ClientWorkspace({
 
   return (
     <div className="operator-workspace">
+      {confirmationDialog}
       <section className="section-block client-page-head">
         <div>
           <h2><UiIcon name="review" size={23}/> Review jobs</h2>
@@ -760,8 +779,7 @@ export function ClientWorkspace({
         </button>
       </section>
 
-      {statusError ? <div className="error">{statusError}</div> : null}
-      {message ? <p className="control-message">{message}</p> : null}
+      <OperatorFeedback error={statusError} message={message} messageTone={messageTone} onRetry={() => void loadStatus()} />
       {!stateVerified && status ? (
         <div className="notice">
           Review actions are locked until JobSift verifies the latest client state.
@@ -799,14 +817,14 @@ export function ClientWorkspace({
                       {state.selected_count === 1 ? "" : "s"} waiting · {config.destination_name}
                     </p>
                   </div>
-                  <Link href={`/clients#${clientAnchor(config)}`}>Back to client</Link>
+                  <Link className="operator-text-link" href={`/clients#${clientAnchor(config)}`}><UiIcon name="arrow-right" size={16}/> Back to client</Link>
                 </div>
 
                 {state.recovery_required ? (
-                  <div className="error">
-                    This batch has an uncertain Sheet write. Normal review/release is locked;
-                    use the safe recovery action from Operations.
-                  </div>
+                  <OperatorNotice tone="error" title="Delivery needs safe recovery">
+                    <p>The last Sheet write is uncertain. Sending again is locked to prevent duplicates.</p>
+                    <Link href="/operations#review-queue">Open safe recovery</Link>
+                  </OperatorNotice>
                 ) : load.state === "idle" ? (
                   <button
                     type="button"
@@ -818,16 +836,10 @@ export function ClientWorkspace({
                 ) : load.state === "queued" || load.state === "in_progress" ? (
                   <div className="review-loading">Checking the prepared jobs and current safety rules…</div>
                 ) : load.state === "failed" ? (
-                  <div className="error">
-                    {load.message ?? "Review evidence could not be loaded."}{" "}
-                    <button
-                      type="button"
-                      disabled={!stateVerified}
-                      onClick={() => void startReview(state)}
-                    >
-                      Try again
-                    </button>
-                  </div>
+                  <OperatorNotice tone="error" title="Couldn't load these jobs" onRetry={stateVerified ? () => void startReview(state) : undefined}>
+                    <p>{load.message ?? "Review evidence could not be loaded."}</p>
+                    <p>No jobs were sent.</p>
+                  </OperatorNotice>
                 ) : review ? (
                   <>
                     <div className="review-summary">
@@ -882,9 +894,7 @@ export function ClientWorkspace({
                               </div>
                               <div className="review-job-actions">
                                 {item.application_link ? (
-                                  <a href={item.application_link} target="_blank" rel="noreferrer">
-                                    Open job
-                                  </a>
+                                  <ExternalLink href={item.application_link}>Open job</ExternalLink>
                                 ) : null}
                                 <button
                                   type="button"

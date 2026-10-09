@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 export type Preferences = {
   theme: "system" | "light" | "dark";
   density: "default" | "compact" | "comfortable";
@@ -60,6 +60,7 @@ export function savePreferences(patch: Partial<Preferences>) {
 }
 export function PresentationSettings() {
   const preferences = usePreferences();
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     // Hydration starts from the server snapshot. Re-read browser storage once
     // mounted and apply it directly; savePreferences keeps the DOM synchronized
@@ -70,6 +71,7 @@ export function PresentationSettings() {
     document.documentElement.dataset.theme = cached.theme;
     document.documentElement.dataset.density = cached.density;
     const notify = window.setTimeout(() => {
+      setReady(true);
       window.dispatchEvent(new Event("jobsift-preferences"));
     }, 0);
     return () => window.clearTimeout(notify);
@@ -80,6 +82,7 @@ export function PresentationSettings() {
         Theme
         <select
           value={preferences.theme}
+          disabled={!ready}
           onChange={(e) =>
             savePreferences({ theme: e.target.value as Preferences["theme"] })
           }
@@ -93,6 +96,7 @@ export function PresentationSettings() {
         Table density
         <select
           value={preferences.density}
+          disabled={!ready}
           onChange={(e) =>
             savePreferences({
               density: e.target.value as Preferences["density"],
@@ -108,6 +112,7 @@ export function PresentationSettings() {
         Character keyboard shortcuts
         <select
           value={preferences.shortcuts ? "enabled" : "disabled"}
+          disabled={!ready}
           onChange={(e) =>
             savePreferences({ shortcuts: e.target.value === "enabled" })
           }

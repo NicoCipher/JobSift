@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readOperatorJson } from "../lib/operator-response";
 
 test("production operator opens Operations and hides obsolete demo routes", async ({ page }) => {
   test.skip(
@@ -45,6 +46,45 @@ test("production operator opens Operations and hides obsolete demo routes", asyn
   await expect(page).toHaveURL(/\/operations\/?$/);
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/operations\/?$/);
+});
+
+
+test("unexpected upstream replies never imply a delivery was confirmed", async () => {
+  await expect(readOperatorJson(new Response("<html>Gateway unavailable</html>", {
+    status: 503, headers: { "Content-Type": "text/html" },
+  }))).rejects.toThrow(/temporarily unavailable/);
+  await expect(readOperatorJson(new Response("not JSON", {
+    status: 202, headers: { "Content-Type": "text/plain" },
+  }))).rejects.toThrow(/not be verified/);
+  await expect(readOperatorJson(new Response(JSON.stringify({ error: { message: "Client state has changed" } }), {
+    status: 409, headers: { "Content-Type": "application/json" },
+  }))).rejects.toThrow("Client state has changed");
+});
+
+test("an unavailable operator status shows a retry without opening unsafe controls", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  let isUnavailable = true;
+  await page.route("**/api/control/status**", (route) =>
+    route.fulfill({
+      status: isUnavailable ? 503 : 200,
+      contentType: "application/json",
+      body: isUnavailable
+        ? JSON.stringify({error: {message: "Temporary status outage"}})
+        : JSON.stringify({data: {
+            control_ready: true,
+            inventory: {name: "Sourcing", state: "active", url: "https://example.com", runs: []},
+            delivery: {name: "Delivery", state: "active", url: "https://example.com", runs: []},
+            operator_snapshot: {complete: true, truncated: false, profiles: [],
+              run: null, observed_at: null, confirmed_control_request_id: null, state_error: null},
+          }}),
+    }),
+  );
+  await page.goto("/operations");
+  await expect(page.locator(".operator-notice[data-tone=error]")).toContainText("Temporary status outage");
+  await expect(page.locator(".operations-primary-action")).toBeHidden();
+  isUnavailable = false;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: "No client delivery state reported yet" })).toBeVisible();
 });
 
 test("fixture development mode retains its authored Jobs test surface", async ({ page }) => {
@@ -348,11 +388,10 @@ test("connection guidance opens the real System Status panel", async ({ page }) 
 test("disabled client Sheet has a guarded re-enable action, not a repeated status check", async ({ page }) => {
   test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
   const operations: string[] = [];
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.route("**/api/control/dispatch", (route) => {
     operations.push((route.request().postDataJSON() as { operation: string }).operation);
-    return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({
-      data: { accepted: true, control_request_id: "11111111-1111-4111-8111-111111111111" },
+    return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({
+      error: { message: "Owner sign-in is required." },
     }) });
   });
   await page.route("**/api/control/status**", (route) => route.fulfill({
@@ -381,6 +420,12 @@ test("disabled client Sheet has a guarded re-enable action, not a repeated statu
   await page.goto("/clients");
   const card = page.locator(".client-card").filter({ hasText: "Test Client" });
   await card.getByRole("button", { name: "Verify and re-enable Sheet" }).click();
+  const confirm = page.getByRole("dialog", { name: "Reconnect Google Sheet?" });
+  await expect(confirm).toBeVisible();
+  expect(operations).toHaveLength(0);
+  await confirm.getByRole("button", { name: "Verify and enable" }).click();
   await expect.poll(() => operations.length).toBe(1);
   expect(operations).toEqual(["sheet-enable"]);
+  await expect(page.locator(".operator-notice[data-tone=error]")).toContainText("Owner sign-in is required.");
+  await expect(page.locator(".operator-notice[data-tone=success]")).toHaveCount(0);
 });
