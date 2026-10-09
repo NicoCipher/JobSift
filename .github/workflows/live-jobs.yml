@@ -31,8 +31,10 @@ on:
           - "100"
           - "150"
           - "200"
+# The scheduled refresh caches shared inventory across client evaluations.
+# Serialize this manual workflow with it so job payloads cannot change mid-match.
 concurrency:
-  group: jobsift-live-production
+  group: jobsift-live-inventory-refresh
   cancel-in-progress: false
 
 permissions:
