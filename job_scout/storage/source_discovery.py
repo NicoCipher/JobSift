@@ -104,17 +104,18 @@ def _health_interval(classification: str) -> timedelta:
 
 
 def _begin_write(connection) -> None:
-    """Start a discovery write without taking JobSift's global Postgres lock."""
+    """Serialize discovery writes without holding JobSift's global writer lock."""
 
-    # SQLite still needs BEGIN IMMEDIATE for local writer serialization.
-    # Production Postgres uses MVCC and constraints for these isolated
-    # source_discovery_* tables; the discovery workflow itself is singleton.
-    statement = (
-        "BEGIN"
-        if getattr(connection, "is_postgres", False)
-        else "BEGIN IMMEDIATE"
-    )
-    connection.execute(statement)
+    if getattr(connection, "is_postgres", False):
+        # Discovery's check-then-insert/update rules need serialization across
+        # *all* callers (including ad-hoc CLI), not only the scheduled workflow.
+        # This transaction-scoped lock covers only source-discovery writers,
+        # so inventory and client delivery can proceed independently.
+        connection.execute("BEGIN")
+        connection.execute("SELECT pg_advisory_xact_lock(1246971974, 1)")
+    else:
+        # SQLite provides the same protection with its immediate writer lock.
+        connection.execute("BEGIN IMMEDIATE")
 
 
 class SourceDiscoveryStore:
