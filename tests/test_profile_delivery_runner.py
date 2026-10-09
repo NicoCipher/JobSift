@@ -243,7 +243,7 @@ def test_profile_runner_loads_inventory_payloads_once_for_many_clients(
     ):
         assert repository is not None
         seen_snapshots.append(recent_inventory_snapshot_loader())
-        return {"action": "prepared"
+        return {"action": "prepared"}
 
     monkeypatch.setattr(profile_delivery_runner, "run_once", fake_run_once)
 
