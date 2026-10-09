@@ -280,6 +280,7 @@ export function OperationsControl({
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
+  const [failedCommand, setFailedCommand] = useState<{ runNumber: number; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [sheetTargetMode, setSheetTargetMode] = useState<TargetMode>(
     profiles.length ? "listed" : "manual",
@@ -335,6 +336,15 @@ export function OperationsControl({
     }
     if (pendingBatches.some((profile) => profile.recovery_required)) {
       return { tone: "caution", title: "A delivery needs safe recovery", detail: "JobSift reported an unfinished Sheet delivery. Inspect it before retrying so jobs are not sent twice.", action: "review", label: "Inspect delivery" };
+    }
+    if (failedCommand) {
+      return {
+        tone: "caution",
+        title: "Your requested operation failed",
+        detail: "JobSift confirmed that your command failed. A newer unrelated successful run does not clear this failure. Check the failed operation and the client state before trying again.",
+        action: "failed-command",
+        label: "View failed operation",
+      };
     }
     if (latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure") {
       return { tone: "caution", title: "The last reported operation failed", detail: "Open the recorded activity to see what failed before deciding whether to try again.", action: "activity", label: "View last activity" };
@@ -394,9 +404,11 @@ export function OperationsControl({
         setAwaitingFreshState(false);
         const run = body.data.operator_snapshot.confirmed_run;
         if (run?.status === "completed" && run.conclusion === "success") {
+          setFailedCommand(null);
           setMessageTone("success");
           setMessage("JobSift confirmed the successful operation. You can continue.");
         } else if (run?.status === "completed" && run.conclusion === "failure") {
+          setFailedCommand({ runNumber: run.run_number, url: run.url });
           setMessageTone("error");
           setMessage("JobSift reported a failed operation. Check the recorded activity and current client state before trying again.");
         } else {
@@ -700,6 +712,10 @@ export function OperationsControl({
             >
               {nextStep.label} <UiIcon name="arrow-right" size={17} />
             </a>
+          ) : nextStep.action === "failed-command" ? (
+            <ExternalLink className="operator-main-link" href={failedCommand?.url}>
+              {nextStep.label}
+            </ExternalLink>
           ) : nextStep.action === "activity" ? (
             <a className="operator-main-link" href="#last-activity" onClick={() => setShowLastActivity(true)}>
               {nextStep.label} <UiIcon name="arrow-right" size={17} />
