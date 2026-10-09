@@ -642,10 +642,20 @@ export function OperationsControl({
 
   return (
     <>
-      <section className="section-block operator-driving-home" aria-labelledby="driving-home-title">
-        <p className="operator-eyebrow">Your JobSift overview</p>
-        <h2 id="driving-home-title">{nextStep.title}</h2>
-        <p>{nextStep.detail}</p>
+      <section
+        className="section-block operator-driving-home"
+        data-urgency={nextStep.tone}
+        aria-labelledby="driving-home-title"
+      >
+        <p className="operator-eyebrow">
+          {nextStep.tone === "caution"
+            ? "Needs a check"
+            : nextStep.tone === "attention"
+              ? "Needs your attention"
+              : "Today at a glance"}
+        </p>
+        <h2 id="driving-home-title" aria-live="polite">{nextStep.title}</h2>
+        <p className="operator-driving-description">{nextStep.detail}</p>
         <div className="operator-driving-actions">
           {nextStep.action === "refresh" ? (
             <button type="button" disabled={busy} onClick={() => void loadStatus()}>
@@ -671,14 +681,15 @@ export function OperationsControl({
           ) : null}
         </div>
         <dl className="operator-driving-metrics" aria-label="Verified client summary">
-          <div><dt>Client reports</dt><dd>{countLabel(reportedClients)}</dd></div>
+          <div><dt>Delivery setups</dt><dd>{countLabel(reportedClients)}</dd></div>
           <div><dt>Jobs sent today</dt><dd>{countLabel(sentToday)}</dd></div>
-          <div><dt>Batches waiting</dt><dd>{countLabel(batchesNeedingAttention)}</dd></div>
+          <div><dt>Reviews to handle</dt><dd>{countLabel(batchesNeedingAttention)}</dd></div>
         </dl>
         <p className="metadata">
-          Latest reported client state: {verifiedSnapshot
-            ? latestSnapshot?.observed_at ?? "Time not reported"
-            : "Not verified"}. A dash means the number is unknown.
+          {verifiedSnapshot && latestSnapshot?.observed_at && !Number.isNaN(Date.parse(latestSnapshot.observed_at))
+            ? `Last verified update: ${new Date(latestSnapshot.observed_at).toLocaleString()}.`
+            : "Last verified update: not available."}
+          {" "}A dash means JobSift cannot confirm that figure.
         </p>
         {statusError ? <p className="error" role="alert">{statusError}</p> : null}
         {message ? <p className="control-message" role="status">{message}</p> : null}
@@ -687,8 +698,8 @@ export function OperationsControl({
       <section className="section-block operator-command-center" id="review-queue" aria-labelledby="operator-now-title">
         <div className="control-heading">
           <div>
-            <h2 id="operator-now-title">Review and follow-up</h2>
-            <p>Only act on a batch when JobSift reports one. Client management is available below.</p>
+            <h2 id="operator-now-title">Your next steps</h2>
+            <p>Only the decisions that actually need you appear here.</p>
           </div>
         </div>
 
@@ -1403,7 +1414,7 @@ export function OperationsControl({
           <dt>Automatic sourcing</dt>
           <dd>{!status || statusError ? "Unknown" : status.inventory.state === "active" ? "Enabled" : "Not active"}</dd>
           <dt>Yield-aware scheduling</dt>
-          <dd>On · 72-hour evidence window · 100 scheduled bonus targets</dd>
+          <dd>Configured: 72-hour evidence window and 100 bonus targets; runtime not verified here</dd>
           <dt>Freshness protection</dt>
           <dd>Only jobs at most 24 hours old can improve source yield</dd>
         </dl>
