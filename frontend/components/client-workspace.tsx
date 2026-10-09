@@ -595,7 +595,11 @@ export function ClientWorkspace({
         <section className="client-grid" aria-label="JobSift clients">
           {configured.length ? (
             configured.map(({ config, state }) => {
-              const waiting = stateVerified ? state?.selected_count ?? null : null;
+              const waiting = !stateVerified || !state
+                ? null
+                : state.batch_id && state.delivery_mode === "review"
+                  ? state.selected_count
+                  : 0;
               const funnel = state?.client_funnel;
               const lastResult =
                 funnel?.overall?.confirmed_matches_0_24h ??
@@ -646,7 +650,20 @@ export function ClientWorkspace({
                   ) : null}
 
                   <div className="client-actions">
-                    {stateVerified && state?.profile_status === "paused" ? (
+                    {stateVerified && state?.recovery_required ? (
+                      <Link className="client-primary-action" href="/operations#review-queue">
+                        Check safe delivery recovery
+                      </Link>
+                    ) : stateVerified && state?.sheet_status !== "ready" ? (
+                      <button
+                        className="client-primary-button"
+                        type="button"
+                        disabled={busy || !state}
+                        onClick={() => state ? void clientAction(config, state, "sheet-check") : undefined}
+                      >
+                        Check Google Sheet
+                      </button>
+                    ) : stateVerified && state?.profile_status === "paused" ? (
                       <button
                         className="client-primary-button"
                         type="button"
@@ -655,14 +672,13 @@ export function ClientWorkspace({
                       >
                         Resume deliveries
                       </button>
-                    ) : null}
-                    {waiting !== null && waiting > 0 ? (
-                      <Link className={state?.profile_status === "paused" ? "" : "client-primary-action"} href={`/review#${clientAnchor(config)}`}>
+                    ) : waiting !== null && waiting > 0 ? (
+                      <Link className="client-primary-action" href={`/review#${clientAnchor(config)}`}>
                         Review {waiting.toLocaleString()} job{waiting === 1 ? "" : "s"}
                       </Link>
                     ) : (
                       <span className="client-action-note">
-                        {waiting === null ? "Waiting for a verified update" : "No jobs waiting for approval"}
+                        {waiting === null ? "Waiting for a verified update" : "No action needed right now"}
                       </span>
                     )}
                     <details className="client-card-details client-more-actions">
@@ -677,13 +693,15 @@ export function ClientWorkspace({
                             Pause deliveries
                           </button>
                         ) : null}
-                        <button
-                          type="button"
-                          disabled={busy || !stateVerified || !state}
-                          onClick={() => state ? void clientAction(config, state, "sheet-check") : undefined}
-                        >
-                          Check Google Sheet
-                        </button>
+                        {state?.sheet_status === "ready" ? (
+                          <button
+                            type="button"
+                            disabled={busy || !stateVerified || !state}
+                            onClick={() => state ? void clientAction(config, state, "sheet-check") : undefined}
+                          >
+                            Check Google Sheet
+                          </button>
+                        ) : null}
                         {state?.sheet_handle && stateVerified ? (
                           <a
                             href={`/api/control/sheet?handle=${encodeURIComponent(state.sheet_handle)}`}
