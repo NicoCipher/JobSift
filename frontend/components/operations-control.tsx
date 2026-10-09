@@ -386,6 +386,8 @@ export function OperationsControl({
       ) {
         pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
+        setMessageTone("success");
+        setMessage("JobSift confirmed the updated state. You can continue.");
       }
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : "Could not load control status.");
