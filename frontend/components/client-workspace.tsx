@@ -646,17 +646,9 @@ export function ClientWorkspace({
                   ) : null}
 
                   <div className="client-actions">
-                    {waiting !== null && waiting > 0 ? (
-                      <Link className="client-primary-action" href={`/review#${clientAnchor(config)}`}>
-                        Review {waiting.toLocaleString()} job{waiting === 1 ? "" : "s"}
-                      </Link>
-                    ) : (
-                      <span className="client-action-note">
-                        {waiting === null ? "Waiting for a verified update" : "No jobs waiting for approval"}
-                      </span>
-                    )}
                     {stateVerified && state?.profile_status === "paused" ? (
                       <button
+                        className="client-primary-button"
                         type="button"
                         disabled={busy || !state}
                         onClick={() => state ? void clientAction(config, state, "resume") : undefined}
@@ -664,6 +656,15 @@ export function ClientWorkspace({
                         Resume deliveries
                       </button>
                     ) : null}
+                    {waiting !== null && waiting > 0 ? (
+                      <Link className={state?.profile_status === "paused" ? "" : "client-primary-action"} href={`/review#${clientAnchor(config)}`}>
+                        Review {waiting.toLocaleString()} job{waiting === 1 ? "" : "s"}
+                      </Link>
+                    ) : (
+                      <span className="client-action-note">
+                        {waiting === null ? "Waiting for a verified update" : "No jobs waiting for approval"}
+                      </span>
+                    )}
                     <details className="client-card-details client-more-actions">
                       <summary>More actions</summary>
                       <div className="client-extra-actions">
