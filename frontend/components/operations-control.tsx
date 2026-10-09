@@ -307,6 +307,54 @@ export function OperationsControl({
   const pendingBatches =
     latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
+  const verifiedSnapshot =
+    Boolean(status) &&
+    !statusError &&
+    !awaitingFreshState &&
+    latestSnapshot?.complete === true &&
+    latestSnapshot.truncated !== true;
+  const reportedClients = verifiedSnapshot ? latestSnapshot?.profiles.length ?? null : null;
+  const sentToday =
+    verifiedSnapshot &&
+    latestSnapshot &&
+    latestSnapshot.profiles.every((profile) => typeof profile.delivered_today === "number")
+      ? latestSnapshot.profiles.reduce((total, profile) => total + (profile.delivered_today ?? 0), 0)
+      : null;
+  const batchesNeedingAttention = verifiedSnapshot ? pendingBatches.length : null;
+  const [showManualControls, setShowManualControls] = useState(false);
+
+  // The overview describes only verified, reported facts. It never treats an
+  // enabled schedule as proof that jobs were found or delivered successfully.
+  const nextStep = (() => {
+    if (!status && !statusError) {
+      return { tone: "neutral", title: "Checking JobSift…", detail: "Reading the last reported state. No sourcing run is being started.", action: "none", label: "" };
+    }
+    if (statusError) {
+      return { tone: "caution", title: "JobSift status is unavailable", detail: "I cannot safely tell you what has been delivered. Try checking again; no jobs will be sent.", action: "refresh", label: "Check again" };
+    }
+    if (!status?.control_ready) {
+      return { tone: "caution", title: "Operator controls need attention", detail: "JobSift cannot safely accept commands. Review the connection details before doing anything else.", action: "controls", label: "View connection details" };
+    }
+    if (!verifiedSnapshot) {
+      return { tone: "caution", title: "Waiting for a verified update", detail: "Client information is incomplete or a command is still being confirmed. Delivery controls stay locked.", action: "refresh", label: "Check status" };
+    }
+    if (pendingBatches.some((profile) => profile.recovery_required)) {
+      return { tone: "caution", title: "A delivery needs safe recovery", detail: "JobSift reported an unfinished Sheet delivery. Inspect it before retrying so jobs are not sent twice.", action: "review", label: "Inspect delivery" };
+    }
+    if (pendingBatches.length) {
+      return { tone: "attention", title: "Jobs are waiting for your decision", detail: "Review the prepared jobs below. Only your approval can release a review-mode batch.", action: "review", label: "Review waiting jobs" };
+    }
+    if (latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure") {
+      return { tone: "caution", title: "The last reported operation failed", detail: "Check the activity details. This does not prove that the regular schedule is working.", action: "controls", label: "View activity" };
+    }
+    if (latestSnapshot?.profiles.length === 0) {
+      return { tone: "neutral", title: "No client delivery state reported yet", detail: "Set up a client or check its status. JobSift will not invent results.", action: "link", label: "Open clients", href: "/clients" };
+    }
+    if (status.inventory.state !== "active") {
+      return { tone: "caution", title: "Automatic sourcing is not confirmed active", detail: "The reported sourcing workflow is not active. Check the schedule before expecting new jobs.", action: "controls", label: "View sourcing controls" };
+    }
+    return { tone: "neutral", title: "No approval is needed right now", detail: "No pending batches were reported and scheduled sourcing is enabled. This does not guarantee that new jobs were found or sent.", action: "link", label: "View clients", href: "/clients" };
+  })();
 
   function profileLabel(profileId: string) {
     const snapshot = latestSnapshot?.profiles.find(
@@ -593,34 +641,47 @@ export function OperationsControl({
 
   return (
     <>
-      <section className="section-block reading operations-intro">
-        <h2>What do you want to do?</h2>
-        <p>
-          Use the three sections below for normal JobSift operation. Technical tuning is
-          still available under Advanced, but you do not need it for day-to-day use.
+      <section className="section-block operator-driving-home" aria-labelledby="driving-home-title">
+        <p className="operator-eyebrow">Your JobSift overview</p>
+        <h2 id="driving-home-title">{nextStep.title}</h2>
+        <p>{nextStep.detail}</p>
+        <div className="operator-driving-actions">
+          {nextStep.action === "refresh" ? (
+            <button type="button" disabled={busy} onClick={() => void loadStatus()}>
+              {nextStep.label}
+            </button>
+          ) : nextStep.action === "controls" ? (
+            <button type="button" onClick={() => setShowManualControls(true)}>
+              {nextStep.label}
+            </button>
+          ) : nextStep.action === "review" ? (
+            <a className="operator-main-link" href="#review-queue">{nextStep.label}</a>
+          ) : nextStep.action === "link" && "href" in nextStep ? (
+            <a className="operator-main-link" href={nextStep.href}>{nextStep.label}</a>
+          ) : null}
+          <button type="button" className="secondary-action" disabled={busy} onClick={() => void loadStatus()}>
+            Refresh status
+          </button>
+        </div>
+        <dl className="operator-driving-metrics" aria-label="Verified client summary">
+          <div><dt>Client reports</dt><dd>{countLabel(reportedClients)}</dd></div>
+          <div><dt>Jobs sent today</dt><dd>{countLabel(sentToday)}</dd></div>
+          <div><dt>Batches waiting</dt><dd>{countLabel(batchesNeedingAttention)}</dd></div>
+        </dl>
+        <p className="metadata">
+          Latest reported client state: {verifiedSnapshot
+            ? latestSnapshot?.observed_at ?? "Time not reported"
+            : "Not verified"}. A dash means the number is unknown.
         </p>
-        <nav className="operations-jump" aria-label="Operations sections">
-          <a href="#find-jobs">Find Jobs</a>
-          <a href="#clients-sheets">Clients &amp; Sheets</a>
-          <a href="#system-status">System Status</a>
-        </nav>
-        {!status?.control_ready ? (
-          <div className="notice">
-            Production controls are currently unavailable. The server-only
-            <code> JOBSIFT_GITHUB_TOKEN</code> must be configured before commands can run.
-          </div>
-        ) : (
-          <div className="control-ready">Production controls are ready</div>
-        )}
-        {statusError ? <div className="error">{statusError}</div> : null}
-        {message ? <p className="control-message">{message}</p> : null}
+        {statusError ? <p className="error" role="alert">{statusError}</p> : null}
+        {message ? <p className="control-message" role="status">{message}</p> : null}
       </section>
 
-      <section className="section-block operator-command-center" aria-labelledby="operator-now-title">
+      <section className="section-block operator-command-center" id="review-queue" aria-labelledby="operator-now-title">
         <div className="control-heading">
           <div>
-            <h2 id="operator-now-title">Right now</h2>
-            <p>See what JobSift is waiting on before you run another command.</p>
+            <h2 id="operator-now-title">Review and follow-up</h2>
+            <p>Only act on a batch when JobSift reports one. Client management is available below.</p>
           </div>
           <button type="button" disabled={busy} onClick={() => void loadStatus()}>
             Refresh status
@@ -662,6 +723,8 @@ export function OperationsControl({
           </div>
         ) : null}
 
+        <details className="operator-optional">
+          <summary>Last recorded activity</summary>
         {latestSnapshot?.run ? (
           <div className="operator-run-strip">
             <div>
@@ -695,6 +758,8 @@ export function OperationsControl({
         ) : (
           <p className="metadata">No production sourcing run has been reported yet.</p>
         )}
+
+        </details>
 
         {pendingBatches.length ? (
           <div className="operator-attention">
@@ -805,35 +870,12 @@ export function OperationsControl({
               </div>
             ))}
           </div>
-        ) : !stateVerified ? null : latestProfile ? (
-          <div className="operator-clear">
-            <strong>No review batch is blocking the listed client state.</strong>
-            <span>JobSift is free to prepare the next delivery batch for the profiles shown.</span>
-          </div>
-        ) : null}
-
-        {latestProfile ? (
-          <div className="operator-mini-grid" aria-label="Current delivery profile state">
-            <span>
-              Profile <strong>{latestProfile.profile_status ?? "Unknown"}</strong>
-            </span>
-            <span>
-              Mode <strong>{latestProfile.delivery_mode ?? "Unknown"}</strong>
-            </span>
-            <span>
-              Sent today{" "}
-              <strong>
-                {countLabel(latestProfile.delivered_today)}/{countLabel(latestProfile.daily_quota)}
-              </strong>
-            </span>
-            <span>
-              Sheet <strong>{latestProfile.sheet_status ?? "Unknown"}</strong>
-            </span>
-          </div>
         ) : null}
 
         {latestSnapshot?.profiles.length ? (
-          <div className="operator-client-list" aria-label="Client delivery controls">
+          <details className="operator-optional">
+            <summary>Manage clients ({latestSnapshot.profiles.length})</summary>
+            <div className="operator-client-list" aria-label="Client delivery controls">
             <div className="control-heading">
               <div>
                 <h3>Clients</h3>
@@ -908,11 +950,14 @@ export function OperationsControl({
                 </article>
               );
             })}
-          </div>
+            </div>
+          </details>
         ) : null}
 
         {latestProfile?.client_funnel ? (
-          <div className="operator-diagnostics">
+          <details className="operator-optional">
+            <summary>Why fewer jobs matched</summary>
+            <div className="operator-diagnostics">
             <div className="control-heading">
               <div>
                 <h3>Latest client funnel</h3>
@@ -927,26 +972,31 @@ export function OperationsControl({
               <span>24–48h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_24_48h)}</strong></span>
               <span>48–72h matches <strong>{countLabel(latestProfile.client_funnel.age_buckets.age_48_72h)}</strong></span>
             </div>
-          </div>
-        ) : pendingBatches.length ? (
-          <div className="notice">
-            The latest client funnel is not available because the pending review batch stopped
-            a new client evaluation. Handle the batch above, then run sourcing again.
-          </div>
+            </div>
+          </details>
         ) : null}
       </section>
 
+      <details
+        className="operator-manual-tools"
+        id="manual-controls"
+        open={showManualControls}
+        onToggle={(event) => setShowManualControls(event.currentTarget.open)}
+      >
+        <summary>Manual controls and technical details</summary>
+        <p className="metadata">Use these only when something needs attention. Manual sourcing can use your database and GitHub Actions limits.</p>
       <section className="section-block operations-section" id="find-jobs">
         <div className="control-heading">
           <div>
             <h2>Find Jobs</h2>
             <p>
-              Start a production sourcing run now. JobSift keeps the same freshness,
-              matching, dedupe, source-verification, and shared-inventory rules.
+              This is an exceptional manual action, not the normal daily workflow.
+              It can use Neon and GitHub Actions capacity. JobSift still enforces
+              freshness, matching and deduplication.
             </p>
           </div>
           <span className="operations-state">
-            Automatic sourcing: {status?.inventory.state === "active" ? "On" : "Off"}
+            Automatic sourcing: {!status ? "Unknown" : status.inventory.state === "active" ? "Enabled" : "Not active"}
           </span>
         </div>
 
@@ -1333,9 +1383,9 @@ export function OperationsControl({
         </p>
         <dl className="facts">
           <dt>Production commands</dt>
-          <dd>{status?.control_ready ? "Ready" : "Unavailable"}</dd>
+          <dd>{!status || statusError ? "Unknown" : status.control_ready ? "Ready" : "Unavailable"}</dd>
           <dt>Automatic sourcing</dt>
-          <dd>{status?.inventory.state === "active" ? "On" : "Off"}</dd>
+          <dd>{!status || statusError ? "Unknown" : status.inventory.state === "active" ? "Enabled" : "Not active"}</dd>
           <dt>Yield-aware scheduling</dt>
           <dd>On · 72-hour evidence window · 100 scheduled bonus targets</dd>
           <dt>Freshness protection</dt>
@@ -1354,6 +1404,7 @@ export function OperationsControl({
 
       <WorkflowRuns title="Sourcing activity" workflow={status?.inventory} />
       <WorkflowRuns title="Client delivery activity" workflow={status?.delivery} />
+      </details>
     </>
   );
 }
