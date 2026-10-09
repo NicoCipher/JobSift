@@ -1080,6 +1080,11 @@ test("1440×900 meets default density; theme and shortcut preferences persist", 
   await page
     .getByRole("combobox", { name: "Theme", exact: true })
     .selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect.poll(() => page.evaluate(() => {
+    const value = localStorage.getItem("jobsift-presentation");
+    return value ? JSON.parse(value).theme : null;
+  })).toBe("dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page
