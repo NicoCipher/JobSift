@@ -696,6 +696,19 @@ async function latestOperatorSnapshot(
       ? requestedControlRequestId
       : null;
 
+  // Correlation must carry the matched workflow's own outcome. The general
+  // "run" field below is the newest chosen run, which may be unrelated.
+  // This reuses the snapshot candidate already loaded above; no extra reads.
+  const confirmedRun =
+    confirmedControlRequestId && requestedSnapshot
+      ? {
+          status: requestedSnapshot.candidate.run.status,
+          conclusion: requestedSnapshot.candidate.run.conclusion,
+          run_number: requestedSnapshot.candidate.run.run_number,
+          url: requestedSnapshot.candidate.run.url,
+        }
+      : null;
+
   if (complete) {
     const funnels = await latestEvaluationFunnels(inventoryRuns, token);
     profiles = profiles.map((profile) => ({
@@ -725,6 +738,7 @@ async function latestOperatorSnapshot(
     observed_at: chosenSnapshot?.observedAt ?? null,
     control_request_id: chosenSnapshot?.controlRequestId ?? null,
     confirmed_control_request_id: confirmedControlRequestId,
+    confirmed_run: confirmedRun,
     state_error: stateError,
   };
 }
@@ -770,6 +784,7 @@ export async function GET(request: NextRequest) {
             observed_at: null,
             control_request_id: null,
             confirmed_control_request_id: null,
+            confirmed_run: null,
             state_error: "Production operator state is unavailable.",
           },
         },
