@@ -707,8 +707,9 @@ export function ClientWorkspace({
             })
           ) : (
             <div className="empty">
-              <h3>No operator clients are configured</h3>
-              <p>Add a production client to the server-side operator catalogue before controls can be used.</p>
+              <h3>{stateVerified ? "No clients added yet" : "Client details are not verified"}</h3>
+              <p>{stateVerified ? "Add your first client to set up job delivery." : "Check your connection before assuming no clients exist."}</p>
+              {stateVerified ? <Link href="/clients/new">Add your first client</Link> : null}
             </div>
           )}
         </section>
@@ -722,8 +723,7 @@ export function ClientWorkspace({
         <div>
           <h2>Review jobs</h2>
           <p>
-            Review the exact backend-prepared jobs before anything is written to a
-            client Sheet.
+            Check the jobs waiting for your approval before anything is sent to a client's Google Sheet.
           </p>
         </div>
         <button type="button" disabled={busy} onClick={() => void loadStatus()}>
@@ -955,9 +955,9 @@ export function ClientWorkspace({
         </div>
       ) : (
         <section className="empty">
-          <h3>No jobs are waiting for review</h3>
-          <p>Run sourcing from Clients. Review-mode matches will appear here when a batch is prepared.</p>
-          <Link href="/clients">Open Clients</Link>
+          <h3>{stateVerified ? "Nothing needs your approval right now" : "JobSift cannot confirm review status yet"}</h3>
+          <p>{stateVerified ? "When jobs are ready for your review, they'll appear here." : "The client update is incomplete. Check status again before taking action."}</p>
+          <Link href="/operations">Back to Home</Link>
         </section>
       )}
     </div>
