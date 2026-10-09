@@ -4,14 +4,13 @@ import {
   newOwnerSession,
   ownerAuthConfigured,
   validOwnerAccessKey,
+  validOwnerLoginOrigin,
 } from "../../../../lib/owner-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const origin = request.headers.get("origin");
-  const site = request.headers.get("sec-fetch-site");
-  if (origin !== request.nextUrl.origin || (site && site !== "same-origin")) {
+  if (!validOwnerLoginOrigin(request)) {
     return NextResponse.json(
       { error: { code: "FORBIDDEN", message: "Invalid owner sign-in origin." } },
       { status: 403, headers: { "Cache-Control": "no-store" } },
