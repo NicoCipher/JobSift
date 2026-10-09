@@ -654,7 +654,7 @@ export function ClientWorkspace({
                       <Link className="client-primary-action" href="/operations#review-queue">
                         Check safe delivery recovery
                       </Link>
-                    ) : stateVerified && state?.sheet_status !== "ready" ? (
+                    ) : stateVerified && state && state.sheet_status !== "ready" ? (
                       <button
                         className="client-primary-button"
                         type="button"
