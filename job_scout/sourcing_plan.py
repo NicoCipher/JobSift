@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
@@ -334,6 +335,15 @@ class InventoryEvaluationReport(BaseModel):
     funnel: ClientFunnelDiagnostics
 
 
+@dataclass(frozen=True)
+class RecentInventorySnapshot:
+    """One retained payload snapshot that can be reused for every client."""
+
+    evaluated_at: datetime
+    retention_hours: int
+    jobs: tuple[Job, ...]
+
+
 class _ObservedCollector:
     def __init__(self, collector: JobCollector) -> None:
         self.collector = collector
@@ -603,6 +613,71 @@ def evaluate_inventory_run(
     )
 
 
+def load_recent_inventory_snapshot(
+    *,
+    repository: SQLiteRepository,
+    retention_hours: int = 72,
+    evaluated_at: datetime | None = None,
+) -> RecentInventorySnapshot:
+    """Load retained active payloads once so many clients can share one DB read."""
+    if retention_hours < 1:
+        raise ValueError("retention_hours must be at least 1")
+    evaluation_time = evaluated_at or datetime.now(UTC)
+    evaluation_time = (
+        evaluation_time.replace(tzinfo=UTC)
+        if evaluation_time.tzinfo is None
+        else evaluation_time.astimezone(UTC)
+    )
+    cutoff = evaluation_time - timedelta(hours=retention_hours)
+    jobs: list[Job] = []
+
+    with repository.connect() as connection:
+        if getattr(connection, "is_postgres", False):
+            # Do the retention cut inside Neon so stale JSON payloads never cross
+            # the wire. TEXT timestamps are canonical ISO-8601 values in this
+            # schema, so timestamptz casts preserve the existing retention rule.
+            cursor = connection.execute(
+                "SELECT j.payload_json FROM jobs j "
+                "LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                "WHERE j.lifecycle!='closed' AND "
+                "COALESCE(NULLIF(e.posted_at,''), "
+                "NULLIF(j.payload_json::jsonb->>'posted_at',''), "
+                "j.first_seen_at)::timestamptz >= ?::timestamptz "
+                "ORDER BY j.id",
+                (cutoff.isoformat(),),
+            )
+            for row in cursor:
+                jobs.append(Job.model_validate_json(row["payload_json"]))
+        else:
+            # Keep SQLite semantics independent of JSON SQL extensions.
+            cursor = connection.execute(
+                "SELECT j.payload_json,j.first_seen_at,"
+                "e.posted_at AS retention_posted_at "
+                "FROM jobs j LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                "WHERE j.lifecycle!='closed' ORDER BY j.id"
+            )
+            for row in cursor:
+                job = Job.model_validate_json(row["payload_json"])
+                retention_posted_at = (
+                    datetime.fromisoformat(row["retention_posted_at"])
+                    if row["retention_posted_at"]
+                    else None
+                )
+                basis = retention_basis(
+                    retention_posted_at=retention_posted_at,
+                    posted_at=job.posted_at,
+                    first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+                )
+                if basis >= cutoff:
+                    jobs.append(job)
+
+    return RecentInventorySnapshot(
+        evaluated_at=evaluation_time,
+        retention_hours=retention_hours,
+        jobs=tuple(jobs),
+    )
+
+
 def evaluate_recent_inventory(
     *,
     repository: SQLiteRepository,
@@ -610,6 +685,7 @@ def evaluate_recent_inventory(
     retention_hours: int = 72,
     evaluated_at: datetime | None = None,
     match_scope_id: str | None = None,
+    snapshot: RecentInventorySnapshot | None = None,
 ) -> tuple[InventoryEvaluationReport, tuple[str, ...]]:
     """Evaluate the currently retained shared inventory for one client.
 
@@ -626,6 +702,12 @@ def evaluate_recent_inventory(
         else evaluation_time.astimezone(UTC)
     )
     cutoff = evaluation_time - timedelta(hours=retention_hours)
+    if snapshot is not None:
+        if snapshot.retention_hours != retention_hours:
+            raise ValueError("snapshot retention window does not match evaluation")
+        if snapshot.evaluated_at != evaluation_time:
+            raise ValueError("snapshot time does not match evaluation time")
+
     funnel = ClientFunnelAccumulator(evaluation_time)
     matched = 0
     needs_review = 0
@@ -636,27 +718,48 @@ def evaluate_recent_inventory(
     scoped_rows: list[tuple[object, ...]] = []
     with repository.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        cursor = connection.execute(
-            "SELECT j.id,j.payload_json,j.first_seen_at,"
-            "e.posted_at AS retention_posted_at "
-            "FROM jobs j LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
-            "WHERE j.lifecycle!='closed' "
-            "ORDER BY j.id"
-        )
-        for row in cursor:
-            job = Job.model_validate_json(row["payload_json"])
-            retention_posted_at = (
-                datetime.fromisoformat(row["retention_posted_at"])
-                if row["retention_posted_at"]
-                else None
-            )
-            basis = retention_basis(
-                retention_posted_at=retention_posted_at,
-                posted_at=job.posted_at,
-                first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
-            )
-            if basis < cutoff:
-                continue
+        if snapshot is None:
+            if getattr(connection, "is_postgres", False):
+                cursor = connection.execute(
+                    "SELECT j.payload_json FROM jobs j "
+                    "LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                    "WHERE j.lifecycle!='closed' AND "
+                    "COALESCE(NULLIF(e.posted_at,''), "
+                    "NULLIF(j.payload_json::jsonb->>'posted_at',''), "
+                    "j.first_seen_at)::timestamptz >= ?::timestamptz "
+                    "ORDER BY j.id",
+                    (cutoff.isoformat(),),
+                )
+                jobs = tuple(
+                    Job.model_validate_json(row["payload_json"]) for row in cursor
+                )
+            else:
+                cursor = connection.execute(
+                    "SELECT j.payload_json,j.first_seen_at,"
+                    "e.posted_at AS retention_posted_at "
+                    "FROM jobs j LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
+                    "WHERE j.lifecycle!='closed' ORDER BY j.id"
+                )
+                retained_jobs: list[Job] = []
+                for row in cursor:
+                    job = Job.model_validate_json(row["payload_json"])
+                    retention_posted_at = (
+                        datetime.fromisoformat(row["retention_posted_at"])
+                        if row["retention_posted_at"]
+                        else None
+                    )
+                    basis = retention_basis(
+                        retention_posted_at=retention_posted_at,
+                        posted_at=job.posted_at,
+                        first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+                    )
+                    if basis >= cutoff:
+                        retained_jobs.append(job)
+                jobs = tuple(retained_jobs)
+        else:
+            jobs = snapshot.jobs
+
+        for job in jobs:
             match = match_job(job, brief).model_copy(
                 update={"evaluated_at": evaluation_time}
             )

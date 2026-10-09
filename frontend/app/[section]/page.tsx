@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createHash } from "node:crypto";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { api } from "@/lib/api/client";
 import { liveMode, operatorMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
@@ -48,14 +48,9 @@ export default async function SectionPage({
   const { section } = await params;
   if (!titles[section]) notFound();
   const focusedSections = ["operations", "clients", "review", "settings"];
+  // Old demonstration sections must never appear in production operator mode.
   if (operatorMode && !focusedSections.includes(section)) {
-    return (
-      <div className="section-content">
-        <h1>{titles[section]}</h1>
-        <p>This view is not connected to the production operator workspace yet.</p>
-        <Link href="/clients">Open Clients</Link>
-      </div>
-    );
+    redirect("/operations");
   }
   if (liveMode && !focusedSections.includes(section)) {
     return (

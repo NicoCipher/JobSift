@@ -13,7 +13,7 @@ from job_scout.delivery_profiles import (
 from job_scout.export.batch_sheets import GoogleSheetsGateway
 from job_scout.live_runner import LiveRunnerConfig, run_once
 from job_scout.operator_clients import OperatorClientStore
-from job_scout.sourcing_plan import load_sourcing_plan
+from job_scout.sourcing_plan import load_recent_inventory_snapshot, load_sourcing_plan
 from job_scout.storage.factory import create_repository
 
 # Backward-compatible module attribute for older callers/tests; runtime uses create_repository.
@@ -112,6 +112,21 @@ def run_active_profiles(
         profiles = (selected,)
     results: list[dict[str, object]] = []
     gateway = GoogleSheetsGateway() if profiles else None
+
+    # The retained job payloads are the largest recurring Neon read. Load them
+    # only when a profile actually reaches matching, then reuse the same
+    # immutable snapshot for every later client in this invocation.
+    recent_inventory_snapshot = None
+
+    def shared_inventory_snapshot():
+        nonlocal recent_inventory_snapshot
+        if recent_inventory_snapshot is None:
+            recent_inventory_snapshot = load_recent_inventory_snapshot(
+                repository=repository,
+                retention_hours=retention_hours,
+            )
+        return recent_inventory_snapshot
+
     for profile in profiles:
         try:
             assert gateway is not None
@@ -158,6 +173,7 @@ def run_active_profiles(
                     source_before_delivery=False,
                 ),
                 repository=repository,
+                recent_inventory_snapshot_loader=shared_inventory_snapshot,
                 **runtime_kwargs,
             )
             result["sheet_reconciliation"] = reconciliation

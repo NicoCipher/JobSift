@@ -440,3 +440,61 @@ def test_active_profile_binding_supports_durable_operator_brief(tmp_path):
     )
     assert loaded == [brief]
     monkeypatch.undo()
+
+
+
+def test_retained_workday_postgres_reads_title_scalars_not_full_payload():
+    queries = []
+
+    class Cursor:
+        def fetchall(self):
+            return [
+                {
+                    "source_board_id": "tenant/site",
+                    "source_job_id": "R-match",
+                    "payload_source": "workday",
+                    "payload_board_id": "tenant/site",
+                    "payload_source_job_id": "R-match",
+                    "title": "Software Engineer",
+                },
+                {
+                    "source_board_id": "tenant/site",
+                    "source_job_id": "R-skip",
+                    "payload_source": "workday",
+                    "payload_board_id": "tenant/site",
+                    "payload_source_job_id": "R-skip",
+                    "title": "Sales Associate",
+                },
+            ]
+
+    class Connection:
+        is_postgres = True
+
+        def execute(self, statement, _parameters=()):
+            queries.append(statement)
+            return Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class Repository:
+        def connect(self):
+            return Connection()
+
+    bindings = workday_production.resolve_retained_workday_candidate_bindings(
+        repository=Repository(),
+        briefs=[SearchBrief(client_id="client-a", target_roles=["Software Engineer"])],
+    )
+
+    assert bindings == [
+        workday_production.WorkdayRetainedCandidateBinding(
+            board_id="tenant/site",
+            source_job_ids=["R-match"],
+        )
+    ]
+    assert len(queries) == 1
+    assert "payload_json::jsonb->>'title'" in queries[0]
+    assert "source_board_id,source_job_id,payload_json FROM jobs" not in queries[0]

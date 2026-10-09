@@ -110,6 +110,29 @@ class _RecordingConnection:
         return _EmptyCursor()
 
 
+def test_clean_postgres_startup_skips_global_writer_lock() -> None:
+    repository = object.__new__(PostgresRepository)
+    connection = _RecordingConnection()
+
+    repository._repair_legacy_delivery_groups_if_needed(connection)
+
+    statements = [statement for statement, _parameters in connection.execute_calls]
+    assert statements == [
+        (
+            "SELECT 1 FROM jobs j LEFT JOIN posting_delivery_groups g "
+            "ON g.job_id=j.id WHERE g.job_id IS NULL LIMIT 1"
+        ),
+        (
+            "SELECT 1 FROM exports e "
+            "JOIN posting_delivery_groups g ON g.job_id=e.job_id "
+            "LEFT JOIN group_deliveries d ON d.group_id=g.group_id "
+            "AND d.client_id=e.client_id AND d.destination=e.destination "
+            "WHERE d.group_id IS NULL LIMIT 1"
+        ),
+    ]
+    assert "BEGIN IMMEDIATE" not in statements
+
+
 class _CapacityJob:
     def __init__(self, index: int):
         now = datetime(2026, 10, 6, tzinfo=UTC)

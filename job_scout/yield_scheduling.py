@@ -87,15 +87,32 @@ def load_target_yield_state(
         ).fetchall()
         membership_rows = connection.execute(
             "SELECT o.run_id,o.target_identity,o.source,o.completed_at,"
-            "r.job_id,j.payload_json "
+            "r.job_id "
             "FROM inventory_target_observations o "
             "JOIN inventory_run_jobs r "
             "ON r.run_id=o.run_id AND r.target_identity=o.target_identity "
-            "JOIN jobs j ON j.id=r.job_id "
             "WHERE o.status IN ('success','partial') AND o.completed_at>=? "
             "ORDER BY o.completed_at,o.target_identity,r.job_id",
             (cutoff.isoformat(),),
         ).fetchall()
+        # A posting can appear in many hourly observations. Fetch its large JSON
+        # payload once per planning run instead of once per membership row.
+        payload_rows = connection.execute(
+            "SELECT j.id,j.payload_json FROM jobs j "
+            "JOIN ("
+            "SELECT DISTINCT r.job_id FROM inventory_target_observations o "
+            "JOIN inventory_run_jobs r "
+            "ON r.run_id=o.run_id AND r.target_identity=o.target_identity "
+            "WHERE o.status IN ('success','partial') AND o.completed_at>=?"
+            ") retained ON retained.job_id=j.id "
+            "ORDER BY j.id",
+            (cutoff.isoformat(),),
+        ).fetchall()
+
+    jobs_by_id = {
+        row["id"]: Job.model_validate_json(row["payload_json"])
+        for row in payload_rows
+    }
 
     for row in observation_rows:
         target_identity = row["target_identity"]
@@ -106,7 +123,9 @@ def load_target_yield_state(
         target_identity = row["target_identity"]
         if approved.get(target_identity) != row["source"]:
             continue
-        job = Job.model_validate_json(row["payload_json"])
+        job = jobs_by_id.get(row["job_id"])
+        if job is None:
+            continue
         observed_at = datetime.fromisoformat(row["completed_at"])
         if not _fresh_24h(job, observed_at):
             continue

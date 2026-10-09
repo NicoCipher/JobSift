@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -20,6 +21,7 @@ from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
 from job_scout.sourcing_plan import (
+    RecentInventorySnapshot,
     SourcingPlan,
     collect_inventory_plan,
     evaluate_inventory_run,
@@ -336,6 +338,8 @@ def run_once(
     plan_id_override: str | None = None,
     brief_revision_id_override: str | None = None,
     brief_sha256_override: str | None = None,
+    recent_inventory_snapshot: RecentInventorySnapshot | None = None,
+    recent_inventory_snapshot_loader: Callable[[], RecentInventorySnapshot] | None = None,
 ) -> dict[str, object]:
     config.database_path.parent.mkdir(parents=True, exist_ok=True)
     config.csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -692,11 +696,22 @@ def run_once(
         failures = _source_failures(report)
         completeness = "complete" if report.status == "success" else "partial"
     else:
+        if (
+            recent_inventory_snapshot is None
+            and recent_inventory_snapshot_loader is not None
+        ):
+            recent_inventory_snapshot = recent_inventory_snapshot_loader()
         evaluation, candidate_ids = evaluate_recent_inventory(
             repository=repository,
             brief=brief,
             retention_hours=config.inventory_retention_hours,
+            evaluated_at=(
+                recent_inventory_snapshot.evaluated_at
+                if recent_inventory_snapshot is not None
+                else None
+            ),
             match_scope_id=match_scope_id,
+            snapshot=recent_inventory_snapshot,
         )
         scope = f"{plan_id}:{evaluation.run_id}"
         failures = ()

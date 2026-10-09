@@ -11,7 +11,7 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
-  if (operatorMode) redirect("/clients");
+  if (operatorMode) redirect("/operations");
 
   const session = await api.getSession();
   const client = await api.getClient(session.data.client_scopes[0].client_id);

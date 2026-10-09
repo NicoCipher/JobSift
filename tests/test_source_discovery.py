@@ -18,10 +18,39 @@ from job_scout.source_discovery import (
     overlay_admitted_targets,
     run_once,
 )
-from job_scout.storage.source_discovery import SourceDiscoveryStore
+from job_scout.storage.source_discovery import SourceDiscoveryStore, _begin_write
 from job_scout.storage.sqlite import SQLiteRepository
 
 NOW = datetime(2026, 10, 4, 0, 0, tzinfo=UTC)
+
+
+class _TransactionRecorder:
+    def __init__(self, *, is_postgres: bool) -> None:
+        self.is_postgres = is_postgres
+        self.statements: list[str] = []
+
+    def execute(self, statement: str):
+        self.statements.append(statement)
+
+
+def test_discovery_postgres_write_uses_scoped_transaction_lock() -> None:
+    connection = _TransactionRecorder(is_postgres=True)
+
+    _begin_write(connection)
+
+    assert connection.statements == [
+        "BEGIN",
+        "SELECT pg_advisory_xact_lock(1246971974, 1)",
+    ]
+    assert "BEGIN IMMEDIATE" not in connection.statements
+
+
+def test_discovery_sqlite_write_keeps_immediate_writer_lock() -> None:
+    connection = _TransactionRecorder(is_postgres=False)
+
+    _begin_write(connection)
+
+    assert connection.statements == ["BEGIN IMMEDIATE"]
 
 
 def _base_registry() -> ProductionSourceRegistry:

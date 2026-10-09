@@ -2,7 +2,7 @@
 
 ## Owner-only access (public GitHub repository)
 
-**Do not merge or deploy the owner-auth change before configuring BOTH secrets.**
+**Configure BOTH owner secrets before deploying this owner-auth change.**
 Keep Vercel Authentication enabled for all deployment targets. Vercel shareable
 links and automation bypasses are not owner identity checks.
 
@@ -112,9 +112,18 @@ server-side and gives the browser only a short-lived opaque Sheet handle.
 
 ## Normal operator workflow
 
-Production operators land on `/clients`. The normal path is now:
+Production operators land on `/operations`. This is the main control panel
+for the sole operator. `/clients` remains available for client setup and
+delivery details, and `/review` remains available for approved-batch review.
+The normal path is:
 
-`Clients → Add client → Find jobs → Review → Send to client Sheet`
+`Operations → Add client → Find jobs → Review → Send to client Sheet`
+
+The old development Jobs and Dashboard pages are not part of the production
+operator experience. In production operator mode, `/jobs` and legacy sections
+such as `/dashboard` redirect to `/operations` rather than showing example
+or stale job data. Fixture and local-service modes retain their existing routes
+for development and testing.
 
 `/clients` shows the human-readable client name, active/paused state,
 review/auto mode, daily limit, sent-today count, waiting review count, Sheet
@@ -136,9 +145,8 @@ Keep/Remove decisions are applied through a generation-bound
 for freshness, quota, history/dedupe, profile state, destination state and
 uncertain Sheet-write recovery immediately before delivery.
 
-`/operations` remains the advanced/recovery surface rather than the normal
-operator workflow. GitHub Actions are transitional server-side machinery and are
-not modeled in the normal UI.
+`/operations` is the normal operator home and includes advanced/recovery controls.
+GitHub Actions remain transitional server-side machinery, not a separate operator UI.
 
 
 ## Production operator mode
@@ -150,8 +158,8 @@ outer authenticated boundary, and all mutations still pass through the
 same-origin server routes and backend guards.
 
 Operator mode does not create or depend on a fictional session/client. The shell
-shows only Clients, Review, Operations and Settings. Direct access to the legacy
-fixture Jobs route redirects to Clients so development evidence cannot be
+shows only Operations, Clients, Review and Settings. Direct access to the legacy
+fixture Jobs route redirects to Operations so development evidence cannot be
 mistaken for production data.
 
 `NEXT_PUBLIC_JOBSIFT_LIVE=1` has a different meaning: it is reserved for the
@@ -184,9 +192,10 @@ requires a provisioned database and explicit private catalogue before the live
 view can show jobs.
 
 The default development mode still uses explicitly fictional evidence for the
-legacy Jobs views. In production operator mode and local-service mode, `/`
-redirects to `/clients`; in fixture development mode it redirects to `/jobs`. Production mutation routes
-remain server-side and fail closed when their credentials/catalogue are absent.
+legacy Jobs views. The root `/` redirects to `/operations` in production operator
+mode, `/clients` in local-service mode and `/jobs` in fixture development mode.
+Production mutation routes remain server-side and fail closed when their
+credentials/catalogue are absent.
 
 ## Run and verify
 
@@ -226,9 +235,9 @@ The API subset exposes convenience reads for one registered example brief, run a
 
 ## Work surfaces
 
-Navigation prioritizes Clients, Review and Operations for the production
-operator workflow, with Jobs and legacy evidence surfaces still available where
-enabled. Secondary routes are deliberately small read-only evidence views. Settings persist only theme, density and character-shortcut preferences.
+Navigation prioritizes Operations as the production home with Clients and Review
+for supporting tasks. Jobs and legacy evidence surfaces are only available in
+nonproduction fixture/local-service modes. Secondary routes are deliberately small read-only evidence views. Settings persist only theme, density and character-shortcut preferences.
 
 Desktop uses a 48px top bar, 200px navigation and a 400px contextual detail pane where room permits. At narrower widths detail becomes the full work surface with a URL-addressable selection. Mobile rows retain the primary facts; all evidence is available in detail. No bulk-selection checkboxes or unsupported mutation controls are rendered.
 
