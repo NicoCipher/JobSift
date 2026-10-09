@@ -96,7 +96,7 @@ jobs:
             exit 1
           fi
           location="$(curl -sS -o /dev/null -D - http://127.0.0.1:3100/jobs | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
-          test "$location" = "/clients"
+          test "$location" = "/operations"
       - name: Install browser
         run: npx playwright install --with-deps chrome
       - name: Frontend tests
