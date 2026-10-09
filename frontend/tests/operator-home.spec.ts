@@ -191,6 +191,26 @@ test("failed operation gives one direct link to its recorded activity", async ({
   await expect(page.locator("#manual-controls")).not.toHaveAttribute("open", "");
 });
 
+test("private owner navigation stays usable at 360px", async ({ page }) => {
+  test.skip(
+    process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR !== "1",
+    "Owner mobile dock exists only in production operator mode.",
+  );
+  const ownerTestKey = process.env.JOBSIFT_OWNER_TEST_KEY;
+  expect(ownerTestKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto("/");
+  await page.getByLabel("Owner access key").fill(ownerTestKey!);
+  await page.getByRole("button", { name: "Unlock JobSift" }).click();
+  await expect(page).toHaveURL(/\/operations\/?$/);
+  await expect(page.locator(".mobile-dock")).toBeVisible();
+  await expect(page.locator(".mobile-dock a")).toHaveCount(4);
+  await expect(page.locator(".mobile-dock a[aria-current=page]")).toContainText("Home");
+  await expect(page.locator(".workspace-navigation")).toBeHidden();
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(width).toBeLessThanOrEqual(360);
+});
+
 test("mobile owner overview stays readable without exposing manual controls", async ({ page }) => {
   test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
   await page.setViewportSize({ width: 360, height: 800 });
@@ -212,11 +232,6 @@ test("mobile owner overview stays readable without exposing manual controls", as
     }),
   );
   await page.goto("/operations");
-  await expect(page.locator(".mobile-dock")).toBeVisible();
-  await expect(page.locator(".mobile-dock a")).toHaveCount(4);
-  await expect(page.locator(".mobile-dock a[aria-current=page]")).toContainText("Home");
-  await expect(page.locator(".workspace-navigation")).toBeHidden();
-
   await expect(page.locator(".operator-driving-home")).toBeVisible();
   await expect(page.locator(".operations-primary-action")).toBeHidden();
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
