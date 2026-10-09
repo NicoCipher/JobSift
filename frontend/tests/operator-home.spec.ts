@@ -348,7 +348,6 @@ test("connection guidance opens the real System Status panel", async ({ page }) 
 test("disabled client Sheet has a guarded re-enable action, not a repeated status check", async ({ page }) => {
   test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
   const operations: string[] = [];
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.route("**/api/control/dispatch", (route) => {
     operations.push((route.request().postDataJSON() as { operation: string }).operation);
     return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({
@@ -381,6 +380,10 @@ test("disabled client Sheet has a guarded re-enable action, not a repeated statu
   await page.goto("/clients");
   const card = page.locator(".client-card").filter({ hasText: "Test Client" });
   await card.getByRole("button", { name: "Verify and re-enable Sheet" }).click();
+  const confirm = page.getByRole("dialog", { name: "Reconnect Google Sheet?" });
+  await expect(confirm).toBeVisible();
+  expect(operations).toHaveLength(0);
+  await confirm.getByRole("button", { name: "Verify and enable" }).click();
   await expect.poll(() => operations.length).toBe(1);
   expect(operations).toEqual(["sheet-enable"]);
 });
