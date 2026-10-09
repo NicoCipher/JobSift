@@ -559,7 +559,7 @@ export function ClientWorkspace({
           <div>
             <h2>Clients</h2>
             <p>
-              See what's been sent, what needs review, and whether each Google Sheet is connected.
+              See what&apos;s been sent, what needs review, and whether each Google Sheet is connected.
             </p>
           </div>
           <div className="client-page-actions">
@@ -580,7 +580,7 @@ export function ClientWorkspace({
 
         {status && !status.control_ready ? (
           <div className="notice" role="status">
-            Client controls are unavailable. Return Home to check what's happening before making changes.
+            Client controls are unavailable. Return Home to check what&apos;s happening before making changes.
           </div>
         ) : null}
         {statusError ? <div className="error">{statusError}</div> : null}
@@ -724,7 +724,7 @@ export function ClientWorkspace({
         <div>
           <h2>Review jobs</h2>
           <p>
-            Check the jobs waiting for your approval before anything is sent to a client's Google Sheet.
+            Check the jobs waiting for your approval before anything is sent to a client&apos;s Google Sheet.
           </p>
         </div>
         <button type="button" disabled={busy} onClick={() => void loadStatus()}>
