@@ -116,7 +116,7 @@ export function Shell({
           <span className="brand-symbol"><UiIcon name="layers" size={23} /></span>
           <span className="brand-name">Job<span>Sift</span></span>
         </Link>
-        <span className="workspace-chip"><UiIcon name="lock" size={15}/>{clientScope}</span>
+        <span className={operatorMode ? "workspace-chip" : "client-scope"}>{operatorMode ? <UiIcon name="lock" size={15} /> : null}{clientScope}</span>
         <span className="operator">{operatorLabel}</span>
       </header>
       <div className="shell">
