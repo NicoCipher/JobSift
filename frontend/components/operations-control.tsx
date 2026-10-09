@@ -731,6 +731,52 @@ export function OperationsControl({
           </div>
         ) : null}
 
+        {latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure" ? (
+        <details
+          className="operator-optional"
+          id="last-activity"
+          open={showLastActivity}
+          onToggle={(event) => setShowLastActivity(event.currentTarget.open)}
+        >
+          <summary>Last recorded activity</summary>
+        {latestSnapshot?.run ? (
+          <div className="operator-run-strip">
+            <div>
+              <span className="metadata">Latest state update</span>
+              <strong>#{latestSnapshot.run.run_number}</strong>
+            </div>
+            <div>
+              <span className="metadata">Result</span>
+              <strong>
+                {latestSnapshot.run.status === "completed"
+                  ? latestSnapshot.run.conclusion ?? "completed"
+                  : latestSnapshot.run.status}
+              </strong>
+              {latestSnapshot.run.kind ? (
+                <span className="metadata">
+                  {latestSnapshot.run.kind === "inventory"
+                    ? "Sourcing"
+                    : latestSnapshot.run.kind === "delivery"
+                      ? "Delivery"
+                      : latestSnapshot.run.kind === "provision"
+                        ? "Client onboarding"
+                        : "Client setup"}
+                </span>
+              ) : null}
+            </div>
+            <div>
+              <span className="metadata">Finished</span>
+              <strong>{new Date(latestSnapshot.run.updated_at).toLocaleString()}</strong>
+            </div>
+          </div>
+        ) : (
+          <p className="metadata">No production sourcing run has been reported yet.</p>
+        )}
+
+        </details>
+
+        ) : null}
+
         {pendingBatches.length ? (
           <div className="operator-attention">
             <div>
@@ -945,49 +991,6 @@ export function OperationsControl({
             </div>
           </details>
         ) : null}
-        <details
-          className="operator-optional"
-          id="last-activity"
-          open={showLastActivity}
-          onToggle={(event) => setShowLastActivity(event.currentTarget.open)}
-        >
-          <summary>Last recorded activity</summary>
-        {latestSnapshot?.run ? (
-          <div className="operator-run-strip">
-            <div>
-              <span className="metadata">Latest state update</span>
-              <strong>#{latestSnapshot.run.run_number}</strong>
-            </div>
-            <div>
-              <span className="metadata">Result</span>
-              <strong>
-                {latestSnapshot.run.status === "completed"
-                  ? latestSnapshot.run.conclusion ?? "completed"
-                  : latestSnapshot.run.status}
-              </strong>
-              {latestSnapshot.run.kind ? (
-                <span className="metadata">
-                  {latestSnapshot.run.kind === "inventory"
-                    ? "Sourcing"
-                    : latestSnapshot.run.kind === "delivery"
-                      ? "Delivery"
-                      : latestSnapshot.run.kind === "provision"
-                        ? "Client onboarding"
-                        : "Client setup"}
-                </span>
-              ) : null}
-            </div>
-            <div>
-              <span className="metadata">Finished</span>
-              <strong>{new Date(latestSnapshot.run.updated_at).toLocaleString()}</strong>
-            </div>
-          </div>
-        ) : (
-          <p className="metadata">No production sourcing run has been reported yet.</p>
-        )}
-
-        </details>
-
       </section>
 
       <details
