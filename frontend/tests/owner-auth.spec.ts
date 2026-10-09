@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { issueOwnerSession, verifyOwnerSession } from "../lib/owner-auth";
+import { NextRequest } from "next/server";
+import { issueOwnerSession, validOwnerLoginOrigin, verifyOwnerSession } from "../lib/owner-auth";
 
 test("owner session signatures cannot be forged or used after expiration", () => {
   const secret = randomBytes(32);
@@ -31,4 +32,23 @@ test("owner-only API rejects unauthenticated commands and accepts a signed sessi
   });
   // Authorized requests reach existing input validation rather than GitHub.
   expect(response.status()).toBe(400);
+});
+
+test("owner login checks real request Host and Origin without trusting a reconstructed URL", () => {
+  const request = (host: string, origin?: string, site?: string) => new NextRequest(
+    "http://localhost:3100/api/owner/session",
+    { method: "POST", headers: {
+      host,
+      ...(origin ? { origin } : {}),
+      ...(site ? { "sec-fetch-site": site } : {}),
+    } },
+  );
+
+  // CI starts Next on 127.0.0.1 even when NextRequest uses localhost internally.
+  expect(validOwnerLoginOrigin(request("127.0.0.1:3100", "http://127.0.0.1:3100", "same-origin"))).toBe(true);
+  expect(validOwnerLoginOrigin(request("jobsift.example", "https://jobsift.example", "same-origin"))).toBe(true);
+  expect(validOwnerLoginOrigin(request("127.0.0.1:3100", "https://evil.example", "cross-site"))).toBe(false);
+  expect(validOwnerLoginOrigin(request("127.0.0.1:3100", "http://localhost:3100"))).toBe(false);
+  expect(validOwnerLoginOrigin(request("jobsift.example", "http://jobsift.example"))).toBe(false);
+  expect(validOwnerLoginOrigin(request("jobsift.example"))).toBe(false);
 });
