@@ -1,0 +1,416 @@
+/*
+ * JobSift operator finish pass.
+ * Shared visual language for navigation, links, messages, dialogs, forms,
+ * risky actions and compact mobile. All data and delivery rules stay server-side.
+ */
+html[data-jobsift-operator="true"] {
+  --op-radius-sm: 10px;
+  --op-radius-md: 14px;
+  --op-radius-lg: 20px;
+  --op-space: 8px;
+  --op-soft-shadow: 0 12px 38px rgba(24, 35, 80, .07);
+  --op-danger-solid: #aa2f47;
+}
+html[data-jobsift-operator="true"] main {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+html[data-jobsift-operator="true"] .page-head h1 {
+  text-wrap: balance;
+}
+html[data-jobsift-operator="true"] a {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+html[data-jobsift-operator="true"] a:focus-visible,
+html[data-jobsift-operator="true"] button:focus-visible,
+html[data-jobsift-operator="true"] summary:focus-visible,
+html[data-jobsift-operator="true"] input:focus-visible,
+html[data-jobsift-operator="true"] select:focus-visible,
+html[data-jobsift-operator="true"] textarea:focus-visible {
+  outline: 3px solid #a496fb;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px var(--base);
+}
+html[data-jobsift-operator="true"] .workspace-navigation a[aria-current="page"] {
+  position: relative;
+}
+html[data-jobsift-operator="true"] .workspace-navigation a[aria-current="page"]::after {
+  content: "";
+  width: 5px;
+  height: 22px;
+  border-radius: 99px;
+  background: #e1dcff;
+  position: absolute;
+  right: 12px;
+}
+html[data-jobsift-operator="true"] .operator-workspace > .client-page-head {
+  gap: 24px;
+}
+html[data-jobsift-operator="true"] .client-card,
+html[data-jobsift-operator="true"] .review-batch,
+html[data-jobsift-operator="true"] .operator-command-center {
+  border-color: var(--border);
+  box-shadow: var(--op-soft-shadow);
+}
+html[data-jobsift-operator="true"] .client-card:hover {
+  border-color: var(--border-strong);
+}
+html[data-jobsift-operator="true"] .client-card h3,
+html[data-jobsift-operator="true"] .review-batch h3 {
+  letter-spacing: -.02em;
+}
+html[data-jobsift-operator="true"] .client-card-details > summary,
+html[data-jobsift-operator="true"] .operator-optional > summary,
+html[data-jobsift-operator="true"] .operator-manual-tools > summary {
+  position: relative;
+  border-radius: var(--op-radius-sm);
+  transition: background-color 140ms ease;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+html[data-jobsift-operator="true"] details > summary:hover {
+  background: var(--subtle);
+}
+html[data-jobsift-operator="true"] .client-facts > div {
+  align-content: space-between;
+}
+html[data-jobsift-operator="true"] .client-actions button,
+html[data-jobsift-operator="true"] .operator-decision-actions button,
+html[data-jobsift-operator="true"] .review-send button,
+html[data-jobsift-operator="true"] .onboarding-nav button {
+  min-height: 46px;
+  border-radius: var(--op-radius-sm);
+}
+html[data-jobsift-operator="true"] .client-actions button:disabled,
+html[data-jobsift-operator="true"] .operator-decision-actions button:disabled,
+html[data-jobsift-operator="true"] .review-send button:disabled {
+  background: var(--subtle);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+html[data-jobsift-operator="true"] .operator-external-link,
+html[data-jobsift-operator="true"] .operator-text-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  border-radius: var(--op-radius-sm);
+  padding: 9px 13px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: .92rem;
+  line-height: 1.35rem;
+  text-decoration: none;
+}
+html[data-jobsift-operator="true"] .operator-external-link:hover,
+html[data-jobsift-operator="true"] .operator-text-link:hover {
+  background: var(--selected);
+  border-color: var(--border-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+html[data-jobsift-operator="true"] .operator-external-link > svg,
+html[data-jobsift-operator="true"] .operator-text-link > svg {
+  flex: 0 0 auto;
+}
+html[data-jobsift-operator="true"] .operator-link-unavailable {
+  color: var(--muted);
+  font-size: .875rem;
+  line-height: 1.4;
+}
+html[data-jobsift-operator="true"] .review-job {
+  gap: 15px;
+  padding: 20px;
+  border-color: var(--border);
+  background: var(--base);
+}
+html[data-jobsift-operator="true"] .review-job.removed {
+  opacity: 1;
+  background: var(--subtle);
+  border-style: dashed;
+}
+html[data-jobsift-operator="true"] .review-job.removed .review-job-title h4 {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  color: var(--secondary);
+}
+html[data-jobsift-operator="true"] .review-evidence {
+  gap: 8px;
+}
+html[data-jobsift-operator="true"] .review-evidence span {
+  border-right: none;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: .82rem;
+}
+html[data-jobsift-operator="true"] .review-job-title h4 {
+  font-size: 1.12rem;
+  line-height: 1.45;
+}
+html[data-jobsift-operator="true"] .review-toolbar {
+  border: 1px solid var(--border);
+  gap: 12px;
+}
+html[data-jobsift-operator="true"] .review-toolbar > button {
+  border-color: var(--accent-solid);
+  color: var(--accent);
+  background: var(--base);
+  font-weight: 700;
+}
+html[data-jobsift-operator="true"] .review-send {
+  gap: 12px;
+  align-items: center;
+}
+html[data-jobsift-operator="true"] .review-send .secondary-action {
+  color: var(--secondary);
+  border-color: var(--border-strong);
+  background: var(--base);
+}
+html[data-jobsift-operator="true"] .onboarding-wizard .section-block {
+  border-radius: var(--op-radius-lg);
+  background: var(--base);
+  box-shadow: var(--op-soft-shadow);
+  padding: clamp(18px, 3vw, 28px);
+}
+html[data-jobsift-operator="true"] .onboarding-steps {
+  gap: 6px;
+}
+html[data-jobsift-operator="true"] .onboarding-steps li {
+  border-radius: var(--op-radius-sm);
+}
+html[data-jobsift-operator="true"] .onboarding-steps li.current {
+  background: var(--selected);
+}
+html[data-jobsift-operator="true"] .onboarding-steps li.done span {
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+html[data-jobsift-operator="true"] .onboarding-wizard input,
+html[data-jobsift-operator="true"] .onboarding-wizard select,
+html[data-jobsift-operator="true"] .onboarding-wizard textarea {
+  border-radius: var(--op-radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--base);
+  min-height: 45px;
+  padding: 10px 12px;
+}
+html[data-jobsift-operator="true"] .onboarding-wizard label {
+  gap: 7px;
+}
+html[data-jobsift-operator="true"] .onboarding-wizard fieldset {
+  border-radius: var(--op-radius-sm);
+}
+html[data-jobsift-operator="true"] .onboarding-wizard .radio-choice,
+html[data-jobsift-operator="true"] .onboarding-wizard .check-choice {
+  border-radius: var(--op-radius-sm);
+}
+html[data-jobsift-operator="true"] .onboarding-wizard .radio-choice:has(input:checked),
+html[data-jobsift-operator="true"] .onboarding-wizard .check-choice:has(input:checked) {
+  background: var(--selected);
+  border-color: var(--accent);
+}
+/* Shared feedback keeps error, progress and success distinct and readable. */
+.operator-feedback-stack {
+  display: grid;
+  gap: 12px;
+}
+.operator-feedback-stack:empty {
+  display: none;
+}
+.operator-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--op-radius-md, 14px);
+  background: var(--base);
+  padding: 15px 16px;
+  color: var(--text);
+}
+.operator-notice[data-tone="error"] {
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+.operator-notice[data-tone="warning"] {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+}
+.operator-notice[data-tone="success"] {
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+.operator-notice[data-tone="info"] {
+  border-color: var(--accent);
+  background: var(--info-bg);
+}
+.operator-notice-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--base);
+}
+.operator-notice-body {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.operator-notice-body strong {
+  font-size: 1rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+.operator-notice-detail p {
+  margin: 0;
+  font-size: .9rem;
+  line-height: 1.55;
+}
+.operator-notice-detail p + p {
+  margin-top: 6px;
+}
+.operator-notice-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 7px;
+  min-height: 40px;
+  border-radius: 10px;
+  color: var(--accent);
+  background: var(--base);
+  font-weight: 700;
+  padding: 8px 12px;
+  width: fit-content;
+}
+.operator-confirm-dialog {
+  position: fixed;
+  width: min(460px, calc(100% - 28px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--base);
+  color: var(--text);
+  padding: 0;
+  margin: auto;
+  box-shadow: 0 34px 90px rgba(4, 10, 39, .32);
+}
+.operator-confirm-dialog::backdrop {
+  background: rgba(10, 17, 46, .72);
+  backdrop-filter: blur(3px);
+}
+.operator-confirm-content {
+  display: grid;
+  gap: 15px;
+  padding: 30px;
+}
+.operator-confirm-symbol {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 17px;
+  background: var(--info-bg);
+  color: var(--accent);
+}
+.operator-confirm-symbol[data-tone="danger"] {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.operator-confirm-content h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+.operator-confirm-content > p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--secondary);
+}
+.operator-confirm-content .operator-confirm-note {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: .83rem;
+  padding: 10px 12px;
+  color: var(--secondary);
+  border-radius: 10px;
+  background: var(--subtle);
+}
+.operator-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.operator-confirm-actions button {
+  min-height: 46px;
+  padding: 10px 16px;
+  border-radius: 11px;
+  font-weight: 700;
+}
+.operator-confirm-actions .secondary-action {
+  background: var(--base);
+  border: 1px solid var(--border-strong);
+  color: var(--secondary);
+}
+.operator-confirm-accept {
+  background: var(--accent-solid);
+  border: 1px solid var(--accent-solid);
+  color: #fff;
+}
+.operator-confirm-accept[data-tone="danger"] {
+  background: #a92742;
+  border-color: #a92742;
+  color: #fff;
+}
+.operator-confirm-actions button:hover:not(:disabled) {
+  filter: brightness(.93);
+}
+/* Legacy non-owner modes retain exactly the previous topbar behavior. */
+html[data-jobsift-operator="false"] .topbar .client-scope {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1023px) {
+  html[data-jobsift-operator="false"] .topbar .client-scope {
+    margin-left: auto;
+  }
+}
+@media (max-width: 479px) {
+  html[data-jobsift-operator="false"] .topbar .client-scope {
+    display: none;
+  }
+}
+@media (max-width: 639px) {
+  .operator-confirm-content { padding: 24px 20px; }
+  .operator-confirm-actions { flex-direction: column-reverse; }
+  .operator-confirm-actions button { width: 100%; }
+  html[data-jobsift-operator="true"] .review-send > button {
+    width: 100%;
+    justify-content: center;
+  }
+  html[data-jobsift-operator="true"] .review-job-actions {
+    width: 100%;
+  }
+  html[data-jobsift-operator="true"] .review-job-actions button,
+  html[data-jobsift-operator="true"] .review-job-actions a {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-jobsift-operator="true"] a { transition: none; }
+}
