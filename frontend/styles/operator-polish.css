@@ -414,3 +414,78 @@ html[data-jobsift-operator="false"] .topbar .client-scope {
 @media (prefers-reduced-motion: reduce) {
   html[data-jobsift-operator="true"] a { transition: none; }
 }
+
+/* Authentication is a real product screen, not a raw HTML form. */
+html[data-jobsift-operator="true"] .owner-entry {
+  max-width: 520px;
+  margin: clamp(22px, 5vw, 75px) auto 40px;
+  padding: clamp(24px, 4vw, 42px);
+  background: var(--base);
+  border: 1px solid var(--border);
+  border-radius: 26px;
+  box-shadow: var(--op-soft-shadow);
+}
+html[data-jobsift-operator="true"] .owner-entry-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  color: var(--accent);
+  background: var(--selected);
+  border-radius: 18px;
+  margin-bottom: 20px;
+}
+html[data-jobsift-operator="true"] .owner-entry h1 {
+  font-size: clamp(1.9rem, 4vw, 2.35rem);
+  margin-bottom: 12px;
+}
+html[data-jobsift-operator="true"] .owner-entry > p:not(.page-eyebrow) {
+  color: var(--secondary);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+html[data-jobsift-operator="true"] .owner-entry form {
+  display: grid;
+  gap: 12px;
+}
+html[data-jobsift-operator="true"] .owner-entry form > label {
+  font-weight: 700;
+}
+html[data-jobsift-operator="true"] .owner-entry form > input {
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--base);
+}
+html[data-jobsift-operator="true"] .owner-entry form > input[aria-invalid="true"] {
+  border-color: var(--error);
+  outline-color: var(--error);
+}
+html[data-jobsift-operator="true"] .owner-entry form > p {
+  color: var(--secondary);
+  font-size: .88rem;
+  margin: 0 0 8px;
+}
+html[data-jobsift-operator="true"] .owner-entry form > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  color: #fff;
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  border-radius: 12px;
+  font-weight: 750;
+}
+html[data-jobsift-operator="true"] .owner-entry form > button:hover {
+  filter: brightness(.92);
+}
+html[data-jobsift-operator="true"] .owner-entry .operator-notice {
+  margin-top: 8px;
+}
+html[data-jobsift-operator="true"] .section-content > .page-head .operator-text-link {
+  width: fit-content;
+  margin-top: 16px;
+}
