@@ -865,7 +865,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
               id: 100 + stateVersion,
               run_number: 100 + stateVersion,
               status: "completed",
-              conclusion: "success",
+              conclusion: stateVersion === 1 ? "failure" : "success",
               created_at: "2026-10-06T20:00:00Z",
               updated_at: `2026-10-06T20:00:0${stateVersion}Z`,
               url: "https://example.invalid/state",
@@ -916,6 +916,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await expect(confirmPause).toContainText("Example client — Example delivery destination");
   await confirmPause.getByRole("button", { name: "Pause delivery" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
+  await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=error]")).toContainText("failed operation");
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-destination");
@@ -931,6 +932,7 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
   await sheetBlock.getByRole("textbox", { name: "Profile ID" }).fill("0123456789abcdef");
   await sheetBlock.getByRole("button", { name: "Check Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(2);
+  await expect(page.locator(".operator-feedback-stack .operator-notice[data-tone=success]")).toContainText("successful operation");
   expect(dispatched[1]?.profile_id).toBe("0123456789abcdef");
   await page.locator(".operator-driving-home").getByRole("button", { name: /^(Refresh status|Check status|Check again)$/ }).click();
   await expect(sheetTarget).toBeEnabled();
