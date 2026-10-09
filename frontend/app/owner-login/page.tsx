@@ -29,7 +29,7 @@ export default async function OwnerLogin({ searchParams }: {
             aria-describedby="owner-key-help" aria-invalid={error === "invalid"} />
           <p id="owner-key-help">Use the private access key from your password manager.</p>
           {error === "invalid" ? <OperatorNotice tone="error" title="That access key did not work"><p>Check the key and try again. No access was granted.</p></OperatorNotice> : null}
-          <button type="submit"><UiIcon name="lock" size={18} /> Unlock workspace</button>
+          <button type="submit"><UiIcon name="lock" size={18} /> Unlock JobSift</button>
         </form>
       )}
     </div>
