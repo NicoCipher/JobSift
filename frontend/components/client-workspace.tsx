@@ -168,6 +168,7 @@ export function ClientWorkspace({
   const { ask, confirmationDialog } = useOperatorConfirmation();
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "warning" | "info" | "success">("info");
   const [busy, setBusy] = useState(false);
   const [awaitingFreshState, setAwaitingFreshState] = useState(false);
   const [reviews, setReviews] = useState<Record<string, ReviewLoad>>({});
@@ -250,15 +251,18 @@ export function ClientWorkspace({
           const delivered = next?.delivered_today ?? 0;
           const before = context.beforeDelivered ?? 0;
           if (!next?.batch_id && delivered >= before + context.expectedSent) {
+            setMessageTone("success");
             setMessage(
               `${context.expectedSent} job${context.expectedSent === 1 ? "" : "s"} sent to ${context.clientName ?? "the client"}'s Sheet.`,
             );
           } else {
+            setMessageTone("warning");
             setMessage(
               "JobSift finished the command. Check the client state below before taking another action.",
             );
           }
         } else {
+          setMessageTone("success");
           setMessage("JobSift confirmed the updated client state.");
         }
       }
@@ -300,12 +304,14 @@ export function ClientWorkspace({
     },
   ) {
     if (!stateVerified) {
+      setMessageTone("error");
       setMessage(
         "Current client state is not verified. Refresh status and wait for the active JobSift operation to finish.",
       );
       return;
     }
     setBusy(true);
+    setMessageTone("info");
     setMessage("");
     try {
       const response = await fetch("/api/control/dispatch", {
@@ -318,6 +324,7 @@ export function ClientWorkspace({
       };
       const requestId = body.data?.control_request_id;
       if (!validControlRequestId(requestId)) {
+        setMessageTone("warning");
         setMessage(
           "Command accepted, but JobSift could not correlate the confirmation. Controls remain locked until you reload after it finishes.",
         );
@@ -330,6 +337,7 @@ export function ClientWorkspace({
       setMessage("JobSift is applying the change…");
       pollForFreshState();
     } catch (error) {
+      setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "The JobSift command failed.");
     } finally {
       setBusy(false);
@@ -498,10 +506,12 @@ export function ClientWorkspace({
     const removedOrdinals = removed[state.batch_id] ?? [];
     const kept = review.items.filter((item) => !removedOrdinals.includes(item.ordinal));
     if (!kept.length) {
+      setMessageTone("error");
       setMessage("No jobs are selected. Use Discard batch if you want to send none.");
       return;
     }
     if (kept.some((item) => !item.release_ready)) {
+      setMessageTone("error");
       setMessage(
         "One or more kept jobs are no longer safe to release. Remove those jobs or refresh the review evidence.",
       );
@@ -586,7 +596,7 @@ export function ClientWorkspace({
             Client controls are unavailable. Return Home to check what&apos;s happening before making changes.
           </div>
         ) : null}
-        <OperatorFeedback error={statusError} message={message} onRetry={() => void loadStatus()} />
+        <OperatorFeedback error={statusError} message={message} messageTone={messageTone} onRetry={() => void loadStatus()} />
         {!stateVerified && status ? (
           <div className="notice">
             Current client state is not fully verified. Actions stay locked until the
@@ -756,7 +766,7 @@ export function ClientWorkspace({
         </button>
       </section>
 
-      <OperatorFeedback error={statusError} message={message} onRetry={() => void loadStatus()} />
+      <OperatorFeedback error={statusError} message={message} messageTone={messageTone} onRetry={() => void loadStatus()} />
       {!stateVerified && status ? (
         <div className="notice">
           Review actions are locked until JobSift verifies the latest client state.
