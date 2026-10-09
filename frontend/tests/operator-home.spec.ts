@@ -122,3 +122,91 @@ test("the guided home prioritises a real review batch and keeps tuning hidden", 
   await expect(page.getByRole("heading", { name: "2 jobs are waiting for approval" })).toBeVisible();
   await expect(page.locator("#manual-controls")).not.toHaveAttribute("open", "");
 });
+
+
+test("empty client state is not zero jobs delivered", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  await page.route("**/api/control/status**", (route) =>
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Sourcing", state: "active", url: "https://example.com", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.com", runs: [] },
+          operator_snapshot: {
+            complete: true, observed_at: "2026-10-09T12:00:00Z", control_request_id: null,
+            confirmed_control_request_id: null, state_error: null, run: null,
+            profiles: [], truncated: false,
+          },
+        },
+      }),
+    }),
+  );
+
+  await page.goto("/operations");
+  const home = page.locator(".operator-driving-home");
+  await expect(home.getByRole("heading", { name: "No client delivery state reported yet" })).toBeVisible();
+  await expect(home.locator(".operator-driving-metrics dd")).toHaveText(["0", "—", "0"]);
+  await expect(home.getByRole("link", { name: "Open clients" })).toHaveAttribute("href", "/clients");
+});
+
+test("failed operation gives one direct link to its recorded activity", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  await page.route("**/api/control/status**", (route) =>
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Sourcing", state: "active", url: "https://example.com", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.com", runs: [] },
+          operator_snapshot: {
+            complete: true, observed_at: "2026-10-09T12:00:00Z", control_request_id: null,
+            confirmed_control_request_id: null, state_error: null, profiles: [], truncated: false,
+            run: { id: 14, run_number: 14, status: "completed", conclusion: "failure",
+              kind: "inventory", created_at: "2026-10-09T11:55:00Z",
+              updated_at: "2026-10-09T12:00:00Z", url: "https://example.com/failure" },
+          },
+        },
+      }),
+    }),
+  );
+
+  await page.goto("/operations");
+  const home = page.locator(".operator-driving-home");
+  const activity = page.locator("#last-activity");
+  await expect(home.getByRole("heading", { name: "The last reported operation failed" })).toBeVisible();
+  await expect(activity).not.toHaveAttribute("open", "");
+  await home.getByRole("link", { name: "View last activity" }).click();
+  await expect(activity).toHaveAttribute("open", "");
+  await expect(activity.getByText("failure")).toBeVisible();
+  await expect(page.locator("#manual-controls")).not.toHaveAttribute("open", "");
+});
+
+test("mobile owner overview stays readable without exposing manual controls", async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_JOBSIFT_OPERATOR === "1", "Runs in isolated fixture mode.");
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.route("**/api/control/status**", (route) =>
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          control_ready: true,
+          inventory: { name: "Sourcing", state: "active", url: "https://example.com", runs: [] },
+          delivery: { name: "Delivery", state: "active", url: "https://example.com", runs: [] },
+          operator_snapshot: {
+            complete: false, observed_at: null, control_request_id: null,
+            confirmed_control_request_id: null, state_error: "State unavailable.",
+            run: null, profiles: [], truncated: false,
+          },
+        },
+      }),
+    }),
+  );
+  await page.goto("/operations");
+  await expect(page.locator(".operator-driving-home")).toBeVisible();
+  await expect(page.locator(".operations-primary-action")).toBeHidden();
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(width).toBeLessThanOrEqual(360);
+});
