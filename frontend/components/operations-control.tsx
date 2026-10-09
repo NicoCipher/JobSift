@@ -304,15 +304,11 @@ export function OperationsControl({
     !awaitingFreshState &&
     latestSnapshot?.complete === true &&
     latestSnapshot.truncated !== true;
-  const pendingBatches =
-    latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
-  const latestProfile = latestSnapshot?.profiles[0];
-  const verifiedSnapshot =
-    Boolean(status) &&
-    !statusError &&
-    !awaitingFreshState &&
-    latestSnapshot?.complete === true &&
-    latestSnapshot.truncated !== true;
+  const pendingBatches = stateVerified
+    ? latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? []
+    : [];
+  const latestProfile = stateVerified ? latestSnapshot?.profiles[0] : undefined;
+  const verifiedSnapshot = stateVerified;
   const reportedClients = verifiedSnapshot ? latestSnapshot?.profiles.length ?? null : null;
   const sentToday =
     verifiedSnapshot &&
@@ -349,6 +345,9 @@ export function OperationsControl({
     }
     if (latestSnapshot?.profiles.length === 0) {
       return { tone: "neutral", title: "No client delivery state reported yet", detail: "Set up a client or check its status. JobSift will not invent results.", action: "link", label: "Open clients", href: "/clients" };
+    }
+    if (latestSnapshot?.profiles.some((profile) => profile.profile_status === "paused")) {
+      return { tone: "attention", title: "A client is paused", detail: "At least one client is not receiving new deliveries. Check the client before restarting anything.", action: "link", label: "View clients", href: "/clients" };
     }
     if (status.inventory.state !== "active") {
       return { tone: "caution", title: "Automatic sourcing is not confirmed active", detail: "The reported sourcing workflow is not active. Check the schedule before expecting new jobs.", action: "controls", label: "View sourcing controls" };
