@@ -302,8 +302,8 @@ export function OperationsControl({
     status !== null &&
     !statusError &&
     !awaitingFreshState &&
-    latestSnapshot?.complete !== false &&
-    latestSnapshot?.truncated !== true;
+    latestSnapshot?.complete === true &&
+    latestSnapshot.truncated !== true;
   const pendingBatches =
     latestSnapshot?.profiles.filter((profile) => Boolean(profile.batch_id)) ?? [];
   const latestProfile = latestSnapshot?.profiles[0];
