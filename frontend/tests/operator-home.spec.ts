@@ -390,8 +390,8 @@ test("disabled client Sheet has a guarded re-enable action, not a repeated statu
   const operations: string[] = [];
   await page.route("**/api/control/dispatch", (route) => {
     operations.push((route.request().postDataJSON() as { operation: string }).operation);
-    return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({
-      data: { accepted: true, control_request_id: "11111111-1111-4111-8111-111111111111" },
+    return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({
+      error: { message: "Owner sign-in is required." },
     }) });
   });
   await page.route("**/api/control/status**", (route) => route.fulfill({
@@ -426,4 +426,6 @@ test("disabled client Sheet has a guarded re-enable action, not a repeated statu
   await confirm.getByRole("button", { name: "Verify and enable" }).click();
   await expect.poll(() => operations.length).toBe(1);
   expect(operations).toEqual(["sheet-enable"]);
+  await expect(page.locator(".operator-notice[data-tone=error]")).toContainText("Owner sign-in is required.");
+  await expect(page.locator(".operator-notice[data-tone=success]")).toHaveCount(0);
 });
