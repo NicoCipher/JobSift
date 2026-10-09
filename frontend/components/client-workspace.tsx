@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ManagedProfile } from "@/components/operations-control";
 import { UiIcon } from "@/components/ui-icon";
+import { readOperatorJson } from "@/lib/operator-response";
 import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
 import { ExternalLink } from "@/components/external-link";
 import { useOperatorConfirmation } from "@/components/operator-confirmation";
@@ -108,7 +109,6 @@ type ReviewLoad = {
   message?: string;
 };
 
-type ApiError = { error?: { message?: string } };
 
 function validControlRequestId(value: unknown): value is string {
   return (
@@ -120,13 +120,8 @@ function validControlRequestId(value: unknown): value is string {
 }
 
 async function readJson(response: Response) {
-  const body = (await response.json()) as ApiError & { data?: unknown };
-  if (!response.ok) {
-    throw new Error(body.error?.message ?? "JobSift request failed.");
-  }
-  return body;
+  return readOperatorJson(response, "JobSift request failed.");
 }
-
 function count(value: number | null | undefined) {
   return value === null || value === undefined ? "—" : value.toLocaleString();
 }
