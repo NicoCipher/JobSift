@@ -30,7 +30,7 @@ export default async function RootLayout({
       })();
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-jobsift-operator={operatorMode ? "true" : "false"} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: preferenceScript }} />
       </head>
