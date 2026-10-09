@@ -307,7 +307,6 @@ test("operator command center exposes pending review batch without opaque IDs", 
     });
   });
 
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.goto("/operations");
   // Technical controls stay hidden during normal use; open them explicitly
   // for legacy backend-control regression coverage.
@@ -329,6 +328,13 @@ test("operator command center exposes pending review batch without opaque IDs", 
 
   const release = page.getByRole("button", { name: "Release 1 job" });
   await release.click();
+  const confirmRelease = page.getByRole("dialog", { name: "Release jobs for Example client — Example delivery destination?" });
+  await expect(confirmRelease).toBeVisible();
+  expect(dispatched).toHaveLength(0);
+  await confirmRelease.getByRole("button", { name: "Cancel" }).click();
+  expect(dispatched).toHaveLength(0);
+  await release.click();
+  await confirmRelease.getByRole("button", { name: "Send to Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
   await expect(release).toHaveCount(0); // Pending commands hide actions until state is verified.
   expect(dispatched[0]).toMatchObject({
@@ -895,17 +901,12 @@ test("client Sheet controls keep listed and manual targets explicit", async ({ p
     "Example client — Example delivery destination",
   );
 
-  const dialogs: string[] = [];
-  page.on("dialog", async (dialog) => {
-    dialogs.push(dialog.message());
-    await dialog.accept();
-  });
-
   await page.getByRole("combobox", { name: "What do you want to do?" }).selectOption("pause");
   await page.getByRole("button", { name: "Pause delivery" }).click();
-  await expect.poll(() => dialogs.length).toBe(1);
-  expect(dialogs[0]).toContain("Example client — Example delivery destination");
-  expect(dialogs[0]).toContain("ad763a0336d92204");
+  const confirmPause = page.getByRole("dialog", { name: "Confirm delivery action" });
+  await expect(confirmPause).toBeVisible();
+  await expect(confirmPause).toContainText("Example client — Example delivery destination");
+  await confirmPause.getByRole("button", { name: "Pause delivery" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
   expect(dispatched[0]?.profile_id).toBe("ad763a0336d92204");
   expect(JSON.stringify(dispatched[0])).not.toContain("example-client");
@@ -1417,7 +1418,6 @@ test("Review shows authoritative evidence and sends only kept jobs", async ({ pa
     });
   });
 
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.goto("/review");
   await page.getByRole("button", { name: "Load jobs to review" }).click();
 
@@ -1439,6 +1439,10 @@ test("Review shows authoritative evidence and sends only kept jobs", async ({ pa
   });
   await expect(send).toBeEnabled();
   await send.click();
+  const confirmation = page.getByRole("dialog", { name: "Send approved jobs?" });
+  await expect(confirmation).toBeVisible();
+  expect(dispatched).toHaveLength(0);
+  await confirmation.getByRole("button", { name: "Send 1 job" }).click();
 
   await expect.poll(() => dispatched.length).toBe(1);
   expect(dispatched[0]).toMatchObject({
