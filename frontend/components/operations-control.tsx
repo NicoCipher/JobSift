@@ -683,9 +683,6 @@ export function OperationsControl({
             <h2 id="operator-now-title">Review and follow-up</h2>
             <p>Only act on a batch when JobSift reports one. Client management is available below.</p>
           </div>
-          <button type="button" disabled={busy} onClick={() => void loadStatus()}>
-            Refresh status
-          </button>
         </div>
 
         {latestSnapshot?.complete === false ? (
@@ -695,26 +692,30 @@ export function OperationsControl({
               {latestSnapshot.state_error ??
                 "JobSift has locked state-dependent controls until a fresh authoritative snapshot is available."}
             </div>
-            <button
-              type="button"
-              disabled={busy || awaitingFreshState || !status?.control_ready}
-              onClick={() =>
-                void send(
-                  {
-                    command: "client-control",
-                    operation: "list",
-                    profile_id: "",
-                    daily_quota: "100",
-                    delivery_mode: "review",
-                    timezone: "Africa/Lagos",
-                    batch_id: "",
-                  },
-                  { waitForState: true },
-                )
-              }
-            >
-              {awaitingFreshState ? "Syncing…" : "Sync current state"}
-            </button>
+            <details className="operations-advanced">
+              <summary>Advanced recovery (may use Neon)</summary>
+              <p>Only try this when database usage is available. It requests a new authoritative client snapshot.</p>
+              <button
+                type="button"
+                disabled={busy || awaitingFreshState || !status?.control_ready}
+                onClick={() =>
+                  void send(
+                    {
+                      command: "client-control",
+                      operation: "list",
+                      profile_id: "",
+                      daily_quota: "100",
+                      delivery_mode: "review",
+                      timezone: "Africa/Lagos",
+                      batch_id: "",
+                    },
+                    { waitForState: true },
+                  )
+                }
+              >
+                {awaitingFreshState ? "Syncing…" : "Request client snapshot"}
+              </button>
+            </details>
           </div>
         ) : latestSnapshot?.truncated ? (
           <div className="notice" role="status">
@@ -722,44 +723,6 @@ export function OperationsControl({
             the full state can be verified.
           </div>
         ) : null}
-
-        <details className="operator-optional">
-          <summary>Last recorded activity</summary>
-        {latestSnapshot?.run ? (
-          <div className="operator-run-strip">
-            <div>
-              <span className="metadata">Latest state update</span>
-              <strong>#{latestSnapshot.run.run_number}</strong>
-            </div>
-            <div>
-              <span className="metadata">Result</span>
-              <strong>
-                {latestSnapshot.run.status === "completed"
-                  ? latestSnapshot.run.conclusion ?? "completed"
-                  : latestSnapshot.run.status}
-              </strong>
-              {latestSnapshot.run.kind ? (
-                <span className="metadata">
-                  {latestSnapshot.run.kind === "inventory"
-                    ? "Sourcing"
-                    : latestSnapshot.run.kind === "delivery"
-                      ? "Delivery"
-                      : latestSnapshot.run.kind === "provision"
-                        ? "Client onboarding"
-                        : "Client setup"}
-                </span>
-              ) : null}
-            </div>
-            <div>
-              <span className="metadata">Finished</span>
-              <strong>{new Date(latestSnapshot.run.updated_at).toLocaleString()}</strong>
-            </div>
-          </div>
-        ) : (
-          <p className="metadata">No production sourcing run has been reported yet.</p>
-        )}
-
-        </details>
 
         {pendingBatches.length ? (
           <div className="operator-attention">
@@ -773,7 +736,7 @@ export function OperationsControl({
                 {pendingBatches.some((profile) => profile.recovery_required)
                   ? "A Sheet delivery needs safe recovery"
                   : pendingBatches.length === 1
-                    ? `${countLabel(pendingBatches[0].selected_count)} job is waiting for approval`
+                    ? `${countLabel(pendingBatches[0].selected_count)} ${pendingBatches[0].selected_count === 1 ? "job is" : "jobs are"} waiting for approval`
                     : `${pendingBatches.length} review batches are waiting`}
               </h3>
               <p>
@@ -975,6 +938,44 @@ export function OperationsControl({
             </div>
           </details>
         ) : null}
+        <details className="operator-optional">
+          <summary>Last recorded activity</summary>
+        {latestSnapshot?.run ? (
+          <div className="operator-run-strip">
+            <div>
+              <span className="metadata">Latest state update</span>
+              <strong>#{latestSnapshot.run.run_number}</strong>
+            </div>
+            <div>
+              <span className="metadata">Result</span>
+              <strong>
+                {latestSnapshot.run.status === "completed"
+                  ? latestSnapshot.run.conclusion ?? "completed"
+                  : latestSnapshot.run.status}
+              </strong>
+              {latestSnapshot.run.kind ? (
+                <span className="metadata">
+                  {latestSnapshot.run.kind === "inventory"
+                    ? "Sourcing"
+                    : latestSnapshot.run.kind === "delivery"
+                      ? "Delivery"
+                      : latestSnapshot.run.kind === "provision"
+                        ? "Client onboarding"
+                        : "Client setup"}
+                </span>
+              ) : null}
+            </div>
+            <div>
+              <span className="metadata">Finished</span>
+              <strong>{new Date(latestSnapshot.run.updated_at).toLocaleString()}</strong>
+            </div>
+          </div>
+        ) : (
+          <p className="metadata">No production sourcing run has been reported yet.</p>
+        )}
+
+        </details>
+
       </section>
 
       <details
@@ -1011,7 +1012,7 @@ export function OperationsControl({
             {busy ? "Starting…" : "Run sourcing now"}
           </button>
           <p className="metadata">
-            Safe default run. It does not change the scheduled crawl cursor.
+            Small preset, but not quota-free: it can use Neon and GitHub Actions. It does not change the scheduled crawl cursor.
           </p>
         </form>
 
