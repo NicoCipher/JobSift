@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ManagedProfile } from "@/components/operations-control";
+import { UiIcon } from "@/components/ui-icon";
 
 type PendingItem = {
   ordinal: number;
@@ -563,13 +564,13 @@ export function ClientWorkspace({
       <div className="operator-workspace">
         <section className="section-block client-page-head">
           <div>
-            <h2>Clients</h2>
+            <h2><UiIcon name="users" size={23}/> Clients</h2>
             <p>
               See what&apos;s been sent, what needs review, and whether each Google Sheet is connected.
             </p>
           </div>
           <div className="client-page-actions">
-            <Link href="/clients/new" className="secondary-link">Add a client</Link>
+            <Link href="/clients/new" className="secondary-link"><UiIcon name="users" size={18} /> Add a client</Link>
             <details className="client-extra-tools">
               <summary>Manual sourcing</summary>
               <p className="metadata">Only use this when needed. A sourcing run may consume Neon and GitHub Actions allowance.</p>
@@ -617,9 +618,12 @@ export function ClientWorkspace({
                   key={config.profile_id}
                 >
                   <div className="client-card-head">
-                    <div>
-                      <h3>{config.client_name}</h3>
-                      <p>{config.destination_name}</p>
+                    <div className="client-card-title">
+                      <span className="client-avatar"><UiIcon name="briefcase" size={24} /></span>
+                      <div>
+                        <h3>{config.client_name}</h3>
+                        <p>{config.destination_name}</p>
+                      </div>
                     </div>
                     <span
                       className={
@@ -633,9 +637,9 @@ export function ClientWorkspace({
                   </div>
 
                   <div className="client-facts">
-                    <div><span>Jobs sent today</span><strong>{count(stateVerified ? state?.delivered_today : null)}</strong></div>
-                    <div><span>Waiting for you</span><strong>{count(waiting)}</strong></div>
-                    <div><span>Google Sheet</span><strong>{!stateVerified ? "Not verified" : state?.sheet_status === "ready" ? "Connected" : state?.sheet_status === "disabled" ? "Needs attention" : "Unknown"}</strong></div>
+                    <div><span><UiIcon name="send" size={15} /> Jobs sent today</span><strong>{count(stateVerified ? state?.delivered_today : null)}</strong></div>
+                    <div><span><UiIcon name="clock" size={15} /> Waiting for you</span><strong>{count(waiting)}</strong></div>
+                    <div><span><UiIcon name="sheet" size={15} /> Google Sheet</span><strong>{!stateVerified ? "Not verified" : state?.sheet_status === "ready" ? "Connected" : state?.sheet_status === "disabled" ? "Needs attention" : "Unknown"}</strong></div>
                   </div>
                   <details className="client-card-details">
                     <summary>Delivery details</summary>
@@ -658,7 +662,7 @@ export function ClientWorkspace({
                   <div className="client-actions">
                     {stateVerified && state?.recovery_required ? (
                       <Link className="client-primary-action" href="/operations#review-queue">
-                        Check safe delivery recovery
+                        <UiIcon name="shield" size={17} /> Check safe delivery recovery
                       </Link>
                     ) : stateVerified && state && state.sheet_status !== "ready" ? (
                       <button
@@ -667,7 +671,7 @@ export function ClientWorkspace({
                         disabled={busy || !state}
                         onClick={() => state ? void clientAction(config, state, state.sheet_status === "disabled" ? "sheet-enable" : "sheet-check") : undefined}
                       >
-                        {state?.sheet_status === "disabled" ? "Verify and re-enable Sheet" : "Check Google Sheet"}
+                        <UiIcon name="sheet" size={17}/> {state?.sheet_status === "disabled" ? "Verify and re-enable Sheet" : "Check Google Sheet"}
                       </button>
                     ) : stateVerified && state?.profile_status === "paused" ? (
                       <button
@@ -676,15 +680,15 @@ export function ClientWorkspace({
                         disabled={busy || !state}
                         onClick={() => state ? void clientAction(config, state, "resume") : undefined}
                       >
-                        Resume deliveries
+                        <UiIcon name="play" size={17}/> Resume deliveries
                       </button>
                     ) : waiting !== null && waiting > 0 ? (
                       <Link className="client-primary-action" href={`/review#${clientAnchor(config)}`}>
-                        Review {waiting.toLocaleString()} job{waiting === 1 ? "" : "s"}
+                        <UiIcon name="review" size={17}/> Review {waiting.toLocaleString()} job{waiting === 1 ? "" : "s"}
                       </Link>
                     ) : (
                       <span className="client-action-note">
-                        {waiting === null ? "Waiting for a verified update" : "No action needed right now"}
+                        <UiIcon name={waiting === null ? "clock" : "check"} size={17} /> {waiting === null ? "Waiting for a verified update" : "No action needed right now"}
                       </span>
                     )}
                     <details className="client-card-details client-more-actions">
@@ -746,13 +750,13 @@ export function ClientWorkspace({
     <div className="operator-workspace">
       <section className="section-block client-page-head">
         <div>
-          <h2>Review jobs</h2>
+          <h2><UiIcon name="review" size={23}/> Review jobs</h2>
           <p>
             Check the jobs waiting for your approval before anything is sent to a client&apos;s Google Sheet.
           </p>
         </div>
         <button type="button" disabled={busy} onClick={() => void loadStatus()}>
-          Refresh
+          <UiIcon name="refresh" size={17}/> Refresh
         </button>
       </section>
 
