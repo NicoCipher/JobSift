@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ManagedProfile } from "@/components/operations-control";
 import { UiIcon } from "@/components/ui-icon";
+import { OperatorFeedback, OperatorNotice } from "@/components/operator-notice";
+import { ExternalLink } from "@/components/external-link";
+import { useOperatorConfirmation } from "@/components/operator-confirmation";
 
 type PendingItem = {
   ordinal: number;
@@ -167,6 +170,7 @@ export function ClientWorkspace({
   surface: "clients" | "review";
 }) {
   const [status, setStatus] = useState<ControlStatus | null>(null);
+  const { ask, confirmationDialog } = useOperatorConfirmation();
   const [statusError, setStatusError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -344,13 +348,13 @@ export function ClientWorkspace({
   ) {
     if (
       operation === "pause" &&
-      !window.confirm(`Pause ${config.client_name}? New deliveries will stop until you resume them.`)
+      !(await ask({ title: "Pause deliveries?", description: `New deliveries to ${config.client_name} will stop until you resume them. Jobs already sent to the Sheet remain there.`, confirmLabel: "Pause client", tone: "danger" }))
     ) {
       return;
     }
     if (
       operation === "sheet-enable" &&
-      !window.confirm(`Verify and re-enable ${config.client_name}'s Google Sheet? JobSift will check the destination before it allows delivery.`)
+      !(await ask({ title: "Reconnect Google Sheet?", description: `JobSift will verify ${config.client_name}'s destination before it allows new deliveries. It will not send jobs as part of this check.`, confirmLabel: "Verify and enable" }))
     ) {
       return;
     }
@@ -510,9 +514,7 @@ export function ClientWorkspace({
     }
     const label = `${config.client_name}'s Sheet`;
     if (
-      !window.confirm(
-        `Send ${kept.length} job${kept.length === 1 ? "" : "s"} to ${label}? JobSift will re-check freshness, quota, dedupe and Sheet state before writing.`,
-      )
+      !(await ask({title: "Send approved jobs?", description: `Send ${kept.length} job${kept.length === 1 ? "" : "s"} to ${label}? JobSift will re-check freshness, the daily limit, duplicates and Sheet readiness before writing.`, confirmLabel: `Send ${kept.length} ${kept.length === 1 ? "job" : "jobs"}`}))
     ) {
       return;
     }
@@ -541,9 +543,7 @@ export function ClientWorkspace({
   async function discardBatch(config: ManagedProfile, state: ProfileSnapshot) {
     if (!state.batch_id || state.recovery_required) return;
     if (
-      !window.confirm(
-        `Discard the waiting jobs for ${config.client_name}? Nothing in this batch will be sent.`,
-      )
+      !(await ask({title: "Discard this batch?", description: `All waiting jobs for ${config.client_name} will be removed from this unpublished batch. Nothing will be sent to the Sheet.`, confirmLabel: "Discard all jobs", tone: "danger"}))
     ) {
       return;
     }
@@ -562,6 +562,7 @@ export function ClientWorkspace({
   if (surface === "clients") {
     return (
       <div className="operator-workspace">
+        {confirmationDialog}
         <section className="section-block client-page-head">
           <div>
             <h2><UiIcon name="users" size={23}/> Clients</h2>
@@ -590,8 +591,7 @@ export function ClientWorkspace({
             Client controls are unavailable. Return Home to check what&apos;s happening before making changes.
           </div>
         ) : null}
-        {statusError ? <div className="error">{statusError}</div> : null}
-        {message ? <p className="control-message">{message}</p> : null}
+        <OperatorFeedback error={statusError} message={message} onRetry={() => void loadStatus()} />
         {!stateVerified && status ? (
           <div className="notice">
             Current client state is not fully verified. Actions stay locked until the
@@ -748,6 +748,7 @@ export function ClientWorkspace({
 
   return (
     <div className="operator-workspace">
+      {confirmationDialog}
       <section className="section-block client-page-head">
         <div>
           <h2><UiIcon name="review" size={23}/> Review jobs</h2>
@@ -760,8 +761,7 @@ export function ClientWorkspace({
         </button>
       </section>
 
-      {statusError ? <div className="error">{statusError}</div> : null}
-      {message ? <p className="control-message">{message}</p> : null}
+      <OperatorFeedback error={statusError} message={message} onRetry={() => void loadStatus()} />
       {!stateVerified && status ? (
         <div className="notice">
           Review actions are locked until JobSift verifies the latest client state.
@@ -799,14 +799,14 @@ export function ClientWorkspace({
                       {state.selected_count === 1 ? "" : "s"} waiting · {config.destination_name}
                     </p>
                   </div>
-                  <Link href={`/clients#${clientAnchor(config)}`}>Back to client</Link>
+                  <Link className="operator-text-link" href={`/clients#${clientAnchor(config)}`}><UiIcon name="arrow-right" size={16}/> Back to client</Link>
                 </div>
 
                 {state.recovery_required ? (
-                  <div className="error">
-                    This batch has an uncertain Sheet write. Normal review/release is locked;
-                    use the safe recovery action from Operations.
-                  </div>
+                  <OperatorNotice tone="error" title="Delivery needs safe recovery">
+                    <p>The last Sheet write is uncertain. Sending again is locked to prevent duplicates.</p>
+                    <Link href="/operations#review-queue">Open safe recovery</Link>
+                  </OperatorNotice>
                 ) : load.state === "idle" ? (
                   <button
                     type="button"
@@ -818,16 +818,10 @@ export function ClientWorkspace({
                 ) : load.state === "queued" || load.state === "in_progress" ? (
                   <div className="review-loading">Checking the prepared jobs and current safety rules…</div>
                 ) : load.state === "failed" ? (
-                  <div className="error">
-                    {load.message ?? "Review evidence could not be loaded."}{" "}
-                    <button
-                      type="button"
-                      disabled={!stateVerified}
-                      onClick={() => void startReview(state)}
-                    >
-                      Try again
-                    </button>
-                  </div>
+                  <OperatorNotice tone="error" title="Couldn't load these jobs" onRetry={stateVerified ? () => void startReview(state) : undefined}>
+                    <p>{load.message ?? "Review evidence could not be loaded."}</p>
+                    <p>No jobs were sent.</p>
+                  </OperatorNotice>
                 ) : review ? (
                   <>
                     <div className="review-summary">
@@ -882,9 +876,7 @@ export function ClientWorkspace({
                               </div>
                               <div className="review-job-actions">
                                 {item.application_link ? (
-                                  <a href={item.application_link} target="_blank" rel="noreferrer">
-                                    Open job
-                                  </a>
+                                  <ExternalLink href={item.application_link}>Open job</ExternalLink>
                                 ) : null}
                                 <button
                                   type="button"
