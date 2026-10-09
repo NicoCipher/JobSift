@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { OperatorNotice } from "@/components/operator-notice";
+import { UiIcon } from "@/components/ui-icon";
 import { FormEvent, useMemo, useRef, useState } from "react";
 
 type SheetInspection = {
@@ -259,14 +261,14 @@ export function ClientOnboardingWizard() {
           <div><span>Criteria revision</span><strong>{created.brief_revision ?? "—"}</strong></div>
         </div>
         <div className="onboarding-actions">
-          <Link href="/clients">Open client</Link>
+          <Link href="/clients" className="client-primary-action"><UiIcon name="users" size={17}/> View clients</Link>
         </div>
       </section>
     );
   }
 
   return (
-    <div className="onboarding-wizard">
+    <div className="onboarding-wizard" aria-busy={busy}>
       <section className="section-block onboarding-head">
         <div>
           <p className="eyebrow">Add client · Step {step} of 5</p>
@@ -282,7 +284,7 @@ export function ClientOnboardingWizard() {
                     : "Confirm this client"}
           </h2>
         </div>
-        <Link href="/clients">Cancel</Link>
+        <Link href="/clients" className="operator-text-link"><UiIcon name="arrow-right" size={16}/> Cancel setup</Link>
       </section>
 
       <ol className="onboarding-steps" aria-label="Client setup progress">
@@ -296,7 +298,7 @@ export function ClientOnboardingWizard() {
         ))}
       </ol>
 
-      {message ? <div className="error" role="alert">{message}</div> : null}
+      {message ? <OperatorNotice tone="error" title="Please check this step"><p>{message}</p></OperatorNotice> : null}
 
       {step === 1 ? (
         <section className="section-block onboarding-panel">
@@ -488,7 +490,7 @@ export function ClientOnboardingWizard() {
               />
             </label>
             <button type="submit" disabled={busy}>
-              {busy ? "Checking Sheet…" : "Inspect Sheet"}
+              {busy ? "Checking Sheet…" : "Check Sheet connection"}
             </button>
           </form>
 
@@ -570,7 +572,7 @@ export function ClientOnboardingWizard() {
             Continue
           </button>
         ) : (
-          <button type="button" disabled={busy} onClick={() => void createClient()}>
+          <button type="button" disabled={busy || !canContinue} onClick={() => void createClient()}>
             {busy ? "Creating client…" : "Create client"}
           </button>
         )}
