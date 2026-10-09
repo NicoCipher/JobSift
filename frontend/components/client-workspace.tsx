@@ -187,7 +187,7 @@ export function ClientWorkspace({
     status !== null &&
     !statusError &&
     !awaitingFreshState &&
-    latestSnapshot?.complete !== false &&
+    latestSnapshot?.complete === true &&
     latestSnapshot?.truncated !== true;
 
   const configured = useMemo(() => {
@@ -217,9 +217,11 @@ export function ClientWorkspace({
     }));
   }, [profiles, latestSnapshot]);
 
-  const pending = configured.filter(
-    ({ state }) => Boolean(state?.batch_id) && state?.delivery_mode === "review",
-  );
+  const pending = stateVerified
+    ? configured.filter(
+        ({ state }) => Boolean(state?.batch_id) && state?.delivery_mode === "review",
+      )
+    : [];
 
   const loadStatus = useCallback(async () => {
     try {
@@ -337,11 +339,17 @@ export function ClientWorkspace({
   async function clientAction(
     config: ManagedProfile,
     state: ProfileSnapshot,
-    operation: "pause" | "resume" | "sheet-check" | "run-now",
+    operation: "pause" | "resume" | "sheet-check" | "sheet-enable" | "run-now",
   ) {
     if (
       operation === "pause" &&
       !window.confirm(`Pause ${config.client_name}? New deliveries will stop until you resume them.`)
+    ) {
+      return;
+    }
+    if (
+      operation === "sheet-enable" &&
+      !window.confirm(`Verify and re-enable ${config.client_name}'s Google Sheet? JobSift will check the destination before it allows delivery.`)
     ) {
       return;
     }
@@ -557,25 +565,28 @@ export function ClientWorkspace({
           <div>
             <h2>Clients</h2>
             <p>
-              See each client in plain language. Daily delivery safeguards still run on the
-              backend.
+              See what&apos;s been sent, what needs review, and whether each Google Sheet is connected.
             </p>
           </div>
           <div className="client-page-actions">
-            <Link href="/clients/new" className="secondary-link">Add client</Link>
-            <button
-              type="button"
-              disabled={busy || !status?.control_ready || !stateVerified}
-              onClick={() => void findJobs()}
-            >
-              {busy ? "Starting…" : "Find jobs now"}
-            </button>
+            <Link href="/clients/new" className="secondary-link">Add a client</Link>
+            <details className="client-extra-tools">
+              <summary>Manual sourcing</summary>
+              <p className="metadata">Only use this when needed. A sourcing run may consume Neon and GitHub Actions allowance.</p>
+              <button
+                type="button"
+                disabled={busy || !status?.control_ready || !stateVerified}
+                onClick={() => void findJobs()}
+              >
+                {busy ? "Starting…" : "Find jobs now"}
+              </button>
+            </details>
           </div>
         </section>
 
-        {!status?.control_ready ? (
-          <div className="notice">
-            Production controls are unavailable on this deployment.
+        {status && !status.control_ready ? (
+          <div className="notice" role="status">
+            Client controls are unavailable. Return Home to check what&apos;s happening before making changes.
           </div>
         ) : null}
         {statusError ? <div className="error">{statusError}</div> : null}
@@ -590,7 +601,11 @@ export function ClientWorkspace({
         <section className="client-grid" aria-label="JobSift clients">
           {configured.length ? (
             configured.map(({ config, state }) => {
-              const waiting = state?.selected_count ?? 0;
+              const waiting = !stateVerified || !state
+                ? null
+                : state.batch_id && state.delivery_mode === "review"
+                  ? state.selected_count
+                  : 0;
               const funnel = state?.client_funnel;
               const lastResult =
                 funnel?.overall?.confirmed_matches_0_24h ??
@@ -608,23 +623,28 @@ export function ClientWorkspace({
                     </div>
                     <span
                       className={
-                        state?.profile_status === "active"
+                        stateVerified && state?.profile_status === "active"
                           ? "client-state active"
                           : "client-state paused"
                       }
                     >
-                      {state?.profile_status === "active" ? "Active" : state?.profile_status === "paused" ? "Paused" : "State unavailable"}
+                      {!stateVerified ? "Not verified" : state?.profile_status === "active" ? "Active" : state?.profile_status === "paused" ? "Paused" : "State unavailable"}
                     </span>
                   </div>
 
                   <div className="client-facts">
-                    <div><span>Mode</span><strong>{state?.delivery_mode === "auto" ? "Auto" : state?.delivery_mode === "review" ? "Review" : "—"}</strong></div>
-                    <div><span>Daily limit</span><strong>{count(state?.daily_quota)}</strong></div>
-                    <div><span>Sent today</span><strong>{count(state?.delivered_today)}</strong></div>
-                    <div><span>Waiting for review</span><strong>{waiting.toLocaleString()}</strong></div>
-                    <div><span>Sheet</span><strong>{state?.sheet_status === "ready" ? "Connected" : state?.sheet_status === "disabled" ? "Needs attention" : "Unknown"}</strong></div>
-                    <div><span>Last matching result</span><strong>{lastResult === undefined ? "Not available" : `${lastResult.toLocaleString()} jobs`}</strong></div>
+                    <div><span>Jobs sent today</span><strong>{count(stateVerified ? state?.delivered_today : null)}</strong></div>
+                    <div><span>Waiting for you</span><strong>{count(waiting)}</strong></div>
+                    <div><span>Google Sheet</span><strong>{!stateVerified ? "Not verified" : state?.sheet_status === "ready" ? "Connected" : state?.sheet_status === "disabled" ? "Needs attention" : "Unknown"}</strong></div>
                   </div>
+                  <details className="client-card-details">
+                    <summary>Delivery details</summary>
+                    <div className="client-facts">
+                      <div><span>Delivery mode</span><strong>{!stateVerified ? "—" : state?.delivery_mode === "auto" ? "Automatic" : state?.delivery_mode === "review" ? "Review first" : "—"}</strong></div>
+                      <div><span>Daily job limit</span><strong>{count(stateVerified ? state?.daily_quota : null)}</strong></div>
+                      <div><span>Last matching result</span><strong>{!stateVerified || lastResult === undefined ? "Not verified" : `${lastResult.toLocaleString()} jobs`}</strong></div>
+                    </div>
+                  </details>
 
                   {state?.recovery_required ? (
                     <div className="error">
@@ -636,63 +656,85 @@ export function ClientWorkspace({
                   ) : null}
 
                   <div className="client-actions">
-                    {waiting > 0 ? (
-                      <Link href={`/review#${clientAnchor(config)}`}>
+                    {stateVerified && state?.recovery_required ? (
+                      <Link className="client-primary-action" href="/operations#review-queue">
+                        Check safe delivery recovery
+                      </Link>
+                    ) : stateVerified && state && state.sheet_status !== "ready" ? (
+                      <button
+                        className="client-primary-button"
+                        type="button"
+                        disabled={busy || !state}
+                        onClick={() => state ? void clientAction(config, state, state.sheet_status === "disabled" ? "sheet-enable" : "sheet-check") : undefined}
+                      >
+                        {state?.sheet_status === "disabled" ? "Verify and re-enable Sheet" : "Check Google Sheet"}
+                      </button>
+                    ) : stateVerified && state?.profile_status === "paused" ? (
+                      <button
+                        className="client-primary-button"
+                        type="button"
+                        disabled={busy || !state}
+                        onClick={() => state ? void clientAction(config, state, "resume") : undefined}
+                      >
+                        Resume deliveries
+                      </button>
+                    ) : waiting !== null && waiting > 0 ? (
+                      <Link className="client-primary-action" href={`/review#${clientAnchor(config)}`}>
                         Review {waiting.toLocaleString()} job{waiting === 1 ? "" : "s"}
                       </Link>
                     ) : (
-                      <span className="client-action-note">No jobs waiting</span>
+                      <span className="client-action-note">
+                        {waiting === null ? "Waiting for a verified update" : "No action needed right now"}
+                      </span>
                     )}
-                    <button
-                      type="button"
-                      disabled={busy || !stateVerified || !state}
-                      onClick={() =>
-                        state
-                          ? void clientAction(
-                              config,
-                              state,
-                              state.profile_status === "active" ? "pause" : "resume",
-                            )
-                          : undefined
-                      }
-                    >
-                      {state?.profile_status === "active" ? "Pause" : "Resume"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !stateVerified || !state}
-                      onClick={() =>
-                        state ? void clientAction(config, state, "sheet-check") : undefined
-                      }
-                    >
-                      Check Sheet
-                    </button>
-                    {state?.sheet_handle ? (
-                      <a
-                        href={`/api/control/sheet?handle=${encodeURIComponent(state.sheet_handle)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open Sheet
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={busy || !stateVerified || !state || state.profile_status !== "active"}
-                      onClick={() =>
-                        state ? void clientAction(config, state, "run-now") : undefined
-                      }
-                    >
-                      Check current inventory
-                    </button>
+                    <details className="client-card-details client-more-actions">
+                      <summary>More actions</summary>
+                      <div className="client-extra-actions">
+                        {state?.profile_status === "active" ? (
+                          <button
+                            type="button"
+                            disabled={busy || !stateVerified}
+                            onClick={() => state ? void clientAction(config, state, "pause") : undefined}
+                          >
+                            Pause deliveries
+                          </button>
+                        ) : null}
+                        {state?.sheet_status === "ready" ? (
+                          <button
+                            type="button"
+                            disabled={busy || !stateVerified || !state}
+                            onClick={() => state ? void clientAction(config, state, "sheet-check") : undefined}
+                          >
+                            Check Google Sheet
+                          </button>
+                        ) : null}
+                        {state?.sheet_handle && stateVerified ? (
+                          <a
+                            href={`/api/control/sheet?handle=${encodeURIComponent(state.sheet_handle)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open Google Sheet
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={busy || !stateVerified || !state || state.profile_status !== "active"}
+                          onClick={() => state ? void clientAction(config, state, "run-now") : undefined}
+                        >
+                          Check current inventory
+                        </button>
+                      </div>
+                    </details>
                   </div>
                 </article>
               );
             })
           ) : (
             <div className="empty">
-              <h3>No operator clients are configured</h3>
-              <p>Add a production client to the server-side operator catalogue before controls can be used.</p>
+              <h3>{stateVerified ? "No clients added yet" : "Client details are not verified"}</h3>
+              <p>{stateVerified ? "Add your first client to set up job delivery." : "Check your connection before assuming no clients exist."}</p>
+              {stateVerified ? <Link href="/clients/new">Add your first client</Link> : null}
             </div>
           )}
         </section>
@@ -706,8 +748,7 @@ export function ClientWorkspace({
         <div>
           <h2>Review jobs</h2>
           <p>
-            Review the exact backend-prepared jobs before anything is written to a
-            client Sheet.
+            Check the jobs waiting for your approval before anything is sent to a client&apos;s Google Sheet.
           </p>
         </div>
         <button type="button" disabled={busy} onClick={() => void loadStatus()}>
@@ -939,9 +980,9 @@ export function ClientWorkspace({
         </div>
       ) : (
         <section className="empty">
-          <h3>No jobs are waiting for review</h3>
-          <p>Run sourcing from Clients. Review-mode matches will appear here when a batch is prepared.</p>
-          <Link href="/clients">Open Clients</Link>
+          <h3>{stateVerified ? "Nothing needs your approval right now" : "JobSift cannot confirm review status yet"}</h3>
+          <p>{stateVerified ? "When jobs are ready for your review, they'll appear here." : "The client update is incomplete. Check status again before taking action."}</p>
+          <Link href="/operations">Back to Home</Link>
         </section>
       )}
     </div>

@@ -4,6 +4,8 @@ Scope: everything under `frontend/`. The root `AGENTS.md` still applies.
 
 Keep this UI a thin operator surface. It may present evidence and dispatch explicitly allowlisted server-side operations, but it must not become the authority for matching, freshness, dedupe, delivery history, quotas, or source admission.
 
+For any user-facing design changes, follow `.agents/skills/jobsift-guided-operator-ux/SKILL.md`: state and next action first, no made-up numbers, routine choices upfront, uncommon controls secondary, readable mobile layouts.
+
 ## Boundaries
 
 - Never expose GitHub, Neon/Postgres, Google, provider, or service credentials to the browser.

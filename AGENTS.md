@@ -37,6 +37,7 @@ Load extra guidance only when the task matches:
 
 - throughput, 2k/day, 20k inventory, fan-in, persistence, discovery, scheduling, Workday, or bottlenecks -> read `.agents/skills/jobsift-throughput/SKILL.md`;
 - PR readiness, review findings, CI/workflow failures, broad changes, or pre-merge verification -> read `.agents/skills/jobsift-verify/SKILL.md`;
+- any owner-facing UX, UI, homepage, wording, onboarding, status/empty-state, or visual design work -> read `.agents/skills/jobsift-guided-operator-ux/SKILL.md`;
 - work under `frontend/` -> follow `frontend/AGENTS.md`;
 - client delivery or Sheets -> read only `docs/client-delivery-controls.md` and/or `docs/client-sheet-destinations.md` as needed;
 - live source discovery/admission -> read `docs/live-source-discovery.md`;
