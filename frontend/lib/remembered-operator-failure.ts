@@ -18,7 +18,7 @@ export function readRememberedFailure(): RememberedFailedOperation | null {
     if (!value || typeof value !== "object") return null;
     const record = value as Partial<RememberedFailedOperation>;
     if (typeof record.requestId !== "string" || !REQUEST_ID.test(record.requestId)) return null;
-    if (!Number.isSafeInteger(record.runNumber) || (record.runNumber ?? 0) < 1) return null;
+    if (typeof record.runNumber !== "number" || !Number.isSafeInteger(record.runNumber) || record.runNumber < 1) return null;
     if (typeof record.url !== "string") return null;
     const url = new URL(record.url);
     if (url.protocol !== "https:" || url.hostname !== "github.com") return null;
