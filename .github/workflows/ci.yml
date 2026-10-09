@@ -96,27 +96,41 @@ jobs:
             sleep 1
           done
           # Unauthenticated API and page access must fail closed.
+          echo "Owner-auth smoke: testing unauthenticated API and page access"
           unauthenticated_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/control/status)"
-          test "$unauthenticated_status" = "401"
+          if [[ "$unauthenticated_status" != "401" ]]; then
+            echo "Owner-auth smoke failed: unauthenticated status API returned HTTP $unauthenticated_status, expected 401"
+            exit 1
+          fi
           page_redirect="$(curl -sS -o /dev/null -D - http://127.0.0.1:3100/clients/new | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
-          case "$page_redirect" in */owner-login) ;; *) echo "Unauthenticated client route was not protected"; exit 1 ;; esac
+          case "$page_redirect" in */owner-login) ;; *) echo "Owner-auth smoke failed: unauthenticated client route returned redirect ${page_redirect:-<none>}"; exit 1 ;; esac
 
           # Authenticate with temporary credentials and preserve the signed cookie.
+          echo "Owner-auth smoke: signing in with ephemeral credentials"
           login_status="$(curl -sS -o /dev/null -w '%{http_code}' -c "$cookie_file" \
             -H 'Origin: http://127.0.0.1:3100' \
             -H 'Content-Type: application/x-www-form-urlencoded' \
             --data-urlencode "access_key=$owner_key" \
             http://127.0.0.1:3100/api/owner/session)"
-          test "$login_status" = "303"
-          curl -fsS -b "$cookie_file" http://127.0.0.1:3100/clients/new > /tmp/jobsift-clients-new.html
-          grep -q "Production" /tmp/jobsift-clients-new.html
-          grep -q "Add client" /tmp/jobsift-clients-new.html
+          if [[ "$login_status" != "303" ]]; then
+            echo "Owner-auth smoke failed: sign-in returned HTTP $login_status, expected 303"
+            exit 1
+          fi
+          if ! curl -fsS -b "$cookie_file" http://127.0.0.1:3100/clients/new > /tmp/jobsift-clients-new.html; then
+            echo "Owner-auth smoke failed: signed-in client page was not accessible"
+            exit 1
+          fi
+          grep -q "Production" /tmp/jobsift-clients-new.html || { echo "Owner-auth smoke failed: production marker missing"; exit 1; }
+          grep -q "Add client" /tmp/jobsift-clients-new.html || { echo "Owner-auth smoke failed: client creation marker missing"; exit 1; }
           if grep -q "Development fixtures" /tmp/jobsift-clients-new.html; then
             echo "Fixture shell leaked into production operator mode"
             exit 1
           fi
           location="$(curl -sS -b "$cookie_file" -o /dev/null -D - http://127.0.0.1:3100/jobs | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
-          test "$location" = "/clients"
+          if [[ "$location" != "/clients" ]]; then
+            echo "Owner-auth smoke failed: signed-in jobs redirect was ${location:-<none>}, expected /clients"
+            exit 1
+          fi
       - name: Install browser
         run: npx playwright install --with-deps chrome
       - name: Frontend tests
