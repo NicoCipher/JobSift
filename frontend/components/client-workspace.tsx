@@ -187,7 +187,7 @@ export function ClientWorkspace({
     status !== null &&
     !statusError &&
     !awaitingFreshState &&
-    latestSnapshot?.complete !== false &&
+    latestSnapshot?.complete === true &&
     latestSnapshot?.truncated !== true;
 
   const configured = useMemo(() => {
@@ -217,9 +217,11 @@ export function ClientWorkspace({
     }));
   }, [profiles, latestSnapshot]);
 
-  const pending = configured.filter(
-    ({ state }) => Boolean(state?.batch_id) && state?.delivery_mode === "review",
-  );
+  const pending = stateVerified
+    ? configured.filter(
+        ({ state }) => Boolean(state?.batch_id) && state?.delivery_mode === "review",
+      )
+    : [];
 
   const loadStatus = useCallback(async () => {
     try {
@@ -557,25 +559,28 @@ export function ClientWorkspace({
           <div>
             <h2>Clients</h2>
             <p>
-              See each client in plain language. Daily delivery safeguards still run on the
-              backend.
+              See what's been sent, what needs review, and whether each Google Sheet is connected.
             </p>
           </div>
           <div className="client-page-actions">
-            <Link href="/clients/new" className="secondary-link">Add client</Link>
-            <button
-              type="button"
-              disabled={busy || !status?.control_ready || !stateVerified}
-              onClick={() => void findJobs()}
-            >
-              {busy ? "Starting…" : "Find jobs now"}
-            </button>
+            <Link href="/clients/new" className="secondary-link">Add a client</Link>
+            <details className="client-extra-tools">
+              <summary>Manual sourcing</summary>
+              <p className="metadata">Only use this when needed. A sourcing run may consume Neon and GitHub Actions allowance.</p>
+              <button
+                type="button"
+                disabled={busy || !status?.control_ready || !stateVerified}
+                onClick={() => void findJobs()}
+              >
+                {busy ? "Starting…" : "Find jobs now"}
+              </button>
+            </details>
           </div>
         </section>
 
-        {!status?.control_ready ? (
-          <div className="notice">
-            Production controls are unavailable on this deployment.
+        {status && !status.control_ready ? (
+          <div className="notice" role="status">
+            Client controls are unavailable. Return Home to check what's happening before making changes.
           </div>
         ) : null}
         {statusError ? <div className="error">{statusError}</div> : null}
@@ -590,7 +595,7 @@ export function ClientWorkspace({
         <section className="client-grid" aria-label="JobSift clients">
           {configured.length ? (
             configured.map(({ config, state }) => {
-              const waiting = state?.selected_count ?? 0;
+              const waiting = stateVerified ? state?.selected_count ?? null : null;
               const funnel = state?.client_funnel;
               const lastResult =
                 funnel?.overall?.confirmed_matches_0_24h ??
@@ -608,12 +613,12 @@ export function ClientWorkspace({
                     </div>
                     <span
                       className={
-                        state?.profile_status === "active"
+                        stateVerified && state?.profile_status === "active"
                           ? "client-state active"
                           : "client-state paused"
                       }
                     >
-                      {state?.profile_status === "active" ? "Active" : state?.profile_status === "paused" ? "Paused" : "State unavailable"}
+                      {!stateVerified ? "Not verified" : state?.profile_status === "active" ? "Active" : state?.profile_status === "paused" ? "Paused" : "State unavailable"}
                     </span>
                   </div>
 
