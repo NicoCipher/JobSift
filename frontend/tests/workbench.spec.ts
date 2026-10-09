@@ -319,6 +319,8 @@ test("operator command center exposes pending review batch without opaque IDs", 
     "href",
     "https://example.invalid/job-1",
   );
+  await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute("target", "_blank");
+  await expect(page.getByRole("link", { name: "Open job" })).toHaveAttribute("rel", /noopener/);
   await expect(
     page.locator(".operator-batch-card").getByText(
       "Example client — Example delivery destination",
@@ -333,6 +335,12 @@ test("operator command center exposes pending review batch without opaque IDs", 
   expect(dispatched).toHaveLength(0);
   await confirmRelease.getByRole("button", { name: "Cancel" }).click();
   expect(dispatched).toHaveLength(0);
+  await release.click();
+  await expect(confirmRelease).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirmRelease).not.toBeVisible();
+  expect(dispatched).toHaveLength(0);
+  await expect(release).toBeFocused();
   await release.click();
   await confirmRelease.getByRole("button", { name: "Send to Sheet" }).click();
   await expect.poll(() => dispatched.length).toBe(1);
