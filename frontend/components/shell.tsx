@@ -19,9 +19,12 @@ const navigation = [
   ["Settings", "/settings"],
 ];
 
-const operatorNavigation = navigation.filter(([, path]) =>
-  ["/clients", "/review", "/operations", "/settings"].includes(path),
-);
+const operatorNavigation = [
+  ["Operations", "/operations"],
+  ["Clients", "/clients"],
+  ["Review", "/review"],
+  ["Settings", "/settings"],
+];
 
 const localServiceNavigation = navigation.filter(([, path]) =>
   ["/clients", "/review", "/operations", "/jobs", "/settings"].includes(path),
@@ -39,7 +42,6 @@ export function Shell({
   const pathname = usePathname();
   const dialog = useRef<HTMLDialogElement>(null);
   const menu = useRef<HTMLButtonElement>(null);
-  const focusedMode = operatorMode || liveMode;
 
   const close = () => {
     dialog.current?.close();
@@ -91,7 +93,7 @@ export function Shell({
         >
           Menu
         </button>
-        <Link href={focusedMode ? "/clients" : "/jobs"} className="wordmark">
+        <Link href={operatorMode ? "/operations" : liveMode ? "/clients" : "/jobs"} className="wordmark">
           JobSift
         </Link>
         <span className="client-scope">{clientScope}</span>
@@ -101,9 +103,9 @@ export function Shell({
         <aside className="sidebar">
           {links()}
           <p className="sidebar-note metadata">
-            Clients and Review are the normal workflow
+            Operations is your home
             <br />
-            Operations keeps advanced controls
+            Clients and Review support delivery
           </p>
         </aside>
         <main id="main" tabIndex={-1}>

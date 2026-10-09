@@ -70,9 +70,18 @@ server-side and gives the browser only a short-lived opaque Sheet handle.
 
 ## Normal operator workflow
 
-Production operators land on `/clients`. The normal path is now:
+Production operators land on `/operations`. This is the main control panel
+for the sole operator. `/clients` remains available for client setup and
+delivery details, and `/review` remains available for approved-batch review.
+The normal path is:
 
-`Clients → Add client → Find jobs → Review → Send to client Sheet`
+`Operations → Add client → Find jobs → Review → Send to client Sheet`
+
+The old development Jobs and Dashboard pages are not part of the production
+operator experience. In production operator mode, `/jobs` and legacy sections
+such as `/dashboard` redirect to `/operations` rather than showing example
+or stale job data. Fixture and local-service modes retain their existing routes
+for development and testing.
 
 `/clients` shows the human-readable client name, active/paused state,
 review/auto mode, daily limit, sent-today count, waiting review count, Sheet
