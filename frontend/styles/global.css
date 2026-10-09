@@ -1682,3 +1682,117 @@ summary {
     justify-content: center;
   }
 }
+
+
+/* Guided Operations: status first, manual controls on demand. */
+.operator-driving-home {
+  display: grid;
+  gap: var(--s12);
+  border: 1px solid var(--border-strong);
+  background: var(--base);
+  padding: clamp(16px, 3vw, 28px);
+}
+.operator-driving-home .operator-eyebrow {
+  margin: 0;
+  color: var(--secondary);
+}
+.operator-driving-home h2 {
+  margin: 0;
+  max-width: 42rem;
+}
+.operator-driving-home > p {
+  margin: 0;
+  max-width: 56rem;
+}
+.operator-driving-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s8);
+  align-items: center;
+}
+.operator-driving-actions > button,
+.operator-driving-actions > a {
+  min-height: 44px;
+}
+.operator-driving-actions .secondary-action {
+  background: var(--base);
+}
+.operator-main-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r4);
+  background: var(--subtle);
+  color: var(--text);
+  padding: var(--s8) var(--s16);
+  font-weight: var(--semibold);
+  text-decoration: none;
+}
+.operator-main-link:hover {
+  background: var(--hover);
+}
+.operator-driving-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s12);
+  margin: 0;
+  padding-top: var(--s16);
+  border-top: 1px solid var(--border);
+}
+.operator-driving-metrics > div {
+  min-width: 0;
+}
+.operator-driving-metrics dt {
+  color: var(--secondary);
+  font-size: var(--metadata);
+}
+.operator-driving-metrics dd {
+  margin: var(--s4) 0 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: var(--semibold);
+  font-variant-numeric: tabular-nums;
+}
+.operator-optional {
+  border-top: 1px solid var(--border);
+  padding-top: var(--s12);
+}
+.operator-optional > summary,
+.operator-manual-tools > summary {
+  cursor: pointer;
+  padding: var(--s12) 0;
+  font-weight: var(--semibold);
+}
+.operator-optional[open] > summary,
+.operator-manual-tools[open] > summary {
+  margin-bottom: var(--s12);
+}
+.operator-manual-tools {
+  border-top: 1px solid var(--border-strong);
+  margin-top: var(--s12);
+  padding: var(--s16) 0;
+}
+.operator-manual-tools > .operations-section,
+.operator-manual-tools > .section-block {
+  margin-top: var(--s16);
+}
+@media (max-width: 639px) {
+  .operator-driving-home {
+    gap: var(--s16);
+  }
+  .operator-driving-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .operator-driving-actions > button,
+  .operator-driving-actions > a {
+    width: 100%;
+  }
+  .operator-driving-metrics {
+    gap: var(--s8);
+  }
+  .operator-driving-metrics dd {
+    font-size: 1.25rem;
+  }
+}
