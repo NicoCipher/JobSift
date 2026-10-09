@@ -342,6 +342,9 @@ export function OperationsControl({
     if (latestSnapshot?.run?.status === "completed" && latestSnapshot.run.conclusion === "failure") {
       return { tone: "caution", title: "The last reported operation failed", detail: "Open the recorded activity to see what failed before deciding whether to try again.", action: "activity", label: "View last activity" };
     }
+    if (latestSnapshot?.profiles.some((profile) => profile.sheet_status !== "ready")) {
+      return { tone: "caution", title: "A client's Google Sheet needs attention", detail: "At least one client's Sheet is not confirmed ready. Check that connection before expecting new deliveries.", action: "link", label: "Check client Sheets", href: "/clients" };
+    }
     if (latestSnapshot?.profiles.some((profile) => profile.profile_status === "paused")) {
       return { tone: "attention", title: "A client is paused", detail: "At least one client cannot receive new deliveries yet. Check which client is paused before reviewing or sending more jobs.", action: "link", label: "View paused clients", href: "/clients" };
     }
