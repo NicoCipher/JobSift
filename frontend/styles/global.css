@@ -1928,6 +1928,21 @@ summary {
 .client-primary-action:hover {
   filter: brightness(0.92);
 }
+.client-primary-button {
+  min-height: 44px !important;
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  border-radius: var(--r8);
+  font-weight: var(--semibold);
+}
+.client-primary-button:not(:disabled):hover {
+  filter: brightness(0.92);
+}
+.client-primary-button:disabled {
+  background: var(--subtle);
+  color: var(--secondary);
+}
 @media (max-width: 639px) {
   .client-page-actions {
     align-items: stretch;
