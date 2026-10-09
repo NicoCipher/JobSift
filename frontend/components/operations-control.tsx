@@ -665,7 +665,18 @@ export function OperationsControl({
               {nextStep.label}
             </button>
           ) : nextStep.action === "controls" ? (
-            <a className="operator-main-link" href="#manual-controls" onClick={() => setShowManualControls(true)}>
+            <a
+              className="operator-main-link"
+              href="#system-status"
+              onClick={() => {
+                setShowManualControls(true);
+                window.requestAnimationFrame(() => {
+                  const details = document.getElementById("system-status");
+                  details?.scrollIntoView({ block: "start" });
+                  details?.focus();
+                });
+              }}
+            >
               {nextStep.label}
             </a>
           ) : nextStep.action === "activity" ? (
@@ -758,6 +769,13 @@ export function OperationsControl({
             <div>
               <span className="metadata">Latest state update</span>
               <strong>#{latestSnapshot.run.run_number}</strong>
+              {latestSnapshot.run.url ? (
+                <a href={latestSnapshot.run.url} target="_blank" rel="noopener noreferrer">
+                  Open full activity details
+                </a>
+              ) : (
+                <span className="metadata">Full activity link unavailable</span>
+              )}
             </div>
             <div>
               <span className="metadata">Result</span>
@@ -1405,7 +1423,7 @@ export function OperationsControl({
         </div>
       </section>
 
-      <section className="section-block operations-section" id="system-status">
+      <section className="section-block operations-section" id="system-status" tabIndex={-1}>
         <h2>System Status</h2>
         <p>
           Use this section to confirm that production automation is running. You do not
