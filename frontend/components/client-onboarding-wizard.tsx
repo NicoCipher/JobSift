@@ -490,7 +490,7 @@ export function ClientOnboardingWizard() {
               />
             </label>
             <button type="submit" disabled={busy}>
-              {busy ? "Checking Sheet…" : "Check Sheet connection"}
+              {busy ? "Checking Sheet…" : "Inspect Sheet"}
             </button>
           </form>
 
