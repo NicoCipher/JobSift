@@ -312,23 +312,44 @@ class PostgresRepository(SQLiteRepository):
                     "Neon operator-state immutability triggers are not installed"
                 )
 
-            # Startup may repair legacy jobs lacking delivery groups. Serialize
-            # that repair with every other JobSift writer before inspecting rows.
-            connection.execute("BEGIN IMMEDIATE")
+            self._repair_legacy_delivery_groups_if_needed(connection)
 
-            # Preserve the SQLite repository's idempotent legacy backfill.
-            rows = connection.execute(
-                "SELECT j.payload_json FROM jobs j LEFT JOIN posting_delivery_groups g "
-                "ON g.job_id=j.id WHERE g.job_id IS NULL ORDER BY j.id"
-            ).fetchall()
-            for row in rows:
-                self._assign_group(connection, Job.model_validate_json(row[0]))
-            connection.execute(
-                "INSERT OR IGNORE INTO group_deliveries "
-                "SELECT g.group_id,e.client_id,e.destination,e.job_id,e.exported_at "
-                "FROM exports e JOIN posting_delivery_groups g ON g.job_id=e.job_id "
-                "ORDER BY e.exported_at,e.job_id"
-            )
+    def _repair_legacy_delivery_groups_if_needed(
+        self,
+        connection: PostgresConnection,
+    ) -> None:
+        """Repair migration-era delivery-group gaps without locking clean startups."""
+
+        missing_group = connection.execute(
+            "SELECT 1 FROM jobs j LEFT JOIN posting_delivery_groups g "
+            "ON g.job_id=j.id WHERE g.job_id IS NULL LIMIT 1"
+        ).fetchone()
+        missing_delivery = connection.execute(
+            "SELECT 1 FROM exports e "
+            "JOIN posting_delivery_groups g ON g.job_id=e.job_id "
+            "LEFT JOIN group_deliveries d ON d.group_id=g.group_id "
+            "AND d.client_id=e.client_id AND d.destination=e.destination "
+            "WHERE d.group_id IS NULL LIMIT 1"
+        ).fetchone()
+        if missing_group is None and missing_delivery is None:
+            return
+
+        # Legacy repair is rare but touches shared delivery-group state. Keep
+        # the existing global writer serialization only when repair is needed,
+        # then re-read under the lock so concurrent normal writers stay safe.
+        connection.execute("BEGIN IMMEDIATE")
+        rows = connection.execute(
+            "SELECT j.payload_json FROM jobs j LEFT JOIN posting_delivery_groups g "
+            "ON g.job_id=j.id WHERE g.job_id IS NULL ORDER BY j.id"
+        ).fetchall()
+        for row in rows:
+            self._assign_group(connection, Job.model_validate_json(row[0]))
+        connection.execute(
+            "INSERT OR IGNORE INTO group_deliveries "
+            "SELECT g.group_id,e.client_id,e.destination,e.job_id,e.exported_at "
+            "FROM exports e JOIN posting_delivery_groups g ON g.job_id=e.job_id "
+            "ORDER BY e.exported_at,e.job_id"
+        )
 
     def _existing_jobs_in_connection(
         self,

@@ -103,6 +103,21 @@ def _health_interval(classification: str) -> timedelta:
     return timedelta(hours=6)
 
 
+def _begin_write(connection) -> None:
+    """Serialize discovery writes without holding JobSift's global writer lock."""
+
+    if getattr(connection, "is_postgres", False):
+        # Discovery's check-then-insert/update rules need serialization across
+        # *all* callers (including ad-hoc CLI), not only the scheduled workflow.
+        # This transaction-scoped lock covers only source-discovery writers,
+        # so inventory and client delivery can proceed independently.
+        connection.execute("BEGIN")
+        connection.execute("SELECT pg_advisory_xact_lock(1246971974, 1)")
+    else:
+        # SQLite provides the same protection with its immediate writer lock.
+        connection.execute("BEGIN IMMEDIATE")
+
+
 class SourceDiscoveryStore:
     """Auditable candidate, health-evidence, admission and crawl-cursor state."""
 
@@ -140,7 +155,7 @@ class SourceDiscoveryStore:
         if page < 0 or pages < 1 or page >= pages:
             raise ValueError("invalid source-discovery cursor")
         with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_write(connection)
             connection.execute(
                 "INSERT INTO source_discovery_cursors "
                 "(discovery_source,query_id,crawl_id,page,pages,updated_at) "
@@ -253,7 +268,7 @@ class SourceDiscoveryStore:
         inserted_targets = 0
         inserted_evidence = 0
         with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_write(connection)
             for value in values:
                 target_added, evidence_added = self._observe_one(connection, value)
                 inserted_targets += int(target_added)
@@ -484,7 +499,7 @@ class SourceDiscoveryStore:
         if not values:
             return
         with self.repository.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_write(connection)
             for target_identity, checked_at, result in values:
                 self._record_health_one(
                     connection,
