@@ -109,6 +109,18 @@ export function ClientOnboardingWizard() {
       timezoneValid) ||
     (step === 4 && inspection !== null && requiredMapped);
 
+  const canCreate =
+    clientName.trim().length > 0 &&
+    roleTitles.length > 0 &&
+    /^[A-Z]{2}$/.test(country.trim().toUpperCase()) &&
+    workModes.length > 0 &&
+    Number.isInteger(Number(dailyLimit)) &&
+    Number(dailyLimit) >= 1 &&
+    Number(dailyLimit) <= 2000 &&
+    timezoneValid &&
+    inspection !== null &&
+    requiredMapped;
+
   function toggleMode(mode: string) {
     setWorkModes((current) =>
       current.includes(mode)
@@ -567,7 +579,7 @@ export function ClientOnboardingWizard() {
             Continue
           </button>
         ) : (
-          <button type="button" disabled={busy || !canContinue} onClick={() => void createClient()}>
+          <button type="button" disabled={busy || !canCreate} onClick={() => void createClient()}>
             {busy ? "Creating client…" : "Create client"}
           </button>
         )}
