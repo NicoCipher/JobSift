@@ -76,6 +76,12 @@ type OperatorSnapshot = {
   observed_at: string | null;
   control_request_id: string | null;
   confirmed_control_request_id: string | null;
+  confirmed_run?: {
+    status: string;
+    conclusion: string | null;
+    run_number: number;
+    url: string;
+  } | null;
   state_error: string | null;
   run: {
     id: number;
@@ -386,7 +392,7 @@ export function OperationsControl({
       ) {
         pendingControlRequestId.current = null;
         setAwaitingFreshState(false);
-        const run = body.data.operator_snapshot.run;
+        const run = body.data.operator_snapshot.confirmed_run;
         if (run?.status === "completed" && run.conclusion === "success") {
           setMessageTone("success");
           setMessage("JobSift confirmed the successful operation. You can continue.");
