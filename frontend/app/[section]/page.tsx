@@ -402,10 +402,12 @@ export default async function SectionPage({
   return (
     <div className="section-content">
       <header className="page-head">
-        <h1>{titles[section]}</h1>
+        <h1>{operatorMode && section === "operations" ? "Your JobSift" : titles[section]}</h1>
         <p className="scope-line">
           {operatorMode
-            ? "Production operator workspace · backend-authoritative controls"
+            ? section === "operations"
+              ? "What needs your attention, and what to do next."
+              : "Manage one task at a time."
             : section === "operations"
               ? "Production workflows · explicit operator commands"
               : liveMode
