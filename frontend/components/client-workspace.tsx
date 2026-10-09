@@ -244,7 +244,14 @@ export function ClientWorkspace({
         setAwaitingFreshState(false);
         const context = mutationContext.current;
         mutationContext.current = null;
-        if (context?.expectedSent && context.profileId) {
+        const run = body.data.operator_snapshot.run;
+        if (run?.status === "completed" && run.conclusion === "failure") {
+          setMessageTone("error");
+          setMessage("JobSift reported a failed delivery operation. Inspect the current Sheet and client state before trying again; the result may be uncertain.");
+        } else if (run?.status !== "completed" || run.conclusion !== "success") {
+          setMessageTone("warning");
+          setMessage("The new client state is available, but the operation result is not confirmed. Do not retry a Sheet delivery until it is verified.");
+        } else if (context?.expectedSent && context.profileId) {
           const next = body.data.operator_snapshot.profiles.find(
             (profile) => profile.profile_id === context.profileId,
           );
