@@ -650,17 +650,19 @@ export function OperationsControl({
               {nextStep.label}
             </button>
           ) : nextStep.action === "controls" ? (
-            <button type="button" onClick={() => setShowManualControls(true)}>
+            <a className="operator-main-link" href="#manual-controls" onClick={() => setShowManualControls(true)}>
               {nextStep.label}
-            </button>
+            </a>
           ) : nextStep.action === "review" ? (
             <a className="operator-main-link" href="#review-queue">{nextStep.label}</a>
           ) : nextStep.action === "link" && "href" in nextStep ? (
             <a className="operator-main-link" href={nextStep.href}>{nextStep.label}</a>
           ) : null}
-          <button type="button" className="secondary-action" disabled={busy} onClick={() => void loadStatus()}>
-            Refresh status
-          </button>
+          {nextStep.action !== "refresh" ? (
+            <button type="button" className="secondary-action" disabled={busy} onClick={() => void loadStatus()}>
+              Refresh status
+            </button>
+          ) : null}
         </div>
         <dl className="operator-driving-metrics" aria-label="Verified client summary">
           <div><dt>Client reports</dt><dd>{countLabel(reportedClients)}</dd></div>
