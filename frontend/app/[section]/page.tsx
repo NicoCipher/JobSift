@@ -6,6 +6,7 @@ import { liveMode, operatorMode } from "@/lib/api/client";
 import { factText, metricText, outcomeLabels } from "@/lib/display";
 import { configuredOperatorProfilesRaw, parseOperatorProfiles } from "@/lib/operator-profiles";
 import { PresentationSettings } from "@/components/preferences";
+import { UiIcon } from "@/components/ui-icon";
 import {
   OperationsControl,
   type ManagedProfile,
@@ -402,18 +403,35 @@ export default async function SectionPage({
   return (
     <div className="section-content">
       <header className="page-head">
-        <h1>{operatorMode && section === "operations" ? "Your JobSift" : titles[section]}</h1>
-        <p className="scope-line">
-          {operatorMode
-            ? section === "operations"
-              ? "What needs your attention, and what to do next."
-              : "Manage one task at a time."
-            : section === "operations"
-              ? "Production workflows · explicit operator commands"
-              : liveMode
-                ? "Registered local-service evidence"
-                : "Example client · Read-only development evidence"}
-        </p>
+        <div className="page-title-wrap">
+          <span className="page-title-symbol">
+            <UiIcon
+              name={section === "operations" ? "home" : section === "clients" ? "users" : section === "review" ? "review" : "settings"}
+              size={28}
+            />
+          </span>
+          <div>
+            <p className="page-eyebrow">
+              {operatorMode ? "YOUR WORKSPACE" : "JOBSIFT"}
+            </p>
+            <h1>{operatorMode && section === "operations" ? "Your JobSift" : titles[section]}</h1>
+            <p className="scope-line">
+              {operatorMode
+                ? section === "operations"
+                  ? "Your progress, your priorities, one clear next step."
+                  : section === "clients"
+                    ? "Keep every client delivery on track."
+                    : section === "review"
+                      ? "Review with confidence, then choose what to send."
+                      : "Make JobSift feel right for you."
+                : section === "operations"
+                  ? "Production workflows · explicit operator commands"
+                  : liveMode
+                    ? "Registered local-service evidence"
+                    : "Example client · Read-only development evidence"}
+            </p>
+          </div>
+        </div>
       </header>
       {content}
     </div>

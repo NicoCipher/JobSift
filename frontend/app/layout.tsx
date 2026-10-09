@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Shell } from "@/components/shell";
 import { api, liveMode, operatorMode } from "@/lib/api/client";
 import "@/styles/global.css";
+import "@/styles/visual-refresh.css";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -29,7 +30,7 @@ export default async function RootLayout({
       })();
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-jobsift-operator={operatorMode ? "true" : "false"} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: preferenceScript }} />
       </head>
