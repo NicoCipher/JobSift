@@ -46,14 +46,22 @@ export function OperatorNotice({
 export function OperatorFeedback({
   error,
   message,
+  messageTone = "info",
   onRetry,
 }: {
   error?: string;
   message?: string;
+  messageTone?: FeedbackTone;
   onRetry?: () => void;
 }) {
-  const pending = message && /waiting|applying|starting|accepted|processing|still running|verifying|checking/i.test(message);
-  const failed = message && /failed|could not|cannot|can't|not verified|locked|unavailable|invalid|no jobs are selected|not safe|missing|uncertain/i.test(message);
+  const heading =
+    messageTone === "error"
+      ? "Action couldn't be completed"
+      : messageTone === "warning"
+        ? "Check before continuing"
+        : messageTone === "success"
+          ? "Confirmed by JobSift"
+          : "Working on it";
   return (
     <div className="operator-feedback-stack" aria-live="polite">
       {error ? (
@@ -63,12 +71,9 @@ export function OperatorFeedback({
         </OperatorNotice>
       ) : null}
       {message ? (
-        <OperatorNotice
-          tone={failed ? "error" : pending ? "info" : "success"}
-          title={failed ? "Action needs attention" : pending ? "Working on it" : "Update from JobSift"}
-        >
+        <OperatorNotice tone={messageTone} title={heading}>
           <p>{message}</p>
-          {pending && !failed ? <p>Wait for confirmation before starting another action.</p> : null}
+          {messageTone === "info" ? <p>Wait for confirmation before starting another action.</p> : null}
         </OperatorNotice>
       ) : null}
     </div>
