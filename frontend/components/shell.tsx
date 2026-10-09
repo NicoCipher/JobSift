@@ -102,11 +102,13 @@ export function Shell({
       <div className="shell">
         <aside className="sidebar">
           {links()}
-          <p className="sidebar-note metadata">
-            Operations is your home
-            <br />
-            Clients and Review support delivery
-          </p>
+          {operatorMode ? (
+            <p className="sidebar-note metadata">
+              Operations is your home
+              <br />
+              Clients and Review support delivery
+            </p>
+          ) : null}
         </aside>
         <main id="main" tabIndex={-1}>
           <div className="evidence-label">
