@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # One small retention pass daily; this does not collect jobs or deliver to clients.
-    - cron: "17 3 * * *"
+    - cron: "17 13 * * *"
 
 permissions:
   contents: read
