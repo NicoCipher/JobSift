@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
+import sys
 
 import pytest
 
@@ -118,3 +120,60 @@ def test_prune_memberships_rejects_non_positive_retention(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="retention_hours must be at least 1"):
         store.prune_memberships(retention_hours=0)
+
+
+def test_scheduled_prune_command_also_removes_expired_memberships(
+    tmp_path, monkeypatch
+) -> None:
+    repository = _repository_with_job(tmp_path)
+    store = InventoryRunStore(repository)
+    completed_at = datetime.now(UTC) - timedelta(days=4)
+    store.create_if_absent(
+        run_id="expired-run",
+        plan_id="plan",
+        started_at=completed_at - timedelta(minutes=5),
+    )
+    store.add_memberships(
+        run_id="expired-run",
+        memberships=[("greenhouse:board-1", "job-1")],
+    )
+    store.finish(
+        run_id="expired-run",
+        status="success",
+        completed_at=completed_at,
+    )
+
+    output = tmp_path / "retention.json"
+    monkeypatch.setattr(
+        "job_scout.inventory_refresh.create_repository",
+        lambda _database: repository,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "inventory_refresh",
+            "prune",
+            "--database",
+            str(tmp_path / "unused.sqlite3"),
+            "--output",
+            str(output),
+            "--retention-hours",
+            "72",
+        ],
+    )
+
+    from job_scout.inventory_refresh import main
+
+    main()
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["membership_retention"] == {
+        "membership_rows_deleted": 1,
+        "membership_retention_hours": 72,
+    }
+    assert store.get("expired-run") is not None
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM inventory_run_jobs WHERE run_id='expired-run'"
+        ).fetchone()[0] == 0
