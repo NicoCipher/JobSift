@@ -36,7 +36,7 @@ def _repository_with_job(tmp_path):
 def test_prune_memberships_removes_only_expired_completed_run_links(tmp_path) -> None:
     repository = _repository_with_job(tmp_path)
     store = InventoryRunStore(repository)
-    now = datetime(2026, 11, 5, 12, tzinfo=UTC)
+    now = datetime.now(UTC)
     old_completed = now - timedelta(days=4)
     recent_completed = now - timedelta(hours=1)
 
