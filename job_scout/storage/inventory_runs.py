@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS inventory_runs (
 );
 CREATE INDEX IF NOT EXISTS ix_inventory_runs_plan_started
   ON inventory_runs(plan_id, started_at);
+CREATE INDEX IF NOT EXISTS ix_inventory_runs_completed_at
+  ON inventory_runs(completed_at) WHERE completed_at IS NOT NULL;
 CREATE TABLE IF NOT EXISTS inventory_run_jobs (
   run_id TEXT NOT NULL REFERENCES inventory_runs(run_id) ON DELETE CASCADE,
   job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -324,6 +326,41 @@ class InventoryRunStore:
             ).rowcount
             if updated != 1:
                 raise ValueError("inventory run not found")
+
+    def prune_memberships(
+        self,
+        *,
+        retention_hours: int = 72,
+        evaluated_at: datetime | None = None,
+    ) -> dict[str, int]:
+        """Remove memberships for completed runs outside the operational window.
+
+        Run receipts and target observations are deliberately retained: receipts
+        protect idempotency, while observations support coverage reporting/replay.
+        """
+        if retention_hours < 1:
+            raise ValueError("retention_hours must be at least 1")
+        evaluation_time = evaluated_at or datetime.now(UTC)
+        evaluation_time = (
+            evaluation_time.replace(tzinfo=UTC)
+            if evaluation_time.tzinfo is None
+            else evaluation_time.astimezone(UTC)
+        )
+        cutoff = (evaluation_time - timedelta(hours=retention_hours)).isoformat()
+        with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            deleted = connection.execute(
+                "DELETE FROM inventory_run_jobs WHERE run_id IN ("
+                "SELECT run_id FROM inventory_runs "
+                "WHERE status IN ('success','partial','failure') "
+                "AND completed_at IS NOT NULL AND completed_at < ?"
+                ")",
+                (cutoff,),
+            ).rowcount
+        return {
+            "membership_rows_deleted": max(0, int(deleted)),
+            "membership_retention_hours": retention_hours,
+        }
 
     def membership_count(self, run_id: str) -> int:
         """Return the persisted target/job membership count for one run."""
