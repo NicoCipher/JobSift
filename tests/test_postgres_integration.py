@@ -80,7 +80,10 @@ def test_postgres_bulk_retention_prunes_without_losing_delivery_or_unresolved_st
     delivered = posting("retention-delivered", old)
     unresolved = posting("retention-unresolved", old)
     fresh = posting("retention-fresh", recent)
-    repository.upsert_jobs([deleted, delivered, unresolved, fresh])
+    non_incremental = posting("retention-workday", old).model_copy(
+        update={"source": "workday", "source_board_id": "workday-retention-board"}
+    )
+    repository.upsert_jobs([deleted, delivered, unresolved, fresh, non_incremental])
     repository.mark_exported(
         delivered.id,
         "retention-client",
@@ -130,7 +133,7 @@ def test_postgres_bulk_retention_prunes_without_losing_delivery_or_unresolved_st
     )
 
     assert result == {
-        "deleted_jobs": 1,
+        "deleted_jobs": 2,
         "compacted_jobs": 1,
         "deleted_delivered_candidates": 0,
         "skipped_unresolved": 1,
@@ -140,6 +143,10 @@ def test_postgres_bulk_retention_prunes_without_losing_delivery_or_unresolved_st
         assert connection.execute(
             "SELECT 1 FROM jobs WHERE id=?",
             (deleted.id,),
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?",
+            (non_incremental.id,),
         ).fetchone() is None
         delivered_row = connection.execute(
             "SELECT payload_json,lifecycle FROM jobs WHERE id=?",
@@ -176,6 +183,7 @@ def test_postgres_bulk_retention_prunes_without_losing_delivery_or_unresolved_st
             deleted.source_job_id: 0,
             delivered.source_job_id: 1,
         }
+        assert non_incremental.source_job_id not in ledger
 
         assert connection.execute(
             "SELECT COUNT(*) FROM delivery_keys WHERE job_id=?",
