@@ -700,6 +700,7 @@ def run_once(
             if len(health_results) >= health_batch_size:
                 flush_health_results()
     flush_health_results()
+    evidence_cleanup = store.prune_evidence(now=current, retention_days=30)
 
     admitted, admission_health_evidence = store.admitted_snapshot(
         now=current,
@@ -714,6 +715,10 @@ def run_once(
         "discovery_version": "live-source-discovery-v1",
         "generated_at": current.isoformat(),
         "discovery": discovery,
+        "storage_maintenance": {
+            "evidence_retention_days": 30,
+            **evidence_cleanup,
+        },
         "health": {
             "checked": len(candidates),
             "selection_reasons": dict(sorted(selection_reasons.items())),

@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS source_discovery_evidence (
 );
 CREATE INDEX IF NOT EXISTS ix_source_discovery_evidence_target
   ON source_discovery_evidence(target_identity, observed_at);
+CREATE INDEX IF NOT EXISTS ix_source_discovery_evidence_retention
+  ON source_discovery_evidence(observed_at, target_identity);
 
 CREATE TABLE IF NOT EXISTS source_discovery_health_evidence (
   evidence_id TEXT PRIMARY KEY,
@@ -68,6 +70,8 @@ CREATE TABLE IF NOT EXISTS source_discovery_health_evidence (
 );
 CREATE INDEX IF NOT EXISTS ix_source_discovery_health_target
   ON source_discovery_health_evidence(target_identity, checked_at);
+CREATE INDEX IF NOT EXISTS ix_source_discovery_health_retention
+  ON source_discovery_health_evidence(checked_at, target_identity);
 
 CREATE TABLE IF NOT EXISTS source_discovery_cursors (
   discovery_source TEXT NOT NULL,
@@ -125,6 +129,46 @@ class SourceDiscoveryStore:
         self.repository = repository
         with repository.connect() as connection:
             connection.executescript(SOURCE_DISCOVERY_SCHEMA)
+
+    def prune_evidence(
+        self,
+        *,
+        now: datetime | None = None,
+        retention_days: int = 30,
+    ) -> dict[str, int]:
+        """Bound discovery history while preserving the latest evidence per target.
+
+        The target table is the operational source of truth for current discovery
+        and health state. Evidence older than the retention window is therefore
+        removable only when a newer record for the same target exists.
+        """
+        if retention_days < 1:
+            raise ValueError("evidence retention must be at least one day")
+        cutoff = (_aware(now or datetime.now(UTC)) - timedelta(days=retention_days)).isoformat()
+        counts = {"deleted_discovery_evidence": 0, "deleted_health_evidence": 0}
+        with self.repository.connect() as connection:
+            _begin_write(connection)
+            counts["deleted_discovery_evidence"] = connection.execute(
+                "DELETE FROM source_discovery_evidence AS old "
+                "WHERE old.observed_at < ? AND EXISTS ("
+                "SELECT 1 FROM source_discovery_evidence AS newer "
+                "WHERE newer.target_identity=old.target_identity "
+                "AND (newer.observed_at>old.observed_at OR "
+                "(newer.observed_at=old.observed_at AND newer.evidence_id>old.evidence_id))"
+                ")",
+                (cutoff,),
+            ).rowcount
+            counts["deleted_health_evidence"] = connection.execute(
+                "DELETE FROM source_discovery_health_evidence AS old "
+                "WHERE old.checked_at < ? AND EXISTS ("
+                "SELECT 1 FROM source_discovery_health_evidence AS newer "
+                "WHERE newer.target_identity=old.target_identity "
+                "AND (newer.checked_at>old.checked_at OR "
+                "(newer.checked_at=old.checked_at AND newer.evidence_id>old.evidence_id))"
+                ")",
+                (cutoff,),
+            ).rowcount
+        return counts
 
     def get_cursor(self, *, discovery_source: str, query_id: str) -> dict[str, Any] | None:
         with self.repository.connect() as connection:
