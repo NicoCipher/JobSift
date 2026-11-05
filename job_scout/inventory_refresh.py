@@ -1610,11 +1610,16 @@ def main() -> None:
         )
         _write_json(args.output.parent / "coverage.json", coverage_payload)
         retention = {}
+        membership_retention = {}
         retention_seconds = 0.0
         if not args.skip_retention:
             retention_started = time.perf_counter()
             retention = repository.prune_stale_inventory(
                 retention_hours=args.retention_hours
+            )
+            membership_retention = InventoryRunStore(repository).prune_memberships(
+                retention_hours=args.retention_hours,
+                evaluated_at=datetime.now(UTC),
             )
             retention_seconds = time.perf_counter() - retention_started
             print(
@@ -1623,6 +1628,7 @@ def main() -> None:
                         "event": "inventory_refresh_prune_complete",
                         "elapsed_ms": round(retention_seconds * 1000),
                         **retention,
+                        **membership_retention,
                     },
                     sort_keys=True,
                 ),
@@ -1632,6 +1638,7 @@ def main() -> None:
             "fan_in": report.model_dump(mode="json"),
             "coverage": coverage_payload,
             "retention": retention,
+            "membership_retention": membership_retention,
             "timings": {
                 "fan_in_seconds": round(fan_in_seconds, 3),
                 "retention_seconds": round(retention_seconds, 3),
