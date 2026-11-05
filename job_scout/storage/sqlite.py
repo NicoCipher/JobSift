@@ -440,15 +440,15 @@ class SQLiteRepository:
             ):
                 raise ValueError("invalidated job payload provenance is inconsistent")
 
-            delivered = connection.execute(
-                "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1",
-                (job.id,),
-            ).fetchone()
-            exported = connection.execute(
-                "SELECT 1 FROM exports WHERE job_id=? LIMIT 1",
-                (job.id,),
-            ).fetchone()
             if source in INCREMENTAL_SOURCES:
+                delivered = connection.execute(
+                    "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1",
+                    (job.id,),
+                ).fetchone()
+                exported = connection.execute(
+                    "SELECT 1 FROM exports WHERE job_id=? LIMIT 1",
+                    (job.id,),
+                ).fetchone()
                 connection.execute(
                     "INSERT INTO job_identity_ledger "
                     "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
