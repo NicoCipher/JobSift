@@ -410,7 +410,7 @@ class SQLiteRepository:
                     for job in ledger_values
                 ],
             )
-            return len(values)
+        return len(values)
 
 
     def _compact_invalidated_identities_in_connection(
@@ -474,7 +474,7 @@ class SQLiteRepository:
                         1 if delivered is not None or exported is not None else 0,
                     ),
                 )
-                connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
+            connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
             connection.execute(
                 "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)
             )
@@ -643,7 +643,7 @@ class SQLiteRepository:
                             1 if delivered is not None or exported is not None else 0,
                         ),
                     )
-                    connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
+                connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
                 connection.execute(
                     "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)
                 )
