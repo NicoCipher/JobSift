@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS inventory_runs (
   plan_id TEXT NOT NULL,
   started_at TEXT NOT NULL,
   completed_at TEXT,
-  status TEXT NOT NULL CHECK(status IN ('running','success','partial','failure'))
+  status TEXT NOT NULL CHECK(status IN ('running','success','partial','failure')),
+  membership_count INTEGER NOT NULL DEFAULT 0 CHECK(membership_count >= 0)
 );
 CREATE INDEX IF NOT EXISTS ix_inventory_runs_plan_started
   ON inventory_runs(plan_id, started_at);
@@ -68,6 +69,7 @@ class InventoryRunRecord:
     started_at: datetime
     completed_at: datetime | None
     status: str
+    membership_count: int
 
 
 class InventoryRunStore:
@@ -75,6 +77,24 @@ class InventoryRunStore:
         self.repository = repository
         with repository.connect() as connection:
             connection.executescript(INVENTORY_RUN_SCHEMA)
+            if not getattr(connection, "is_postgres", False):
+                columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(inventory_runs)"
+                    ).fetchall()
+                }
+                if "membership_count" not in columns:
+                    connection.execute(
+                        "ALTER TABLE inventory_runs ADD COLUMN "
+                        "membership_count INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK(membership_count >= 0)"
+                    )
+                    connection.execute(
+                        "UPDATE inventory_runs SET membership_count=("
+                        "SELECT COUNT(*) FROM inventory_run_jobs "
+                        "WHERE inventory_run_jobs.run_id=inventory_runs.run_id)"
+                    )
 
     @staticmethod
     def _record(row) -> InventoryRunRecord:
@@ -86,12 +106,13 @@ class InventoryRunStore:
                 datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
             ),
             status=row["status"],
+            membership_count=int(row["membership_count"]),
         )
 
     def get(self, run_id: str) -> InventoryRunRecord | None:
         with self.repository.connect() as connection:
             row = connection.execute(
-                "SELECT run_id,plan_id,started_at,completed_at,status "
+                "SELECT run_id,plan_id,started_at,completed_at,status,membership_count "
                 "FROM inventory_runs WHERE run_id=?",
                 (run_id,),
             ).fetchone()
@@ -117,7 +138,7 @@ class InventoryRunStore:
                 (run_id, plan_id, started, None, "running"),
             ).rowcount
             row = connection.execute(
-                "SELECT run_id,plan_id,started_at,completed_at,status "
+                "SELECT run_id,plan_id,started_at,completed_at,status,membership_count "
                 "FROM inventory_runs WHERE run_id=?",
                 (run_id,),
             ).fetchone()
@@ -300,9 +321,10 @@ class InventoryRunStore:
                         ],
                     )
             updated = connection.execute(
-                "UPDATE inventory_runs SET status=?,completed_at=? "
-                "WHERE run_id=? AND status='running'",
-                (status, completed_at.isoformat(), run_id),
+                "UPDATE inventory_runs SET status=?,completed_at=?,"
+                "membership_count=(SELECT COUNT(*) FROM inventory_run_jobs "
+                "WHERE run_id=?) WHERE run_id=? AND status='running'",
+                (status, completed_at.isoformat(), run_id, run_id),
             ).rowcount
             if updated != 1:
                 raise ValueError("running inventory run not found")
@@ -319,20 +341,57 @@ class InventoryRunStore:
         with self.repository.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             updated = connection.execute(
-                "UPDATE inventory_runs SET status=?,completed_at=? WHERE run_id=?",
-                (status, completed_at.isoformat(), run_id),
+                "UPDATE inventory_runs SET status=?,completed_at=?,"
+                "membership_count=(SELECT COUNT(*) FROM inventory_run_jobs "
+                "WHERE run_id=?) WHERE run_id=?",
+                (status, completed_at.isoformat(), run_id, run_id),
             ).rowcount
             if updated != 1:
                 raise ValueError("inventory run not found")
 
+    def prune_memberships(
+        self,
+        *,
+        retention_hours: int = 72,
+        evaluated_at: datetime | None = None,
+    ) -> dict[str, int]:
+        """Remove memberships for completed runs outside the operational window.
+
+        Run receipts and target observations are deliberately retained: receipts
+        protect idempotency, while observations support coverage reporting/replay.
+        """
+        if retention_hours < 1:
+            raise ValueError("retention_hours must be at least 1")
+        evaluation_time = evaluated_at or datetime.now(UTC)
+        evaluation_time = (
+            evaluation_time.replace(tzinfo=UTC)
+            if evaluation_time.tzinfo is None
+            else evaluation_time.astimezone(UTC)
+        )
+        cutoff = (evaluation_time - timedelta(hours=retention_hours)).isoformat()
+        with self.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            deleted = connection.execute(
+                "DELETE FROM inventory_run_jobs WHERE run_id IN ("
+                "SELECT run_id FROM inventory_runs "
+                "WHERE status IN ('success','partial','failure') "
+                "AND completed_at IS NOT NULL AND completed_at < ?"
+                ")",
+                (cutoff,),
+            ).rowcount
+        return {
+            "membership_rows_deleted": max(0, int(deleted)),
+            "membership_retention_hours": retention_hours,
+        }
+
     def membership_count(self, run_id: str) -> int:
-        """Return the persisted target/job membership count for one run."""
+        """Return the immutable count stored in the run receipt."""
         with self.repository.connect() as connection:
             row = connection.execute(
-                "SELECT COUNT(*) FROM inventory_run_jobs WHERE run_id=?",
+                "SELECT membership_count FROM inventory_runs WHERE run_id=?",
                 (run_id,),
             ).fetchone()
-        return int(row[0])
+        return int(row[0]) if row is not None else 0
 
     def job_ids(self, run_id: str) -> tuple[str, ...]:
         with self.repository.connect() as connection:
