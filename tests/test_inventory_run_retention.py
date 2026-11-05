@@ -175,6 +175,11 @@ def test_scheduled_prune_command_also_removes_expired_memberships(
         "membership_rows_deleted": 1,
         "membership_retention_hours": 72,
     }
+    assert payload["source_discovery_evidence"] == {
+        "deleted_discovery_evidence": 0,
+        "deleted_health_evidence": 0,
+    }
+    assert payload["source_discovery_evidence_retention_days"] == 30
     assert store.get("expired-run") is not None
     with repository.connect() as connection:
         assert connection.execute(
