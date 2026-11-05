@@ -304,8 +304,9 @@ class CommonCrawlDiscovery:
         source_counts = Counter()
         query_reports: list[dict[str, Any]] = []
         unique_run_targets: set[str] = set()
+        consecutive_unavailable_failures = 0
 
-        for query in self.queries:
+        for query_index, query in enumerate(self.queries):
             try:
                 cursor = self.store.get_cursor(
                     discovery_source=DISCOVERY_SOURCE,
@@ -331,8 +332,28 @@ class CommonCrawlDiscovery:
                     }
                 )
                 totals["queries_failed"] += 1
+                if (
+                    isinstance(exc, RuntimeError)
+                    and str(exc).startswith("Common Crawl index unavailable:")
+                ):
+                    consecutive_unavailable_failures += 1
+                    if consecutive_unavailable_failures >= 2:
+                        skipped_queries = self.queries[query_index + 1 :]
+                        for skipped_query in skipped_queries:
+                            query_reports.append(
+                                {
+                                    "query_id": skipped_query.query_id,
+                                    "status": "skipped",
+                                    "reason": "index_unavailable_circuit_breaker",
+                                }
+                            )
+                        totals["queries_skipped"] += len(skipped_queries)
+                        break
+                else:
+                    consecutive_unavailable_failures = 0
                 continue
 
+            consecutive_unavailable_failures = 0
             query_unique: set[str] = set()
             query_supported = 0
             query_base = 0
