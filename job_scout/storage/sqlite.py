@@ -11,6 +11,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from job_scout.dedupe.resolver import delivery_keys, representative_key
 from job_scout.domain.models import Job, JobLifecycle, JobMatch
+from job_scout.incremental_collection import INCREMENTAL_SOURCES
 from job_scout.retention import retention_basis
 
 
@@ -374,39 +375,41 @@ class SQLiteRepository:
                 if job.posted_at is not None
             ],
         )
-        connection.executemany(
-            "INSERT INTO job_identity_ledger "
-            "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
-            "first_seen_at,last_seen_at,pruned_at,was_delivered) "
-            "VALUES (?,?,?,?,?,?,"
-            "COALESCE((SELECT first_seen_at FROM jobs "
-            "WHERE source=? AND source_board_id=? AND source_job_id=?),?),?,?,?) "
-            "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-            "canonical_url=excluded.canonical_url,"
-            "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
-            "company=excluded.company,"
-            "last_seen_at=excluded.last_seen_at,"
-            "pruned_at=excluded.pruned_at,"
-            "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
-            [
-                (
-                    job.source,
-                    job.source_board_id,
-                    job.source_job_id,
-                    str(job.canonical_url),
-                    job.employer_id,
-                    job.company,
-                    job.source,
-                    job.source_board_id,
-                    job.source_job_id,
-                    job.discovered_at.isoformat(),
-                    job.last_seen_at.isoformat(),
-                    current,
-                    0,
-                )
-                for job in values
-            ],
-        )
+        ledger_values = [job for job in values if job.source in INCREMENTAL_SOURCES]
+        if ledger_values:
+            connection.executemany(
+                "INSERT INTO job_identity_ledger "
+                "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+                "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+                "VALUES (?,?,?,?,?,?,"
+                "COALESCE((SELECT first_seen_at FROM jobs "
+                "WHERE source=? AND source_board_id=? AND source_job_id=?),?),?,?,?) "
+                "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+                "canonical_url=excluded.canonical_url,"
+                "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
+                "company=excluded.company,"
+                "last_seen_at=excluded.last_seen_at,"
+                "pruned_at=excluded.pruned_at,"
+                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                [
+                    (
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                        str(job.canonical_url),
+                        job.employer_id,
+                        job.company,
+                        job.source,
+                        job.source_board_id,
+                        job.source_job_id,
+                        job.discovered_at.isoformat(),
+                        job.last_seen_at.isoformat(),
+                        current,
+                        0,
+                    )
+                    for job in ledger_values
+                ],
+            )
         return len(values)
 
 
@@ -437,39 +440,40 @@ class SQLiteRepository:
             ):
                 raise ValueError("invalidated job payload provenance is inconsistent")
 
-            delivered = connection.execute(
-                "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1",
-                (job.id,),
-            ).fetchone()
-            exported = connection.execute(
-                "SELECT 1 FROM exports WHERE job_id=? LIMIT 1",
-                (job.id,),
-            ).fetchone()
-            connection.execute(
-                "INSERT INTO job_identity_ledger "
-                "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
-                "first_seen_at,last_seen_at,pruned_at,was_delivered) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                "canonical_url=excluded.canonical_url,"
-                "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
-                "company=excluded.company,"
-                "last_seen_at=excluded.last_seen_at,"
-                "pruned_at=excluded.pruned_at,"
-                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
-                (
-                    source,
-                    board_id,
-                    source_job_id,
-                    row["canonical_url"],
-                    job.employer_id,
-                    job.company,
-                    row["first_seen_at"],
-                    row["last_seen_at"],
-                    current,
-                    1 if delivered is not None or exported is not None else 0,
-                ),
-            )
+            if source in INCREMENTAL_SOURCES:
+                delivered = connection.execute(
+                    "SELECT 1 FROM group_deliveries WHERE job_id=? LIMIT 1",
+                    (job.id,),
+                ).fetchone()
+                exported = connection.execute(
+                    "SELECT 1 FROM exports WHERE job_id=? LIMIT 1",
+                    (job.id,),
+                ).fetchone()
+                connection.execute(
+                    "INSERT INTO job_identity_ledger "
+                    "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+                    "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+                    "canonical_url=excluded.canonical_url,"
+                    "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
+                    "company=excluded.company,"
+                    "last_seen_at=excluded.last_seen_at,"
+                    "pruned_at=excluded.pruned_at,"
+                    "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                    (
+                        source,
+                        board_id,
+                        source_job_id,
+                        row["canonical_url"],
+                        job.employer_id,
+                        job.company,
+                        row["first_seen_at"],
+                        row["last_seen_at"],
+                        current,
+                        1 if delivered is not None or exported is not None else 0,
+                    ),
+                )
             connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
             connection.execute(
                 "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)
@@ -614,30 +618,31 @@ class SQLiteRepository:
                     for value in (selected_batch, candidate_batch, delivered, exported)
                 )
 
-                connection.execute(
-                    "INSERT INTO job_identity_ledger "
-                    "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
-                    "first_seen_at,last_seen_at,pruned_at,was_delivered) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                    "canonical_url=excluded.canonical_url,"
-                    "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
-                    "last_seen_at=excluded.last_seen_at,"
-                    "pruned_at=excluded.pruned_at,"
-                    "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
-                    (
-                        job.source,
-                        job.source_board_id,
-                        job.source_job_id,
-                        row["canonical_url"],
-                        job.employer_id,
-                        job.company,
-                        row["first_seen_at"],
-                        row["last_seen_at"],
-                        current.isoformat(),
-                        1 if delivered is not None or exported is not None else 0,
-                    ),
-                )
+                if job.source in INCREMENTAL_SOURCES:
+                    connection.execute(
+                        "INSERT INTO job_identity_ledger "
+                        "(source,source_board_id,source_job_id,canonical_url,employer_id,company,"
+                        "first_seen_at,last_seen_at,pruned_at,was_delivered) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?) "
+                        "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
+                        "canonical_url=excluded.canonical_url,"
+                        "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
+                        "last_seen_at=excluded.last_seen_at,"
+                        "pruned_at=excluded.pruned_at,"
+                        "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                        (
+                            job.source,
+                            job.source_board_id,
+                            job.source_job_id,
+                            row["canonical_url"],
+                            job.employer_id,
+                            job.company,
+                            row["first_seen_at"],
+                            row["last_seen_at"],
+                            current.isoformat(),
+                            1 if delivered is not None or exported is not None else 0,
+                        ),
+                    )
                 connection.execute("DELETE FROM job_matches WHERE job_id=?", (job.id,))
                 connection.execute(
                     "DELETE FROM scoped_job_matches WHERE job_id=?", (job.id,)

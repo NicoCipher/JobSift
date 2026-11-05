@@ -13,11 +13,13 @@ import re
 import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from job_scout.dedupe.resolver import delivery_keys
 from job_scout.domain.models import Job, JobLifecycle
+from job_scout.incremental_collection import INCREMENTAL_SOURCES
 from job_scout.storage.sqlite import SQLiteRepository
 
 POSTGRES_SCHEMA_VERSION = "postgres-v1"
@@ -718,6 +720,229 @@ class PostgresRepository(SQLiteRepository):
 
         self._assign_groups_bulk_in_connection(connection, values)
         return states
+
+    def prune_stale_inventory(
+        self,
+        *,
+        retention_hours: int = 72,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        """Prune stale payloads with set-based PostgreSQL statements.
+
+        SQLite keeps the compatibility implementation in its repository. On
+        PostgreSQL, avoid issuing several queries per stale job: classify the
+        complete retention cohort once, then update/delete it in bounded SQL
+        statements while preserving unresolved batches and delivery identity.
+        """
+        if retention_hours < 1:
+            raise ValueError("retention_hours must be at least 1")
+
+        current = self._aware(now or datetime.now(UTC))
+        cutoff = datetime.fromtimestamp(
+            current.timestamp() - retention_hours * 3600,
+            tz=UTC,
+        )
+        counts = {
+            "deleted_jobs": 0,
+            "compacted_jobs": 0,
+            "deleted_delivered_candidates": 0,
+            "skipped_unresolved": 0,
+        }
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("SET LOCAL TIME ZONE 'UTC'")
+
+            counts["deleted_delivered_candidates"] = connection.execute(
+                "DELETE FROM daily_batch_candidates WHERE batch_id IN ("
+                "SELECT batch_id FROM daily_batches "
+                "WHERE status='delivered' AND assembled_at<?"
+                ")",
+                (cutoff.isoformat(),),
+            ).rowcount
+
+            connection.execute(
+                """
+                CREATE TEMP TABLE jobsift_prune_candidates ON COMMIT DROP AS
+                SELECT
+                    j.id,
+                    j.canonical_url,
+                    j.first_seen_at,
+                    j.last_seen_at,
+                    j.payload_json,
+                    EXISTS (
+                        SELECT 1
+                        FROM daily_batches b
+                        LEFT JOIN daily_batch_candidates c ON c.batch_id=b.batch_id
+                        LEFT JOIN daily_batch_items i ON i.batch_id=b.batch_id
+                        WHERE b.status!='delivered'
+                          AND (c.job_id=j.id OR i.representative_job_id=j.id)
+                    ) AS unresolved,
+                    EXISTS (
+                        SELECT 1
+                        FROM daily_batch_items i
+                        JOIN daily_batches b ON b.batch_id=i.batch_id
+                        WHERE i.representative_job_id=j.id
+                    ) AS selected_batch,
+                    EXISTS (
+                        SELECT 1
+                        FROM daily_batch_candidates c
+                        JOIN daily_batches b ON b.batch_id=c.batch_id
+                        WHERE c.job_id=j.id
+                    ) AS candidate_batch,
+                    EXISTS (
+                        SELECT 1 FROM group_deliveries d WHERE d.job_id=j.id
+                    ) AS delivered,
+                    EXISTS (
+                        SELECT 1 FROM exports e WHERE e.job_id=j.id
+                    ) AS exported
+                FROM jobs j
+                LEFT JOIN job_retention_evidence e ON e.job_id=j.id
+                WHERE j.lifecycle!='closed'
+                  AND COALESCE(
+                      NULLIF(e.posted_at,'')::timestamptz,
+                      NULLIF(j.payload_json::jsonb->>'posted_at','')::timestamptz,
+                      j.first_seen_at::timestamptz
+                  ) < ?
+                """,
+                (cutoff.isoformat(),),
+            )
+
+            summary = connection.execute(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE unresolved) AS skipped_unresolved,
+                    COUNT(*) FILTER (
+                        WHERE NOT unresolved
+                          AND (selected_batch OR candidate_batch OR delivered OR exported)
+                    ) AS compacted_jobs,
+                    COUNT(*) FILTER (
+                        WHERE NOT unresolved
+                          AND NOT (selected_batch OR candidate_batch OR delivered OR exported)
+                    ) AS deleted_jobs
+                FROM jobsift_prune_candidates
+                """
+            ).fetchone()
+            if summary is not None:
+                counts["skipped_unresolved"] = int(summary["skipped_unresolved"])
+                counts["compacted_jobs"] = int(summary["compacted_jobs"])
+                counts["deleted_jobs"] = int(summary["deleted_jobs"])
+
+            connection.execute(
+                """
+                INSERT INTO job_identity_ledger (
+                    source,source_board_id,source_job_id,canonical_url,employer_id,
+                    company,first_seen_at,last_seen_at,pruned_at,was_delivered
+                )
+                SELECT
+                    payload_json::jsonb->>'source',
+                    payload_json::jsonb->>'source_board_id',
+                    payload_json::jsonb->>'source_job_id',
+                    canonical_url,
+                    payload_json::jsonb->>'employer_id',
+                    payload_json::jsonb->>'company',
+                    first_seen_at,
+                    last_seen_at,
+                    ?,
+                    CASE WHEN delivered OR exported THEN 1 ELSE 0 END
+                FROM jobsift_prune_candidates
+                WHERE NOT unresolved
+                  AND payload_json::jsonb->>'source' IN (?,?)
+                ON CONFLICT (source,source_board_id,source_job_id) DO UPDATE SET
+                    canonical_url=excluded.canonical_url,
+                    employer_id=COALESCE(
+                        job_identity_ledger.employer_id,
+                        excluded.employer_id
+                    ),
+                    last_seen_at=excluded.last_seen_at,
+                    pruned_at=excluded.pruned_at,
+                    was_delivered=GREATEST(
+                        job_identity_ledger.was_delivered,
+                        excluded.was_delivered
+                    )
+                """,
+                (current.isoformat(), *sorted(INCREMENTAL_SOURCES)),
+            )
+
+            connection.execute(
+                "DELETE FROM job_matches WHERE job_id IN ("
+                "SELECT id FROM jobsift_prune_candidates WHERE NOT unresolved)"
+            )
+            connection.execute(
+                "DELETE FROM scoped_job_matches WHERE job_id IN ("
+                "SELECT id FROM jobsift_prune_candidates WHERE NOT unresolved)"
+            )
+
+            connection.execute(
+                """
+                UPDATE jobs
+                SET payload_json=(
+                    payload_json::jsonb || jsonb_build_object(
+                        'description_text',NULL,
+                        'description_html',NULL,
+                        'raw_metadata','{}'::jsonb,
+                        'offices','[]'::jsonb
+                    )
+                )::text,
+                    lifecycle=?
+                WHERE id IN (
+                    SELECT id
+                    FROM jobsift_prune_candidates
+                    WHERE NOT unresolved
+                      AND (selected_batch OR candidate_batch OR delivered OR exported)
+                )
+                """,
+                (JobLifecycle.CLOSED.value,),
+            )
+
+            connection.execute(
+                """
+                CREATE TEMP TABLE jobsift_prune_deleted_groups ON COMMIT DROP AS
+                SELECT DISTINCT p.group_id
+                FROM posting_delivery_groups p
+                JOIN jobsift_prune_candidates t ON t.id=p.job_id
+                WHERE NOT t.unresolved
+                  AND NOT (
+                      t.selected_batch OR t.candidate_batch OR t.delivered OR t.exported
+                  )
+                """
+            )
+            connection.execute(
+                "DELETE FROM delivery_keys WHERE job_id IN ("
+                "SELECT id FROM jobsift_prune_candidates "
+                "WHERE NOT unresolved AND NOT "
+                "(selected_batch OR candidate_batch OR delivered OR exported))"
+            )
+            connection.execute(
+                "DELETE FROM posting_delivery_groups WHERE job_id IN ("
+                "SELECT id FROM jobsift_prune_candidates "
+                "WHERE NOT unresolved AND NOT "
+                "(selected_batch OR candidate_batch OR delivered OR exported))"
+            )
+            connection.execute(
+                "DELETE FROM jobs WHERE id IN ("
+                "SELECT id FROM jobsift_prune_candidates "
+                "WHERE NOT unresolved AND NOT "
+                "(selected_batch OR candidate_batch OR delivered OR exported))"
+            )
+            connection.execute(
+                """
+                DELETE FROM delivery_groups g
+                WHERE g.id IN (SELECT group_id FROM jobsift_prune_deleted_groups)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM posting_delivery_groups p WHERE p.group_id=g.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM group_deliveries d WHERE d.group_id=g.id
+                  )
+                """
+            )
+            connection.execute(
+                "DELETE FROM job_retention_evidence WHERE job_id IN ("
+                "SELECT id FROM jobsift_prune_candidates WHERE NOT unresolved)"
+            )
+
+        return counts
 
     @contextmanager
     def connect(self) -> Iterator[PostgresConnection]:

@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -46,6 +46,153 @@ def _bootstrap_schema(url: str) -> None:
 def repository():
     _bootstrap_schema(POSTGRES_URL)
     return PostgresRepository(POSTGRES_URL)
+
+
+def test_postgres_bulk_retention_prunes_without_losing_delivery_or_unresolved_state(
+    migration_database,
+):
+    now = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+    old = now - timedelta(hours=73)
+    recent = now - timedelta(hours=71)
+    repository = PostgresRepository(migration_database)
+
+    def posting(identifier: str, posted_at: datetime) -> Job:
+        return Job(
+            id=identifier,
+            source="greenhouse",
+            source_job_id=identifier,
+            source_board_id="retention-board",
+            title="Backend Engineer",
+            company="Retention Test",
+            employer_id="retention-test",
+            description_text="A description that must be removed after retention.",
+            description_html="<p>Retained identity only.</p>",
+            job_url=f"https://retention.example/jobs/{identifier}",
+            canonical_url=f"https://retention.example/jobs/{identifier}",
+            posted_at=posted_at,
+            discovered_at=now,
+            last_seen_at=now,
+            content_fingerprint=f"retention-{identifier}",
+            raw_metadata={"source_payload": "large"},
+        )
+
+    deleted = posting("retention-delete", old)
+    delivered = posting("retention-delivered", old)
+    unresolved = posting("retention-unresolved", old)
+    fresh = posting("retention-fresh", recent)
+    non_incremental = posting("retention-workday", old).model_copy(
+        update={"source": "workday", "source_board_id": "workday-retention-board"}
+    )
+    repository.upsert_jobs([deleted, delivered, unresolved, fresh, non_incremental])
+    repository.mark_exported(
+        delivered.id,
+        "retention-client",
+        "retention-destination",
+    )
+
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO daily_batches "
+            "(batch_id,generation_id,client_id,destination,idempotency_key,"
+            "requested_quota,selected_count,shortfall,status,assembled_at,"
+            "request_json,counts_json,dedupe_version) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "retention-unresolved-batch",
+                "retention-generation",
+                "retention-client",
+                "retention-destination",
+                "retention-idempotency",
+                1,
+                0,
+                1,
+                "prepared",
+                now.isoformat(),
+                "{}",
+                "{}",
+                "retention-test",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO daily_batch_candidates "
+            "(batch_id,job_id,delivery_group_id,evidence_sha256,decision,disposition) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                "retention-unresolved-batch",
+                unresolved.id,
+                "retention-unresolved-group",
+                "a" * 64,
+                "strong_match",
+                "eligible",
+            ),
+        )
+
+    result = repository.prune_stale_inventory(
+        retention_hours=72,
+        now=now,
+    )
+
+    assert result == {
+        "deleted_jobs": 2,
+        "compacted_jobs": 1,
+        "deleted_delivered_candidates": 0,
+        "skipped_unresolved": 1,
+    }
+
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?",
+            (deleted.id,),
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?",
+            (non_incremental.id,),
+        ).fetchone() is None
+        delivered_row = connection.execute(
+            "SELECT payload_json,lifecycle FROM jobs WHERE id=?",
+            (delivered.id,),
+        ).fetchone()
+        assert delivered_row is not None
+        compact = Job.model_validate_json(delivered_row["payload_json"])
+        assert compact.description_text is None
+        assert compact.description_html is None
+        assert compact.raw_metadata == {}
+        assert compact.offices == []
+        assert delivered_row["lifecycle"] == JobLifecycle.CLOSED.value
+
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?",
+            (unresolved.id,),
+        ).fetchone() is not None
+        assert connection.execute(
+            "SELECT 1 FROM daily_batch_candidates WHERE job_id=?",
+            (unresolved.id,),
+        ).fetchone() is not None
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?",
+            (fresh.id,),
+        ).fetchone() is not None
+
+        ledger = {
+            row["source_job_id"]: row["was_delivered"]
+            for row in connection.execute(
+                "SELECT source_job_id,was_delivered FROM job_identity_ledger"
+            ).fetchall()
+        }
+        assert ledger == {
+            deleted.source_job_id: 0,
+            delivered.source_job_id: 1,
+        }
+        assert non_incremental.source_job_id not in ledger
+
+        assert connection.execute(
+            "SELECT COUNT(*) FROM delivery_keys WHERE job_id=?",
+            (deleted.id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM posting_delivery_groups WHERE job_id=?",
+            (deleted.id,),
+        ).fetchone()[0] == 0
 
 
 def test_postgres_supports_repeatable_read_review_snapshot(repository):

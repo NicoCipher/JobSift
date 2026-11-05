@@ -145,6 +145,88 @@ def _inventory_table_exists(repository: SQLiteRepository) -> bool:
         )
 
 
+def test_non_incremental_stale_jobs_do_not_fill_identity_ledger(tmp_path: Path) -> None:
+    target = _registry().targets[0].source_target()
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    workday = _job(target).model_copy(
+        update={
+            "id": "workday-stale",
+            "source": "workday",
+            "source_job_id": "workday-stale",
+            "source_board_id": "workday-board",
+            "posted_at": NOW - timedelta(hours=96),
+        }
+    )
+
+    assert repository.record_pruned_identities([workday], pruned_at=PERSISTED) == 1
+    repository.upsert_job(workday)
+    result = repository.prune_stale_inventory(retention_hours=72, now=PERSISTED)
+
+    assert result["deleted_jobs"] == 1
+    with repository.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM job_identity_ledger"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT 1 FROM jobs WHERE id=?",
+            (workday.id,),
+        ).fetchone() is None
+
+
+def test_non_incremental_invalidated_jobs_compact_without_ledger_rows(
+    tmp_path: Path,
+) -> None:
+    target = _registry().targets[0].source_target()
+    repository = SQLiteRepository(tmp_path / "jobs.sqlite3")
+    workday = _job(target).model_copy(
+        update={
+            "id": "workday-invalidated",
+            "source": "workday",
+            "source_job_id": "workday-invalidated",
+            "source_board_id": "workday-board",
+        }
+    )
+    repository.upsert_job(workday)
+
+    with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "INSERT INTO job_matches VALUES (?,?,?,?,?,?,?,?)",
+            (
+                workday.id,
+                "workday-client",
+                "eligible",
+                90,
+                "[]",
+                "[]",
+                PERSISTED.isoformat(),
+                "test-matcher",
+            ),
+        )
+        compacted = repository._compact_invalidated_identities_in_connection(
+            connection,
+            [("workday", "workday-board", "workday-invalidated")],
+            invalidated_at=PERSISTED,
+        )
+
+    assert compacted == 1
+    with repository.connect() as connection:
+        row = connection.execute(
+            "SELECT lifecycle,payload_json FROM jobs WHERE id=?",
+            (workday.id,),
+        ).fetchone()
+        assert row is not None
+        assert row["lifecycle"] == "closed"
+        assert Job.model_validate_json(row["payload_json"]).description_text is None
+        assert connection.execute(
+            "SELECT COUNT(*) FROM job_identity_ledger"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM job_matches WHERE job_id=?",
+            (workday.id,),
+        ).fetchone()[0] == 0
+
+
 def test_successful_fan_in_can_write_history_coverage_report(tmp_path: Path) -> None:
     registry = _registry()
     manifest = build_shard_manifest(
