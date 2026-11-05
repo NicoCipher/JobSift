@@ -3,7 +3,8 @@ name: Discover and Admit Live Sources
 on:
   workflow_dispatch:
   schedule:
-    - cron: "43 */3 * * *"
+    # One daily 300-target pass: preserve 48h admission freshness without repeated runner spend.
+    - cron: "43 6 * * *"
 
 permissions:
   contents: read
