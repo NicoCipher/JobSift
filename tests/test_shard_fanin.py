@@ -189,6 +189,7 @@ def test_non_incremental_invalidated_jobs_compact_without_ledger_rows(
     repository.upsert_job(workday)
 
     with repository.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
         connection.execute(
             "INSERT INTO job_matches VALUES (?,?,?,?,?,?,?,?)",
             (
@@ -202,7 +203,6 @@ def test_non_incremental_invalidated_jobs_compact_without_ledger_rows(
                 "test-matcher",
             ),
         )
-        connection.execute("BEGIN IMMEDIATE")
         compacted = repository._compact_invalidated_identities_in_connection(
             connection,
             [("workday", "workday-board", "workday-invalidated")],
