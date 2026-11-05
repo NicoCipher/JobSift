@@ -337,6 +337,62 @@ def test_common_crawl_retries_transient_index_failure(tmp_path: Path) -> None:
 
 
 
+def test_common_crawl_opens_circuit_after_consecutive_index_outages(
+    tmp_path: Path,
+) -> None:
+    page_count_attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal page_count_attempts
+        if request.url.path == "/collinfo.json":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "CC-MAIN-2026-39",
+                        "cdx-api": (
+                            "https://index.commoncrawl.org/"
+                            "CC-MAIN-2026-39-index"
+                        ),
+                    }
+                ],
+                request=request,
+            )
+        if request.url.params.get("showNumPages") == "true":
+            page_count_attempts += 1
+            return httpx.Response(503, request=request)
+        raise AssertionError("A page request should not follow failed page counts")
+
+    store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "jobs.sqlite3"))
+    queries = (
+        DiscoveryQuery("greenhouse", "boards.greenhouse.io/*"),
+        DiscoveryQuery("ashby", "jobs.ashbyhq.com/*"),
+        DiscoveryQuery("lever", "jobs.lever.co/*"),
+    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        report = CommonCrawlDiscovery(
+            client,
+            store,
+            delay_seconds=0,
+            retries=2,
+            queries=queries,
+        ).discover(base_target_identities=set(), observed_at=NOW)
+
+    assert page_count_attempts == 6
+    assert report["queries_failed"] == 2
+    assert report["queries_skipped"] == 1
+    assert [item["status"] for item in report["queries"]] == [
+        "failed",
+        "failed",
+        "skipped",
+    ]
+    assert report["queries"][2]["reason"] == "index_unavailable_circuit_breaker"
+    assert store.get_cursor(
+        discovery_source="commoncrawl-cdx",
+        query_id="lever",
+    ) is None
+
+
 def test_common_crawl_404_page_count_still_fails_closed(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/collinfo.json":
