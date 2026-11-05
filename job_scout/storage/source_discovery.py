@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS source_discovery_evidence (
 );
 CREATE INDEX IF NOT EXISTS ix_source_discovery_evidence_target
   ON source_discovery_evidence(target_identity, observed_at);
+CREATE INDEX IF NOT EXISTS ix_source_discovery_evidence_retention
+  ON source_discovery_evidence(observed_at, target_identity);
 
 CREATE TABLE IF NOT EXISTS source_discovery_health_evidence (
   evidence_id TEXT PRIMARY KEY,
@@ -68,6 +70,8 @@ CREATE TABLE IF NOT EXISTS source_discovery_health_evidence (
 );
 CREATE INDEX IF NOT EXISTS ix_source_discovery_health_target
   ON source_discovery_health_evidence(target_identity, checked_at);
+CREATE INDEX IF NOT EXISTS ix_source_discovery_health_retention
+  ON source_discovery_health_evidence(checked_at, target_identity);
 
 CREATE TABLE IF NOT EXISTS source_discovery_cursors (
   discovery_source TEXT NOT NULL,
