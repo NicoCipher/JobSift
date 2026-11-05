@@ -1469,8 +1469,13 @@ def main() -> None:
             retention = repository.prune_stale_inventory(
                 retention_hours=args.retention_hours
             )
+            membership_retention = InventoryRunStore(repository).prune_memberships(
+                retention_hours=args.retention_hours,
+                evaluated_at=datetime.now(UTC),
+            )
             payload = {
                 "retention": retention,
+                "membership_retention": membership_retention,
                 "retention_seconds": round(
                     time.perf_counter() - retention_started, 3
                 ),
