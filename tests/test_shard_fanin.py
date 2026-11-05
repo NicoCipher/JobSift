@@ -158,7 +158,7 @@ def test_non_incremental_stale_jobs_do_not_fill_identity_ledger(tmp_path: Path) 
         }
     )
 
-    repository.record_pruned_identities([workday], pruned_at=PERSISTED)
+    assert repository.record_pruned_identities([workday], pruned_at=PERSISTED) == 1
     repository.upsert_job(workday)
     result = repository.prune_stale_inventory(retention_hours=72, now=PERSISTED)
 
@@ -189,6 +189,19 @@ def test_non_incremental_invalidated_jobs_compact_without_ledger_rows(
     repository.upsert_job(workday)
 
     with repository.connect() as connection:
+        connection.execute(
+            "INSERT INTO job_matches VALUES (?,?,?,?,?,?,?,?)",
+            (
+                workday.id,
+                "workday-client",
+                "eligible",
+                90,
+                "[]",
+                "[]",
+                PERSISTED.isoformat(),
+                "test-matcher",
+            ),
+        )
         connection.execute("BEGIN IMMEDIATE")
         compacted = repository._compact_invalidated_identities_in_connection(
             connection,
@@ -207,6 +220,10 @@ def test_non_incremental_invalidated_jobs_compact_without_ledger_rows(
         assert Job.model_validate_json(row["payload_json"]).description_text is None
         assert connection.execute(
             "SELECT COUNT(*) FROM job_identity_ledger"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM job_matches WHERE job_id=?",
+            (workday.id,),
         ).fetchone()[0] == 0
 
 
