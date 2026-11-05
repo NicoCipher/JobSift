@@ -182,7 +182,8 @@ CREATE TABLE IF NOT EXISTS inventory_runs (
   plan_id TEXT NOT NULL,
   started_at TEXT NOT NULL,
   completed_at TEXT,
-  status TEXT NOT NULL CHECK(status IN ('running','success','partial','failure'))
+  status TEXT NOT NULL CHECK(status IN ('running','success','partial','failure')),
+  membership_count BIGINT NOT NULL DEFAULT 0 CHECK(membership_count >= 0)
 );
 CREATE INDEX IF NOT EXISTS ix_inventory_runs_plan_started
   ON inventory_runs(plan_id, started_at);
