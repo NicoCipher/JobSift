@@ -186,8 +186,6 @@ CREATE TABLE IF NOT EXISTS inventory_runs (
 );
 CREATE INDEX IF NOT EXISTS ix_inventory_runs_plan_started
   ON inventory_runs(plan_id, started_at);
-CREATE INDEX IF NOT EXISTS ix_inventory_runs_completed_at
-  ON inventory_runs(completed_at) WHERE completed_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS inventory_run_jobs (
   run_id TEXT NOT NULL REFERENCES inventory_runs(run_id) ON DELETE CASCADE,
