@@ -19,6 +19,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from job_scout.dedupe.resolver import delivery_keys
 from job_scout.domain.models import Job, JobLifecycle
+from job_scout.incremental_collection import INCREMENTAL_SOURCES
 from job_scout.storage.sqlite import SQLiteRepository
 
 POSTGRES_SCHEMA_VERSION = "postgres-v1"
@@ -846,6 +847,7 @@ class PostgresRepository(SQLiteRepository):
                     CASE WHEN delivered OR exported THEN 1 ELSE 0 END
                 FROM jobsift_prune_candidates
                 WHERE NOT unresolved
+                  AND payload_json::jsonb->>'source' IN (?,?)
                 ON CONFLICT (source,source_board_id,source_job_id) DO UPDATE SET
                     canonical_url=excluded.canonical_url,
                     employer_id=COALESCE(
@@ -859,7 +861,7 @@ class PostgresRepository(SQLiteRepository):
                         excluded.was_delivered
                     )
                 """,
-                (current.isoformat(),),
+                (current.isoformat(), *sorted(INCREMENTAL_SOURCES)),
             )
 
             connection.execute(
