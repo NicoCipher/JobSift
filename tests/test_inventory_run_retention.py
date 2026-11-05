@@ -152,6 +152,16 @@ def test_scheduled_prune_command_also_removes_expired_memberships(
         lambda _database: repository,
     )
     monkeypatch.setattr(
+        repository,
+        "prune_stale_inventory",
+        lambda **kwargs: {
+            "deleted_jobs": 0,
+            "compacted_jobs": 0,
+            "deleted_delivered_candidates": 0,
+            "skipped_unresolved": 0,
+        },
+    )
+    monkeypatch.setattr(
         sys,
         "argv",
         [
