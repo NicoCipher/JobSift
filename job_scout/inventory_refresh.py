@@ -1473,9 +1473,14 @@ def main() -> None:
                 retention_hours=args.retention_hours,
                 evaluated_at=datetime.now(UTC),
             )
+            source_discovery_evidence = SourceDiscoveryStore(
+                repository
+            ).prune_evidence(retention_days=30)
             payload = {
                 "retention": retention,
                 "membership_retention": membership_retention,
+                "source_discovery_evidence": source_discovery_evidence,
+                "source_discovery_evidence_retention_days": 30,
                 "retention_seconds": round(
                     time.perf_counter() - retention_started, 3
                 ),
