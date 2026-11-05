@@ -113,6 +113,9 @@ def test_prune_memberships_removes_only_expired_completed_run_links(tmp_path) ->
         assert connection.execute(
             "SELECT COUNT(*) FROM inventory_target_observations WHERE run_id='old-run'"
         ).fetchone()[0] == 1
+    # The compact receipt keeps replay metrics correct after link deletion.
+    assert store.membership_count("old-run") == 1
+    assert store.get("old-run").membership_count == 1
 
 
 def test_prune_memberships_rejects_non_positive_retention(tmp_path) -> None:
@@ -177,3 +180,34 @@ def test_scheduled_prune_command_also_removes_expired_memberships(
         assert connection.execute(
             "SELECT COUNT(*) FROM inventory_run_jobs WHERE run_id='expired-run'"
         ).fetchone()[0] == 0
+
+
+def test_inventory_run_store_backfills_membership_count_for_legacy_sqlite(
+    tmp_path,
+) -> None:
+    repository = _repository_with_job(tmp_path)
+    now = datetime.now(UTC).isoformat()
+    with repository.connect() as connection:
+        connection.execute(
+            "CREATE TABLE inventory_runs ("
+            "run_id TEXT PRIMARY KEY,plan_id TEXT NOT NULL,started_at TEXT NOT NULL,"
+            "completed_at TEXT,status TEXT NOT NULL)"
+        )
+        connection.execute(
+            "CREATE TABLE inventory_run_jobs ("
+            "run_id TEXT NOT NULL,job_id TEXT NOT NULL,target_identity TEXT NOT NULL,"
+            "PRIMARY KEY(run_id,job_id,target_identity))"
+        )
+        connection.execute(
+            "INSERT INTO inventory_runs VALUES (?,?,?,?,?)",
+            ("legacy-run", "plan", now, now, "success"),
+        )
+        connection.execute(
+            "INSERT INTO inventory_run_jobs VALUES (?,?,?)",
+            ("legacy-run", "job-1", "greenhouse:board-1"),
+        )
+
+    store = InventoryRunStore(repository)
+
+    assert store.get("legacy-run").membership_count == 1
+    assert store.membership_count("legacy-run") == 1
