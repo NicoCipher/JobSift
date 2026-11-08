@@ -1,0 +1,119 @@
+/* Owner workspace simplification: calm hierarchy, clear reading order, mobile-first. */
+html[data-jobsift-operator="true"] main {
+  width: min(100% - 32px, 1040px);
+  margin-inline: auto;
+}
+html[data-jobsift-operator="true"] .section-content {
+  max-width: 900px;
+  margin-inline: auto;
+  padding-bottom: 48px;
+}
+html[data-jobsift-operator="true"] .page-head {
+  margin-bottom: 24px;
+}
+html[data-jobsift-operator="true"] .page-head h1 {
+  font-size: clamp(1.8rem, 4vw, 2.35rem);
+  letter-spacing: -0.035em;
+}
+html[data-jobsift-operator="true"] .scope-line {
+  max-width: 58ch;
+  line-height: 1.55;
+}
+html[data-jobsift-operator="true"] .operator-driving-home {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: clamp(20px, 4vw, 32px);
+  box-shadow: none;
+  gap: 14px;
+}
+html[data-jobsift-operator="true"] .operator-driving-home h2 {
+  max-width: 24ch;
+  font-size: clamp(1.45rem, 3.5vw, 2rem);
+  line-height: 1.18;
+  letter-spacing: -0.03em;
+}
+html[data-jobsift-operator="true"] .operator-driving-description {
+  max-width: 62ch;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+html[data-jobsift-operator="true"] .operator-driving-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+html[data-jobsift-operator="true"] .operator-driving-metrics > div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--base);
+  padding: 13px;
+}
+html[data-jobsift-operator="true"] .operator-driving-metrics dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--secondary);
+  font-size: .84rem;
+  line-height: 1.35;
+}
+html[data-jobsift-operator="true"] .operator-driving-metrics dd {
+  margin: 8px 0 0;
+  font-size: clamp(1.35rem, 3vw, 1.8rem);
+  font-weight: 750;
+  letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums;
+}
+html[data-jobsift-operator="true"] .operator-command-center {
+  border: 0;
+  box-shadow: none;
+  padding-inline: 0;
+}
+html[data-jobsift-operator="true"] .operator-command-center > .control-heading {
+  margin-bottom: 14px;
+}
+html[data-jobsift-operator="true"] .operator-command-center > .control-heading h2 {
+  font-size: 1.25rem;
+}
+html[data-jobsift-operator="true"] .operator-optional,
+html[data-jobsift-operator="true"] .operator-manual-tools {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--base);
+  padding: 4px 12px;
+}
+html[data-jobsift-operator="true"] .operator-optional > summary,
+html[data-jobsift-operator="true"] .operator-manual-tools > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 650;
+}
+html[data-jobsift-operator="true"] .operator-manual-tools {
+  margin-top: 22px;
+  background: var(--subtle);
+}
+html[data-jobsift-operator="true"] .operator-manual-tools > summary {
+  color: var(--secondary);
+}
+@media (max-width: 640px) {
+  html[data-jobsift-operator="true"] main {
+    width: min(100% - 24px, 1040px);
+  }
+  html[data-jobsift-operator="true"] .operator-driving-metrics {
+    grid-template-columns: 1fr;
+  }
+  html[data-jobsift-operator="true"] .operator-driving-metrics > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  html[data-jobsift-operator="true"] .operator-driving-metrics dd {
+    margin: 0;
+  }
+  html[data-jobsift-operator="true"] .operator-hero-heading {
+    flex-wrap: wrap;
+  }
+}
