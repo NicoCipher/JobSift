@@ -76,6 +76,15 @@ jobs:
       - name: Install JobSift
         run: python -m pip install -e '.[postgres]'
 
+      - name: Recover stale schedule backlog safely
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          mkdir -p refresh-plan
+          python -m job_scout.inventory_refresh schedule-recover \\
+            --database "$JOBSIFT_DATABASE" \\
+            --max-lag-hours 24 \\
+            --output refresh-plan/schedule-recovery.json
+
       - name: Resolve logical refresh cohort
         id: schedule
         run: |
