@@ -129,3 +129,94 @@ def test_successful_fan_in_advances_logical_cohort(tmp_path):
     assert result["marked_completed"] is True
     done = store.next_due(now=now + timedelta(minutes=20))
     assert done.should_run is False
+
+
+
+def test_stale_backlog_recovery_skips_old_hours_and_audits_without_deleting_runs(tmp_path):
+    from job_scout.storage.inventory_runs import InventoryRunStore
+
+    repository = SQLiteRepository(tmp_path / "stale-recovery.sqlite3")
+    InventoryRunStore(repository)
+    store = InventoryRefreshScheduleStore(repository)
+    start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    first = store.next_due(now=start)
+    assert store.mark_completed(cohort=first.cohort, completed_at=start) is True
+
+    later = start + timedelta(hours=48)
+    recovery = store.recover_stale_backlog(now=later, max_lag_hours=24)
+
+    assert recovery["recovered"] is True
+    assert recovery["skipped_cohorts"] == 47
+    assert recovery["previous_completed_cohort"] == first.cohort
+    assert recovery["resumed_before_cohort"] == first.cohort + 48
+
+    due = store.next_due(now=later)
+    assert due.cohort == first.cohort + 48
+    assert due.should_run is True
+
+    with repository.connect() as connection:
+        audit = connection.execute(
+            "SELECT previous_completed_cohort,resumed_before_cohort,skipped_cohorts "
+            "FROM inventory_refresh_schedule_recovery_audit"
+        ).fetchone()
+        run_count = connection.execute("SELECT COUNT(*) AS count FROM inventory_runs").fetchone()["count"]
+    assert audit["skipped_cohorts"] == 47
+    assert run_count == 0
+
+
+def test_stale_backlog_recovery_fails_closed_when_inventory_run_is_active(tmp_path):
+    from job_scout.storage.inventory_runs import InventoryRunStore
+
+    repository = SQLiteRepository(tmp_path / "active-recovery.sqlite3")
+    runs = InventoryRunStore(repository)
+    store = InventoryRefreshScheduleStore(repository)
+    start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    first = store.next_due(now=start)
+    assert store.mark_completed(cohort=first.cohort, completed_at=start) is True
+    runs.create(run_id="active-run", plan_id="active-plan", started_at=start)
+
+    with pytest.raises(RuntimeError, match="inventory run is active"):
+        store.recover_stale_backlog(
+            now=start + timedelta(hours=48),
+            max_lag_hours=24,
+        )
+
+    with repository.connect() as connection:
+        state = connection.execute(
+            "SELECT last_completed_cohort FROM inventory_refresh_schedule_state"
+        ).fetchone()
+        audit_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM inventory_refresh_schedule_recovery_audit"
+        ).fetchone()["count"]
+    assert state["last_completed_cohort"] == first.cohort
+    assert audit_count == 0
+
+
+def test_stale_backlog_recovery_does_not_skip_recent_missed_hours(tmp_path):
+    repository = SQLiteRepository(tmp_path / "recent-recovery.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    first = store.next_due(now=start)
+
+    recovery = store.recover_stale_backlog(
+        now=start + timedelta(hours=12),
+        max_lag_hours=24,
+    )
+
+    assert recovery["recovered"] is False
+    assert recovery["reason"] == "within_lag_limit"
+    due = store.next_due(now=start + timedelta(hours=12))
+    assert due.cohort == first.cohort
+
+
+def test_stale_backlog_recovery_initializes_new_schedule_without_skipping(tmp_path):
+    repository = SQLiteRepository(tmp_path / "new-recovery.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    now = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+
+    recovery = store.recover_stale_backlog(now=now)
+
+    assert recovery["recovered"] is False
+    assert recovery["reason"] == "initialized"
+    assert recovery["skipped_cohorts"] == 0
+    assert store.next_due(now=now).cohort == store.cohort_for(now)
