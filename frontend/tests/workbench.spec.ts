@@ -1766,8 +1766,8 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await expect(page.getByLabel("Remote")).toBeChecked();
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await page.getByLabel("Daily limit").fill("250");
-  await expect(page.getByLabel("Daily reset timezone")).toHaveValue(
+  await page.getByRole("spinbutton", { name: "Daily limit" }).fill("250");
+  await expect(page.getByRole("combobox", { name: "When should the daily limit reset?" })).toHaveValue(
     "America/New_York",
   );
   await page.getByLabel("Daily reset timezone").fill("Asia/Kolkata");
