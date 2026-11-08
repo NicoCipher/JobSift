@@ -117,3 +117,23 @@ html[data-jobsift-operator="true"] .operator-manual-tools > summary {
     flex-wrap: wrap;
   }
 }
+
+
+/* Keep optional search tuning out of the first-time setup path. */
+html[data-jobsift-operator="true"] .criteria-advanced {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+html[data-jobsift-operator="true"] .criteria-advanced > summary {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  color: var(--secondary);
+  font-weight: 650;
+  cursor: pointer;
+}
+html[data-jobsift-operator="true"] .criteria-advanced[open] {
+  display: grid;
+  gap: 16px;
+}
