@@ -1766,8 +1766,8 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await expect(page.getByLabel("Remote")).toBeChecked();
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await page.getByLabel("Daily limit").fill("250");
-  await expect(page.getByLabel("Daily reset timezone")).toHaveValue(
+  await page.getByRole("spinbutton", { name: "Daily limit" }).fill("250");
+  await expect(page.getByRole("combobox", { name: "When should the daily limit reset?" })).toHaveValue(
     "America/New_York",
   );
   await page.getByLabel("Daily reset timezone").fill("Asia/Kolkata");
@@ -1829,4 +1829,19 @@ test("Add Client wizard stays usable at 320px", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(1);
   await expect(page.getByRole("heading", { name: "What jobs should JobSift find?" })).toBeVisible();
   await expect(page.getByLabel("Role titles")).toBeVisible();
+});
+
+
+test("client setup keeps optional search filters out of the main path", async ({ page }) => {
+  await page.goto("/clients/new");
+  await page.getByLabel("Client name").fill("Test client");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  const optionalFilters = page.locator(".criteria-advanced");
+  await expect(optionalFilters).toBeVisible();
+  await expect(optionalFilters).not.toHaveAttribute("open", "");
+  await expect(optionalFilters.getByLabel("Exclude jobs containing")).toBeHidden();
+  await optionalFilters.locator("summary").click();
+  await expect(optionalFilters.getByLabel("Exclude jobs containing")).toBeVisible();
+  await expect(optionalFilters.getByLabel(/Prefer jobs mentioning/)).toBeVisible();
 });
