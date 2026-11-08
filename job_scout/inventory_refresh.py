@@ -1279,6 +1279,11 @@ def main() -> None:
     prune.add_argument("--output", type=Path, required=True)
     prune.add_argument("--retention-hours", type=int, default=72)
 
+    schedule_recover = commands.add_parser("schedule-recover")
+    schedule_recover.add_argument("--database", type=Path, required=True)
+    schedule_recover.add_argument("--output", type=Path, required=True)
+    schedule_recover.add_argument("--max-lag-hours", type=int, default=24)
+
     schedule_next = commands.add_parser("schedule-next")
     schedule_next.add_argument("--database", type=Path, required=True)
     schedule_next.add_argument("--output", type=Path, required=True)
@@ -1291,6 +1296,16 @@ def main() -> None:
 
     args = parser.parse_args()
     try:
+        if args.command == "schedule-recover":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = create_repository(args.database)
+            payload = InventoryRefreshScheduleStore(repository).recover_stale_backlog(
+                max_lag_hours=args.max_lag_hours
+            )
+            _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
+            return
+
         if args.command == "schedule-next":
             args.database.parent.mkdir(parents=True, exist_ok=True)
             repository = create_repository(args.database)
