@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from job_scout import inventory_refresh
+from job_scout.storage.inventory_runs import InventoryRunStore
 from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.sqlite import SQLiteRepository
 
@@ -133,8 +134,6 @@ def test_successful_fan_in_advances_logical_cohort(tmp_path):
 
 
 def test_stale_backlog_recovery_skips_old_hours_and_audits_without_deleting_runs(tmp_path):
-    from job_scout.storage.inventory_runs import InventoryRunStore
-
     repository = SQLiteRepository(tmp_path / "stale-recovery.sqlite3")
     InventoryRunStore(repository)
     store = InventoryRefreshScheduleStore(repository)
@@ -159,14 +158,14 @@ def test_stale_backlog_recovery_skips_old_hours_and_audits_without_deleting_runs
             "SELECT previous_completed_cohort,resumed_before_cohort,skipped_cohorts "
             "FROM inventory_refresh_schedule_recovery_audit"
         ).fetchone()
-        run_count = connection.execute("SELECT COUNT(*) AS count FROM inventory_runs").fetchone()["count"]
+        run_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM inventory_runs"
+        ).fetchone()["count"]
     assert audit["skipped_cohorts"] == 47
     assert run_count == 0
 
 
 def test_stale_backlog_recovery_fails_closed_when_inventory_run_is_active(tmp_path):
-    from job_scout.storage.inventory_runs import InventoryRunStore
-
     repository = SQLiteRepository(tmp_path / "active-recovery.sqlite3")
     runs = InventoryRunStore(repository)
     store = InventoryRefreshScheduleStore(repository)
