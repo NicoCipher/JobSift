@@ -135,9 +135,11 @@ def test_successful_fan_in_advances_logical_cohort(tmp_path):
 
 def test_stale_backlog_recovery_skips_old_hours_and_audits_without_deleting_runs(tmp_path):
     repository = SQLiteRepository(tmp_path / "stale-recovery.sqlite3")
-    InventoryRunStore(repository)
+    runs = InventoryRunStore(repository)
     store = InventoryRefreshScheduleStore(repository)
     start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    runs.create(run_id="completed-run", plan_id="completed-plan", started_at=start)
+    runs.finish(run_id="completed-run", status="success", completed_at=start)
     first = store.next_due(now=start)
     assert store.mark_completed(cohort=first.cohort, completed_at=start) is True
 
@@ -162,7 +164,7 @@ def test_stale_backlog_recovery_skips_old_hours_and_audits_without_deleting_runs
             "SELECT COUNT(*) AS count FROM inventory_runs"
         ).fetchone()["count"]
     assert audit["skipped_cohorts"] == 47
-    assert run_count == 0
+    assert run_count == 1
 
 
 def test_stale_backlog_recovery_fails_closed_when_inventory_run_is_active(tmp_path):
