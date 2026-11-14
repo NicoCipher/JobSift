@@ -607,3 +607,32 @@ def test_batch_review_reads_from_explicit_postgres_backend(repository, monkeypat
     assert result.status == "prepared"
     assert result.selected_count == 0
     assert rows == []
+
+
+def test_postgres_stale_schedule_recovery_persists_audit_without_touching_runs(repository):
+    schedule = InventoryRefreshScheduleStore(repository, schedule_key="postgres-recovery-ci")
+    now = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+    first = schedule.next_due(now=now)
+    assert first.cohort is not None
+    assert schedule.mark_completed(cohort=first.cohort, completed_at=now) is True
+
+    recovery_at = now + timedelta(hours=48)
+    result = schedule.recover_stale_backlog(
+        now=recovery_at,
+        max_lag_hours=24,
+    )
+
+    assert result["recovered"] is True
+    assert result["skipped_cohorts"] == 47
+    with repository.connect() as connection:
+        audit = connection.execute(
+            "SELECT schedule_key,previous_completed_cohort,resumed_before_cohort,"
+            "skipped_cohorts,reason FROM inventory_refresh_schedule_recovery_audit "
+            "WHERE schedule_key=?",
+            ("postgres-recovery-ci",),
+        ).fetchone()
+    assert audit is not None
+    assert audit["previous_completed_cohort"] == first.cohort
+    assert audit["resumed_before_cohort"] == first.cohort + 48
+    assert audit["skipped_cohorts"] == 47
+    assert audit["reason"] == "stale_backlog"
