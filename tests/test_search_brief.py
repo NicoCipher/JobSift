@@ -188,9 +188,10 @@ def test_deterministic_explanations_and_version_are_present() -> None:
     assert result.matcher_version == MATCHER_VERSION == "deterministic-v5"
 
 
-def test_production_software_brief_requires_24_hour_posting_age() -> None:
+def test_production_software_brief_allows_48_hour_posting_age_and_unknown_time() -> None:
     brief = load_search_brief("config/search_briefs/taiwo_software_remote_us_v1.json")
-    assert brief.posting_freshness.max_age_hours == 24
+    assert brief.posting_freshness.max_age_hours == 48
+    assert brief.posting_freshness.unknown_policy.value == "allow"
     assert brief.posting_freshness.unknown_policy is UnknownEligibilityPolicy.REJECT
 
 
