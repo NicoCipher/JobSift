@@ -1770,7 +1770,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await expect(page.getByRole("combobox", { name: "When should the daily limit reset?" })).toHaveValue(
     "America/New_York",
   );
-  await page.getByLabel("Daily reset timezone").fill("Asia/Kolkata");
+  await page.getByRole("combobox", { name: "When should the daily limit reset?" }).fill("Asia/Kolkata");
   await expect(page.getByText("Review first", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
 
