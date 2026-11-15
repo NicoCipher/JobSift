@@ -1,0 +1,45 @@
+name: Diagnose JobSift Neon Target
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+    steps:
+      - name: Inspect connection identity without exposing credentials
+        run: |
+          python -m pip install --quiet 'psycopg[binary]>=3.2,<4'
+          python - <<'PY'
+          import os
+          import psycopg
+          from psycopg.rows import dict_row
+
+          url = os.environ.get("NEON_DATABASE_URL", "").strip()
+          if not url:
+              raise SystemExit("NEON_DATABASE_URL is not configured")
+
+          with psycopg.connect(url, connect_timeout=10, row_factory=dict_row) as conn:
+              print("Connection target (credentials are never printed):")
+              print(f"host={conn.info.host}")
+              print(f"port={conn.info.port}")
+              print(f"database={conn.info.dbname}")
+              print(f"role={conn.info.user}")
+              row = conn.execute("""
+                  SELECT
+                    current_database() AS database_name,
+                    current_user AS role_name,
+                    current_schema() AS current_schema,
+                    current_setting('search_path') AS search_path,
+                    to_regclass('public.inventory_refresh_schedule_state')::text AS schedule_state_table,
+                    to_regclass('public.inventory_refresh_schedule_recovery_audit')::text AS recovery_audit_table
+              """).fetchone()
+              for key, value in row.items():
+                  print(f"{key}={value}")
+          PY
