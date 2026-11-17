@@ -130,11 +130,23 @@ export async function GET(request: NextRequest) {
   );
   const workflowActive =
     workflow.status === 200 && workflow.body?.state === "active";
+  const workflowStatus = workflowActive
+    ? "active"
+    : workflow.status === 200
+      ? "inactive"
+      : statusLabel(workflow.status);
+  const publicKeyStatus = publicKeyValid
+    ? "available"
+    : publicKey.status === 200
+      ? "invalid_response"
+      : statusLabel(publicKey.status);
   const repositorySecrets = Object.fromEntries(
     requiredSecrets.map((name, index) => [
       name,
       {
-        status: statusLabel(secretProbes[index].status),
+        status: secretProbes[index].status === 200
+          ? "present"
+          : statusLabel(secretProbes[index].status),
         http_status: secretProbes[index].status,
       },
     ]),
@@ -170,11 +182,11 @@ export async function GET(request: NextRequest) {
           github_token: "configured",
           provisioning_key: keyConfigured ? "configured" : "invalid",
           actions_public_key: {
-            status: publicKeyValid ? "available" : statusLabel(publicKey.status),
+            status: publicKeyStatus,
             http_status: publicKey.status,
           },
           workflow: {
-            status: workflowActive ? "active" : statusLabel(workflow.status),
+            status: workflowStatus,
             http_status: workflow.status,
           },
           repository_secrets: repositorySecrets,
