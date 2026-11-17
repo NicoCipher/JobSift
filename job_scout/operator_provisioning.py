@@ -312,7 +312,11 @@ def health_check(
             connect = psycopg.connect
         else:
             connect = database_connect
-        with connect(database_url, connect_timeout=8) as connection:
+        with connect(
+            database_url,
+            connect_timeout=8,
+            options="-c default_transaction_read_only=on",
+        ) as connection:
             row = connection.execute("SELECT 1").fetchone()
             if row is None or int(row[0]) != 1:
                 raise RuntimeError("database health query returned an unexpected result")
