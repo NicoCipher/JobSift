@@ -728,7 +728,11 @@ export async function GET(request: NextRequest) {
     const traceRequestId = clean(workflowTrace?.request_id, 36);
     const operation = clean(error?.operation, 32) || clean(workflowTrace?.operation, 32);
     const failedStage = clean(workflowTrace?.failed_stage, 64);
-    const failureStage = failedStage ? "workflow_setup:" + failedStage : "worker_execution";
+    const failureStage = error
+      ? "worker_execution"
+      : failedStage
+        ? "workflow_setup:" + failedStage
+        : "worker_execution";
     const code =
       clean(error?.code, 80) ||
       (failedStage ? "WORKFLOW_SETUP_FAILED" : "PROVISIONING_FAILED");
