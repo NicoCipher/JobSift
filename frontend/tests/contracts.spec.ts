@@ -10,6 +10,7 @@ import { FixtureJobSiftApi } from "../lib/api/fixture-api";
 import { LiveJobSiftApi } from "../lib/api/live-api";
 import { GET as proxyRead } from "../app/api/operator/[...path]/route";
 import { GET as onboardingHealth } from "../app/api/onboarding/health/route";
+import { POST as onboardingLaunch } from "../app/api/onboarding/route";
 import { NextRequest } from "next/server";
 import type { ApiError } from "../lib/contracts/service";
 import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
@@ -328,6 +329,54 @@ test("backend preflight allows the launch path to create a missing provisioning 
     expect(response.status).toBe(200);
     expect(body.data.ready).toBe(true);
     expect(body.data.checks.repository_secrets.JOBSIFT_PROVISIONING_KEY.status).toBe("missing");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
+    else process.env.JOBSIFT_GITHUB_TOKEN = previousToken;
+    if (previousKey === undefined) delete process.env.JOBSIFT_PROVISIONING_KEY;
+    else process.env.JOBSIFT_PROVISIONING_KEY = previousKey;
+  }
+});
+
+
+test("onboarding launch failures include a trace ID and exact GitHub stage", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.JOBSIFT_GITHUB_TOKEN;
+  const previousKey = process.env.JOBSIFT_PROVISIONING_KEY;
+  const calls: string[] = [];
+  process.env.JOBSIFT_GITHUB_TOKEN = "test-github-token";
+  process.env.JOBSIFT_PROVISIONING_KEY = Buffer.alloc(32, 9).toString("base64url");
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    return new Response(JSON.stringify({ message: "forbidden" }), { status: 403 });
+  };
+
+  try {
+    const request = new NextRequest("http://localhost:3000/api/onboarding", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:3000",
+        "sec-fetch-site": "same-origin",
+      },
+      body: JSON.stringify({ operation: "health_check", payload: {} }),
+    });
+    const response = await onboardingLaunch(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).toMatchObject({
+      code: "GITHUB_PUBLIC_KEY_REQUEST_FAILED",
+      stage: "public_key_fetch",
+      http_status: 403,
+    });
+    expect(body.data.state).toBe("failed");
+    expect(body.data.operation).toBe("health_check");
+    expect(body.data.control_request_id).toBe(body.meta.trace_id);
+    expect(response.headers.get("X-JobSift-Trace-Id")).toBe(body.meta.trace_id);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("/actions/secrets/public-key");
   } finally {
     globalThis.fetch = originalFetch;
     if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
