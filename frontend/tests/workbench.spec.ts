@@ -1800,7 +1800,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
       role_titles: ["Software Engineer", "Backend Developer"],
       country: "US",
       work_modes: ["remote"],
-      freshness_hours: 24,
+      freshness_hours: 48,
     },
     daily_limit: 250,
     delivery_mode: "review",
