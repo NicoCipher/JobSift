@@ -294,3 +294,45 @@ test("history pagination and metadata describe the same client snapshot", async 
     brief_revision_id: null, run_id: null, destination_id: null, cohort_id: null });
   expect(history.meta.source_failures).toEqual([]);
 });
+
+
+test("backend preflight allows the launch path to create a missing provisioning secret", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.JOBSIFT_GITHUB_TOKEN;
+  const previousKey = process.env.JOBSIFT_PROVISIONING_KEY;
+  process.env.JOBSIFT_GITHUB_TOKEN = "test-github-token";
+  process.env.JOBSIFT_PROVISIONING_KEY = Buffer.alloc(32, 8).toString("base64url");
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/actions/secrets/public-key")) {
+      return Response.json({
+        key: Buffer.alloc(32, 2).toString("base64"),
+        key_id: "test-key",
+      });
+    }
+    if (url.endsWith("/actions/workflows/operator-client-provision.yml")) {
+      return Response.json({ state: "active" });
+    }
+    if (url.endsWith("/actions/secrets/JOBSIFT_PROVISIONING_KEY")) {
+      return new Response(null, { status: 404 });
+    }
+    return Response.json({ name: url.split("/").pop() });
+  };
+
+  try {
+    const request = new NextRequest("http://localhost:3000/api/onboarding/health");
+    const response = await onboardingHealth(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.ready).toBe(true);
+    expect(body.data.checks.repository_secrets.JOBSIFT_PROVISIONING_KEY.status).toBe("missing");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
+    else process.env.JOBSIFT_GITHUB_TOKEN = previousToken;
+    if (previousKey === undefined) delete process.env.JOBSIFT_PROVISIONING_KEY;
+    else process.env.JOBSIFT_PROVISIONING_KEY = previousKey;
+  }
+});
