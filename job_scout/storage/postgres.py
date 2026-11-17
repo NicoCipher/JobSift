@@ -706,7 +706,11 @@ class PostgresRepository(SQLiteRepository):
             "last_seen_at=excluded.last_seen_at,"
             "last_verified_at=excluded.last_verified_at,"
             "lifecycle=excluded.lifecycle,"
-            "payload_json=excluded.payload_json",
+            "payload_json=CASE WHEN "
+            "(jobs.payload_json::jsonb - 'discovered_at' - 'last_seen_at') "
+            "IS DISTINCT FROM "
+            "(excluded.payload_json::jsonb - 'discovered_at' - 'last_seen_at') "
+            "THEN excluded.payload_json ELSE jobs.payload_json END",
             rows,
         )
 
