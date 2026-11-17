@@ -168,7 +168,7 @@ export function ClientOnboardingWizard() {
         setMessage("");
         setOperationWarning(
           body.data.workflow_warning === "post_operation_workflow_step_failed"
-            ? "The operation completed, but its status snapshot did not refresh. Do not repeat it; use this reference while the status is recovered."
+            ? "The operation completed, but a later workflow step failed. Do not repeat it; use this reference while status is recovered."
             : "",
         );
         onReady(body.data.result as Record<string, unknown>);
