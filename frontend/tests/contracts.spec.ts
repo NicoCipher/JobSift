@@ -10,7 +10,7 @@ import { FixtureJobSiftApi } from "../lib/api/fixture-api";
 import { LiveJobSiftApi } from "../lib/api/live-api";
 import { GET as proxyRead } from "../app/api/operator/[...path]/route";
 import { GET as onboardingHealth } from "../app/api/onboarding/health/route";
-import { POST as onboardingLaunch } from "../app/api/onboarding/route";
+import { GET as onboardingStatus, POST as onboardingLaunch } from "../app/api/onboarding/route";
 import { NextRequest } from "next/server";
 import sodium from "libsodium-wrappers";
 import { encryptProvisioningPayload } from "../lib/provisioning-crypto";
