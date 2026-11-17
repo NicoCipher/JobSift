@@ -453,12 +453,12 @@ test("health operation dispatches to the isolated non-mutating workflow", async 
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
     expect(dispatch?.url).toContain("/operator-health-check.yml/dispatches");
-    expect(dispatchBody.inputs).toMatchObject({
+    expect(dispatchBody?.inputs).toMatchObject({
       operation: "health_check",
       request_id: body.data.request_id,
       control_request_id: body.data.control_request_id,
     });
-    expect(dispatchBody.inputs.payload_ciphertext).not.toBe("{}");
+    expect(dispatchBody?.inputs?.payload_ciphertext).not.toBe("{}");
   } finally {
     globalThis.fetch = originalFetch;
     if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
