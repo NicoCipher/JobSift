@@ -358,6 +358,8 @@ export function ClientOnboardingWizard() {
           <div><span>Sheet</span><strong>{created.sheet_status === "ready" ? "Connected" : "Needs attention"}</strong></div>
           <div><span>Criteria revision</span><strong>{created.brief_revision ?? "—"}</strong></div>
         </div>
+        {traceId ? <p className="metadata">Operation reference: <code>{traceId}</code></p> : null}
+        {operationWarning ? <p className="metadata">{operationWarning}</p> : null}
         <div className="onboarding-actions">
           <Link href="/clients" className="client-primary-action"><UiIcon name="users" size={17}/> View clients</Link>
         </div>
