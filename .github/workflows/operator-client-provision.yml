@@ -13,7 +13,6 @@ on:
         required: true
         type: choice
         options:
-          - health_check
           - inspect_sheet
           - create_client
       payload_ciphertext:
@@ -112,6 +111,11 @@ jobs:
         id: operation
         run: python -m job_scout.operator_provisioning
 
+      - name: Emit authoritative operator state
+        id: operator_snapshot
+        if: ${{ always() }}
+        run: python -m job_scout.operator_snapshot
+
       - name: Emit operation trace
         if: ${{ always() }}
         env:
@@ -123,6 +127,7 @@ jobs:
           JOBSIFT_STEP_CONFIGURE_GOOGLE: ${{ steps.configure_google.outcome }}
           JOBSIFT_STEP_DECRYPT_PAYLOAD: ${{ steps.decrypt_payload.outcome }}
           JOBSIFT_STEP_OPERATION: ${{ steps.operation.outcome }}
+          JOBSIFT_STEP_OPERATOR_SNAPSHOT: ${{ steps.operator_snapshot.outcome }}
         run: |
           python - <<'PY'
           import json
@@ -137,6 +142,7 @@ jobs:
               "configure_google": os.environ.get("JOBSIFT_STEP_CONFIGURE_GOOGLE", ""),
               "decrypt_payload": os.environ.get("JOBSIFT_STEP_DECRYPT_PAYLOAD", ""),
               "operation": os.environ.get("JOBSIFT_STEP_OPERATION", ""),
+              "operator_snapshot": os.environ.get("JOBSIFT_STEP_OPERATOR_SNAPSHOT", ""),
           }
           failed_stage = next(
               (name for name, outcome in step_outcomes.items() if outcome == "failure"),
