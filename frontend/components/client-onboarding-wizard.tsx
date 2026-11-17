@@ -74,7 +74,7 @@ export function ClientOnboardingWizard() {
   const [workModes, setWorkModes] = useState<string[]>(["remote"]);
   const [exclusions, setExclusions] = useState("");
   const [preferred, setPreferred] = useState("");
-  const [freshness, setFreshness] = useState("24");
+  const [freshness, setFreshness] = useState("48");
   const [dailyLimit, setDailyLimit] = useState("100");
   const [deliveryMode, setDeliveryMode] = useState<"review" | "auto">("review");
   const [timezone, setTimezone] = useState("America/New_York");
@@ -353,6 +353,7 @@ export function ClientOnboardingWizard() {
                 <option value="6">Last 6 hours</option>
                 <option value="12">Last 12 hours</option>
                 <option value="24">Last 24 hours</option>
+                <option value="48">Last 48 hours</option>
               </select>
             </label>
           </div>
