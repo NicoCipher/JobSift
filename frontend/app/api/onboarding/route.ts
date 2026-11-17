@@ -702,32 +702,48 @@ export async function GET(request: NextRequest) {
 
     stage = "worker_failure";
     const error = parseMarker(logs, "JOBSIFT_PROVISION_ERROR=");
+    const workflowTrace = parseMarker(logs, "JOBSIFT_OPERATION_TRACE=");
     const errorControlId = clean(error?.control_request_id, 36);
-    if (errorControlId && errorControlId !== controlRequestId) {
+    const traceControlId = clean(workflowTrace?.control_request_id, 36);
+    if (
+      (errorControlId && errorControlId !== controlRequestId) ||
+      (traceControlId && traceControlId !== controlRequestId)
+    ) {
       throw new Error("The worker failure did not match its request reference.");
     }
     const errorRequestId = clean(error?.request_id, 36);
-    const operation = clean(error?.operation, 32);
-    const code = clean(error?.code, 80) || "PROVISIONING_FAILED";
+    const traceRequestId = clean(workflowTrace?.request_id, 36);
+    const operation = clean(error?.operation, 32) || clean(workflowTrace?.operation, 32);
+    const failedStage = clean(workflowTrace?.failed_stage, 64);
+    const failureStage = failedStage ? "workflow_setup:" + failedStage : "worker_execution";
+    const code =
+      clean(error?.code, 80) ||
+      (failedStage ? "WORKFLOW_SETUP_FAILED" : "PROVISIONING_FAILED");
     const message =
       clean(error?.message, 500) ||
-      "JobSift could not complete this action. Check the connection and try again.";
+      (failedStage
+        ? "GitHub Actions failed during " + failedStage.replace(/_/g, " ") + " before the worker returned a result."
+        : "JobSift could not complete this action. Check the connection and try again.");
+    const failedRequestId = validRequestId(errorRequestId)
+      ? errorRequestId
+      : traceRequestId;
     console.error("[JobSift onboarding] operation failed", {
       trace_id: controlRequestId,
-      request_id: validRequestId(errorRequestId) ? errorRequestId : null,
+      request_id: validRequestId(failedRequestId) ? failedRequestId : null,
       operation: allowedOperations.has(operation) ? operation : null,
       workflow_run_id: run.id,
       code,
+      stage: failureStage,
     });
     return response(
       {
         data: {
           state: "failed",
           code,
-          stage: "worker_execution",
+          stage: failureStage,
           message,
           operation: allowedOperations.has(operation) ? operation : null,
-          request_id: validRequestId(errorRequestId) ? errorRequestId : null,
+          request_id: validRequestId(failedRequestId) ? failedRequestId : null,
           control_request_id: controlRequestId,
           conclusion: run.conclusion,
           ...runMeta,
