@@ -1,0 +1,40 @@
+name: Temporary JobSift frontend dependency audit
+
+on:
+  push:
+    branches:
+      - fix/client-onboarding-48h-policy
+    paths:
+      - .github/workflows/temp-npm-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Audit frontend dependencies
+        run: |
+          cd frontend
+          npm ci --ignore-scripts
+          npm audit --json > /tmp/npm-audit.json || true
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const audit = JSON.parse(fs.readFileSync("/tmp/npm-audit.json", "utf8"));
+          const rows = Object.entries(audit.vulnerabilities || {}).map(([name, item]) => ({
+            name,
+            severity: item.severity,
+            direct: item.isDirect,
+            range: item.range,
+            fixAvailable: item.fixAvailable,
+            via: (item.via || []).map((entry) => typeof entry === "string" ? entry : entry.title)
+          }));
+          console.log(JSON.stringify({metadata: audit.metadata?.vulnerabilities, vulnerabilities: rows}, null, 2));
+          NODE
