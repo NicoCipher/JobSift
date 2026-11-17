@@ -13,6 +13,7 @@ import { GET as onboardingHealth } from "../app/api/onboarding/health/route";
 import { POST as onboardingLaunch } from "../app/api/onboarding/route";
 import { NextRequest } from "next/server";
 import sodium from "libsodium-wrappers";
+import { encryptProvisioningPayload } from "../lib/provisioning-crypto";
 import type { ApiError } from "../lib/contracts/service";
 import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
 const query = {
@@ -459,6 +460,94 @@ test("health operation dispatches to the isolated non-mutating workflow", async 
       control_request_id: body.data.control_request_id,
     });
     expect(dispatchBody?.inputs?.payload_ciphertext).not.toBe("{}");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
+    else process.env.JOBSIFT_GITHUB_TOKEN = previousToken;
+    if (previousKey === undefined) delete process.env.JOBSIFT_PROVISIONING_KEY;
+    else process.env.JOBSIFT_PROVISIONING_KEY = previousKey;
+  }
+});
+
+
+test("a completed operation remains successful if its later snapshot step fails", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.JOBSIFT_GITHUB_TOKEN;
+  const previousKey = process.env.JOBSIFT_PROVISIONING_KEY;
+  const controlRequestId = "66666666-6666-4666-8666-666666666666";
+  const requestId = "77777777-7777-4777-8777-777777777777";
+  const key = Buffer.alloc(32, 11).toString("base64url");
+  process.env.JOBSIFT_GITHUB_TOKEN = "test-github-token";
+  process.env.JOBSIFT_PROVISIONING_KEY = key;
+  const ciphertext = encryptProvisioningPayload(
+    key,
+    JSON.stringify({
+      request_id: requestId,
+      control_request_id: controlRequestId,
+      operation: "inspect_sheet",
+      result: {
+        tabs: ["Jobs"],
+        selected_tab: "Jobs",
+        headers: ["Role", "Company", "URL"],
+        proposed_mapping: { "Job Title": "Role" },
+        missing_required_fields: [],
+      },
+    }),
+  );
+  if (!ciphertext) throw new Error("test result encryption failed");
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/actions/runs?event=workflow_dispatch&per_page=100")) {
+      return Response.json({
+        workflow_runs: [{
+          id: 123,
+          status: "completed",
+          conclusion: "failure",
+          display_title: "Provision operator client · " + controlRequestId,
+          html_url: "https://github.com/NicoCipher/JobSift/actions/runs/123",
+          run_number: 9,
+          created_at: "2026-11-17T14:00:00Z",
+          updated_at: "2026-11-17T14:01:00Z",
+          completed_at: "2026-11-17T14:01:00Z",
+        }],
+      });
+    }
+    if (url.endsWith("/actions/runs/123/jobs?per_page=100")) {
+      return Response.json({ jobs: [{ id: 456, name: "provision" }] });
+    }
+    if (url.endsWith("/actions/jobs/456/logs")) {
+      return new Response(
+        "JOBSIFT_PROVISION_RESULT_CIPHERTEXT=" + ciphertext + "\n",
+        { status: 200 },
+      );
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  try {
+    const request = new NextRequest(
+      "http://localhost:3000/api/onboarding?control_request_id=" + controlRequestId,
+    );
+    const response = await onboardingStatus(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data).toMatchObject({
+      state: "ready",
+      operation: "inspect_sheet",
+      request_id: requestId,
+      control_request_id: controlRequestId,
+      workflow_conclusion: "failure",
+      workflow_warning: "post_operation_workflow_step_failed",
+      workflow_run_id: 123,
+    });
+    expect(body.data.result).toMatchObject({
+      tabs: ["Jobs"],
+      selected_tab: "Jobs",
+      missing_required_fields: [],
+    });
+    expect(body.meta.trace_id).toBe(controlRequestId);
   } finally {
     globalThis.fetch = originalFetch;
     if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
