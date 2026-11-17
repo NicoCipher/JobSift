@@ -6,7 +6,10 @@ import {
   validProvisioningKey,
 } from "../../../lib/provisioning-crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { encryptGithubActionSecret } from "../../../lib/github-secret";
+import {
+  encryptGithubActionSecret,
+  InvalidGithubActionsPublicKeyError,
+} from "../../../lib/github-secret";
 import {
   describeProvisioningSyncFailure,
   ProvisioningSyncError,
@@ -226,7 +229,10 @@ async function syncProvisioningKeyToGitHub() {
   let encryptedValue: string;
   try {
     encryptedValue = await encryptGithubActionSecret(rawKey, publicKey.key);
-  } catch {
+  } catch (error) {
+    if (error instanceof InvalidGithubActionsPublicKeyError) {
+      throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID");
+    }
     throw new ProvisioningSyncError("GITHUB_SECRET_ENCRYPTION_FAILED");
   }
 
