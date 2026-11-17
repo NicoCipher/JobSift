@@ -1808,7 +1808,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.getByText("Software Engineer, Backend Developer")).toBeVisible();
-  await expect(page.getByText("Last 24 hours · unknown age rejected")).toBeVisible();
+  await expect(page.getByText("Last 48 hours · undated jobs included")).toBeVisible();
   await page.getByRole("button", { name: "Create client" }).click();
 
   await expect(page.getByRole("heading", { name: "Acme Software is ready" })).toBeVisible();
