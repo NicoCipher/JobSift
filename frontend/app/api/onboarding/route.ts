@@ -664,9 +664,9 @@ export async function GET(request: NextRequest) {
     }
     const logs = await logsResponse.text();
 
-    if (run.conclusion === "success") {
-      stage = "result_decryption";
-      const ciphertext = parseTextMarker(logs, "JOBSIFT_PROVISION_RESULT_CIPHERTEXT=");
+    stage = "result_decryption";
+    const ciphertext = parseTextMarker(logs, "JOBSIFT_PROVISION_RESULT_CIPHERTEXT=");
+    if (ciphertext) {
       const plaintext = decryptProvisioningPayload(provisioningKey(), ciphertext);
       if (!plaintext) throw new Error("The encrypted operation result could not be verified.");
       const marker = JSON.parse(plaintext) as Record<string, unknown>;
@@ -682,12 +682,15 @@ export async function GET(request: NextRequest) {
       }
       const result = publicResult(marker.result);
       if (!result) throw new Error("The operation result was invalid.");
+      const workflowWarning =
+        run.conclusion === "success" ? null : "post_operation_workflow_step_failed";
       console.info("[JobSift onboarding] operation completed", {
         trace_id: controlRequestId,
         request_id: resultRequestId,
         operation,
         workflow_run_id: run.id,
         conclusion: run.conclusion,
+        workflow_warning: workflowWarning,
       });
       return response(
         {
@@ -697,12 +700,17 @@ export async function GET(request: NextRequest) {
             request_id: resultRequestId,
             control_request_id: controlRequestId,
             result,
+            workflow_conclusion: run.conclusion,
+            workflow_warning: workflowWarning,
             ...runMeta,
           },
         },
         200,
         controlRequestId,
       );
+    }
+    if (run.conclusion === "success") {
+      throw new Error("The successful workflow did not emit an operation result.");
     }
 
     stage = "worker_failure";
