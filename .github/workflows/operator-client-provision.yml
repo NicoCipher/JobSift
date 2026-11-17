@@ -13,6 +13,7 @@ on:
         required: true
         type: choice
         options:
+          - health_check
           - inspect_sheet
           - create_client
       payload_ciphertext:
@@ -100,8 +101,37 @@ jobs:
           NODE
 
       - name: Process operator provisioning request
+        id: operation
         run: python -m job_scout.operator_provisioning
 
-      - name: Emit authoritative operator state
+      - name: Emit operation trace
         if: ${{ always() }}
-        run: python -m job_scout.operator_snapshot
+        env:
+          JOBSIFT_WORKFLOW_OUTCOME: ${{ job.status }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          trace = {
+              "request_id": os.environ.get("JOBSIFT_PROVISION_REQUEST_ID", ""),
+              "control_request_id": os.environ.get("JOBSIFT_CONTROL_REQUEST_ID", ""),
+              "operation": os.environ.get("JOBSIFT_PROVISION_OPERATION", ""),
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "workflow_run_number": os.environ.get("GITHUB_RUN_NUMBER", ""),
+              "workflow_outcome": os.environ.get("JOBSIFT_WORKFLOW_OUTCOME", "unknown"),
+          }
+          line = "JOBSIFT_OPERATION_TRACE=" + json.dumps(trace, sort_keys=True, separators=(",", ":"))
+          print(line)
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          summary.write_text(
+              "## JobSift operation trace\n\n"
+              + f"- Control reference: `{trace['control_request_id']}`\n"
+              + f"- Request ID: `{trace['request_id']}`\n"
+              + f"- Operation: `{trace['operation']}`\n"
+              + f"- Workflow run: `{trace['workflow_run_id']}`\n"
+              + f"- Outcome: `{trace['workflow_outcome']}`\n",
+              encoding="utf-8",
+          )
+          PY
