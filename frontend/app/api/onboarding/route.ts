@@ -212,7 +212,14 @@ async function syncProvisioningKeyToGitHub() {
   } catch {
     throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID");
   }
-  if (!publicKey.key || !publicKey.key_id) {
+  if (
+    !publicKey ||
+    typeof publicKey !== "object" ||
+    typeof publicKey.key !== "string" ||
+    !publicKey.key ||
+    typeof publicKey.key_id !== "string" ||
+    !publicKey.key_id
+  ) {
     throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID");
   }
 
