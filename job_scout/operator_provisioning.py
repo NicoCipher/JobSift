@@ -39,10 +39,14 @@ from job_scout.storage.factory import create_repository
 class ProvisioningFailure(ValueError):
     """Safe operator-facing provisioning failure with no private payload values."""
 
+    def __init__(self, message: str, *, code: str = "PROVISIONING_ERROR") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 def _safe_failure(error: Exception) -> tuple[str, str]:
     if isinstance(error, ProvisioningFailure):
-        return "PROVISIONING_ERROR", str(error)
+        return error.code, str(error)
     if isinstance(error, ValidationError):
         return "VALIDATION_ERROR", "Some client setup fields are invalid."
     if isinstance(error, BatchConflict):
@@ -290,6 +294,46 @@ def inspect_sheet(
     }
 
 
+
+def health_check(repository, gateway, *, request_factory=None) -> dict[str, object]:
+    """Verify the worker's database connection and Google credential refresh."""
+    try:
+        with repository.connect() as connection:
+            row = connection.execute("SELECT 1 AS ok").fetchone()
+            if row is None or int(row["ok"]) != 1:
+                raise RuntimeError("database health query returned an unexpected result")
+    except Exception as exc:
+        raise ProvisioningFailure(
+            "The JobSift database connection could not be verified.",
+            code="DATABASE_UNAVAILABLE",
+        ) from exc
+
+    credentials = getattr(getattr(gateway, "session", None), "credentials", None)
+    if credentials is None:
+        raise ProvisioningFailure(
+            "Google Sheets runtime credentials are unavailable.",
+            code="GOOGLE_AUTH_UNAVAILABLE",
+        )
+    try:
+        if request_factory is None:
+            from google.auth.transport.requests import Request
+
+            request = Request()
+        else:
+            request = request_factory()
+        credentials.refresh(request)
+    except Exception as exc:
+        raise ProvisioningFailure(
+            "Google Sheets authentication could not be verified.",
+            code="GOOGLE_AUTH_FAILED",
+        ) from exc
+
+    return {
+        "database_status": "connected",
+        "google_auth_status": "authenticated",
+        "checked_at": datetime.now(UTC).isoformat(),
+    }
+
 def _activate_operator_client(
     repository,
     *,
@@ -465,7 +509,11 @@ def process_request(
         return current.result or {}
 
     try:
-        if operation == "inspect_sheet":
+        if operation == "health_check":
+            if payload:
+                raise ValueError("health check payload must be empty")
+            result = health_check(repository, gateway)
+        elif operation == "inspect_sheet":
             value = InspectSheetPayload.model_validate(payload)
             result = inspect_sheet(
                 sheet_url=value.sheet_url,
@@ -527,7 +575,7 @@ def process_request(
             code=code,
             message=message,
         )
-        raise ProvisioningFailure(message) from exc
+        raise ProvisioningFailure(message, code=code) from exc
 
     if operation != "create_client":
         requests.complete(request_id, result)
@@ -561,7 +609,9 @@ def main() -> None:
             + json.dumps(
                 {
                     "request_id": request_id,
+                    "control_request_id": os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip(),
                     "operation": operation,
+                    "code": exc.code,
                     "message": str(exc)[:500],
                 },
                 sort_keys=True,
@@ -575,9 +625,11 @@ def main() -> None:
             + json.dumps(
                 {
                     "request_id": request_id,
+                    "control_request_id": os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip(),
                     "operation": operation,
+                    "code": "PROVISIONING_UNEXPECTED",
                     "message": (
-                        "JobSift could not verify the Google Sheet or save the client."
+                        "JobSift could not verify the Google Sheet or complete the operation."
                     ),
                 },
                 sort_keys=True,
@@ -591,6 +643,7 @@ def main() -> None:
         + _encrypt_result(
             {
                 "request_id": request_id,
+                "control_request_id": os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip(),
                 "operation": operation,
                 "result": result,
             }
