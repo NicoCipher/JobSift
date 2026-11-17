@@ -13,6 +13,50 @@ import {
 } from "../lib/operator-capability";
 import { issueSheetHandle, readSheetHandle } from "../lib/sheet-handle";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
+import {
+  describeProvisioningSyncFailure,
+  ProvisioningSyncError,
+} from "../lib/provisioning-sync-error";
+
+test("onboarding secret-sync diagnostics identify the failing GitHub stage safely", () => {
+  const writeDenied = describeProvisioningSyncFailure(
+    new ProvisioningSyncError("GITHUB_SECRET_WRITE_FAILED", 403),
+  );
+  expect(writeDenied).toMatchObject({
+    code: "GITHUB_SECRET_WRITE_FAILED",
+    stage: "secret_write",
+    httpStatus: 403,
+  });
+  expect(writeDenied.message).toContain("HTTP 403");
+  expect(writeDenied.message).not.toContain("encrypted_value");
+
+  const publicKeyDenied = describeProvisioningSyncFailure(
+    new ProvisioningSyncError("GITHUB_PUBLIC_KEY_REQUEST_FAILED", 401),
+  );
+  expect(publicKeyDenied).toMatchObject({
+    code: "GITHUB_PUBLIC_KEY_REQUEST_FAILED",
+    stage: "public_key_fetch",
+    httpStatus: 401,
+  });
+  expect(publicKeyDenied.message).toContain("HTTP 401");
+
+  const invalidKey = describeProvisioningSyncFailure(
+    new ProvisioningSyncError("PROVISIONING_KEY_INVALID"),
+  );
+  expect(invalidKey).toMatchObject({
+    code: "PROVISIONING_KEY_INVALID",
+    stage: "provisioning_key_validation",
+  });
+  expect(invalidKey.message).toContain("JOBSIFT_PROVISIONING_KEY");
+
+  const unexpected = describeProvisioningSyncFailure(new Error("sensitive detail"));
+  expect(unexpected).toMatchObject({
+    code: "GITHUB_SYNC_UNEXPECTED",
+    stage: "unknown",
+  });
+  expect(unexpected.message).not.toContain("sensitive detail");
+});
+
 
 test("GitHub provisioning secrets are encrypted with libsodium sealed boxes", async () => {
   await sodium.ready;
