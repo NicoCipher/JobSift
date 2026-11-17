@@ -636,3 +636,62 @@ def test_postgres_stale_schedule_recovery_persists_audit_without_touching_runs(r
     assert audit["resumed_before_cohort"] == first.cohort + 48
     assert audit["skipped_cohorts"] == 47
     assert audit["reason"] == "stale_backlog"
+
+
+
+def test_postgres_bulk_upsert_skips_payload_rewrite_for_timestamp_only_observation(repository):
+    now = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+    job = Job(
+        id="payload-churn-test",
+        source="greenhouse",
+        source_job_id="payload-churn-test",
+        source_board_id="payload-churn-board",
+        title="Backend Engineer",
+        company="Payload Churn Test",
+        description_text="Stable description",
+        job_url="https://payload-churn.example/jobs/1",
+        canonical_url="https://payload-churn.example/jobs/1",
+        content_fingerprint="stable-fingerprint",
+        discovered_at=now,
+        last_seen_at=now,
+        raw_metadata={"provider_field": "stable"},
+    )
+    repository.upsert_jobs([job])
+
+    with repository.connect() as connection:
+        before = connection.execute(
+            "SELECT payload_json,last_seen_at,last_verified_at FROM jobs WHERE id=?",
+            (job.id,),
+        ).fetchone()
+    assert before is not None
+    original_payload = before["payload_json"]
+
+    later = now + timedelta(hours=1)
+    seen = job.model_copy(update={"discovered_at": later, "last_seen_at": later})
+    assert repository.upsert_jobs([seen]) == {job.id: JobLifecycle.SEEN}
+
+    with repository.connect() as connection:
+        after_seen = connection.execute(
+            "SELECT payload_json,last_seen_at,last_verified_at FROM jobs WHERE id=?",
+            (job.id,),
+        ).fetchone()
+    assert after_seen is not None
+    assert after_seen["payload_json"] == original_payload
+    assert datetime.fromisoformat(after_seen["last_seen_at"]) == later
+    assert datetime.fromisoformat(after_seen["last_verified_at"]) > datetime.fromisoformat(
+        before["last_verified_at"]
+    )
+
+    changed_without_fingerprint_change = seen.model_copy(
+        update={"apply_url": "https://apply.payload-churn.example/jobs/1"}
+    )
+    repository.upsert_jobs([changed_without_fingerprint_change])
+
+    with repository.connect() as connection:
+        after_change = connection.execute(
+            "SELECT payload_json FROM jobs WHERE id=?",
+            (job.id,),
+        ).fetchone()
+    assert after_change is not None
+    refreshed = Job.model_validate_json(after_change["payload_json"])
+    assert str(refreshed.apply_url) == "https://apply.payload-churn.example/jobs/1"
