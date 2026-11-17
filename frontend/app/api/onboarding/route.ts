@@ -28,6 +28,11 @@ type GithubRun = {
   status: string;
   conclusion: string | null;
   display_title?: string | null;
+  html_url?: string | null;
+  run_number?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
 };
 
 function token() {
@@ -554,12 +559,22 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const controlRequestId =
+    request.nextUrl.searchParams.get("control_request_id")?.trim().toLowerCase() ?? "";
+  const traceId = validRequestId(controlRequestId) ? controlRequestId : randomUUID();
   const ownerDenied = ownerApiGuard(request);
-  if (ownerDenied) return ownerDenied;
+  if (ownerDenied) {
+    ownerDenied.headers.set("X-JobSift-Trace-Id", traceId);
+    return ownerDenied;
+  }
+  if (!validRequestId(controlRequestId)) {
+    return invalid("A valid onboarding request is required.", traceId);
+  }
   if (!token()) {
     return response(
       { error: { code: "CONTROL_NOT_CONFIGURED", message: "Production onboarding is not configured." } },
       503,
+      traceId,
     );
   }
   if (!validProvisioningKey(provisioningKey())) {
@@ -571,11 +586,9 @@ export async function GET(request: NextRequest) {
         },
       },
       503,
+      traceId,
     );
   }
-  const controlRequestId =
-    request.nextUrl.searchParams.get("control_request_id")?.trim().toLowerCase() ?? "";
-  if (!validRequestId(controlRequestId)) return invalid("A valid onboarding request is required.");
 
   let stage = "workflow_lookup";
   let runId: number | null = null;
