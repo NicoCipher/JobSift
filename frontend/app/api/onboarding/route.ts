@@ -21,7 +21,7 @@ const owner = "NicoCipher";
 const repo = "JobSift";
 const workflow = "operator-client-provision.yml";
 const titlePrefix = "Provision operator client · ";
-const allowedOperations = new Set(["inspect_sheet", "create_client"]);
+const allowedOperations = new Set(["health_check", "inspect_sheet", "create_client"]);
 
 type GithubRun = {
   id: number;
@@ -44,15 +44,21 @@ function sameOrigin(request: NextRequest) {
   return (!origin || origin === request.nextUrl.origin) && (!site || site === "same-origin");
 }
 
-function response(data: unknown, status = 200) {
-  return NextResponse.json(data, {
+function response(data: unknown, status = 200, traceId?: string) {
+  const body = traceId && data && typeof data === "object" && !Array.isArray(data)
+    ? { ...(data as Record<string, unknown>), meta: { trace_id: traceId } }
+    : data;
+  return NextResponse.json(body, {
     status,
-    headers: { "Cache-Control": "no-store" },
+    headers: {
+      "Cache-Control": "no-store",
+      ...(traceId ? { "X-JobSift-Trace-Id": traceId } : {}),
+    },
   });
 }
 
-function invalid(message: string) {
-  return response({ error: { code: "VALIDATION_ERROR", message } }, 400);
+function invalid(message: string, traceId?: string) {
+  return response({ error: { code: "VALIDATION_ERROR", message } }, 400, traceId);
 }
 
 function clean(value: unknown, max: number) {
@@ -81,6 +87,11 @@ function boundedStrings(value: unknown, maxItems: number, maxLength: number) {
 }
 
 function validatePayload(operation: string, raw: unknown): Record<string, unknown> | null {
+  if (operation === "health_check") {
+    return raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length === 0
+      ? {}
+      : null;
+  }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const source = raw as Record<string, unknown>;
 
@@ -260,6 +271,13 @@ async function syncProvisioningKeyToGitHub() {
 function publicResult(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const source = value as Record<string, unknown>;
+  if (source.database_status === "connected" || source.google_auth_status === "authenticated") {
+    return {
+      database_status: clean(source.database_status, 32),
+      google_auth_status: clean(source.google_auth_status, 32),
+      checked_at: clean(source.checked_at, 64),
+    };
+  }
   if (Array.isArray(source.tabs)) {
     const tabs = source.tabs.filter((item): item is string => typeof item === "string").slice(0, 200);
     const headers = Array.isArray(source.headers)
@@ -317,67 +335,150 @@ function parseTextMarker(logs: string, marker: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const ownerDenied = ownerApiGuard(request);
-  if (ownerDenied) return ownerDenied;
-  if (!sameOrigin(request)) {
-    return response(
-      { error: { code: "FORBIDDEN", message: "Cross-origin onboarding requests are not allowed." } },
-      403,
-    );
-  }
-  if (!token()) {
-    return response(
-      { error: { code: "CONTROL_NOT_CONFIGURED", message: "Production onboarding is not configured." } },
-      503,
-    );
-  }
-  if (!validProvisioningKey(provisioningKey())) {
+  const controlRequestId = randomUUID();
+  const requestId = randomUUID();
+  let operation = "";
+
+  const trace = (stage: string, details: Record<string, unknown> = {}) => {
+    console.info("[JobSift onboarding] operation trace", {
+      trace_id: controlRequestId,
+      request_id: requestId,
+      operation: operation || null,
+      stage,
+      ...details,
+    });
+  };
+  const fail = (
+    code: string,
+    message: string,
+    status: number,
+    stage: string,
+    httpStatus?: number,
+  ) => {
+    trace("failed", { code, stage, http_status: httpStatus ?? null });
     return response(
       {
         error: {
-          code: "PROVISIONING_NOT_CONFIGURED",
-          message: "Secure client onboarding is not configured on this deployment.",
+          code,
+          message,
+          stage,
+          ...(httpStatus ? { http_status: httpStatus } : {}),
+        },
+        data: {
+          state: "failed",
+          operation: operation || null,
+          request_id: requestId,
+          control_request_id: controlRequestId,
         },
       },
+      status,
+      controlRequestId,
+    );
+  };
+
+  const ownerDenied = ownerApiGuard(request);
+  if (ownerDenied) {
+    ownerDenied.headers.set("X-JobSift-Trace-Id", controlRequestId);
+    return ownerDenied;
+  }
+  if (!sameOrigin(request)) {
+    return fail(
+      "FORBIDDEN",
+      "Cross-origin onboarding requests are not allowed.",
+      403,
+      "request_validation",
+    );
+  }
+  if (!token()) {
+    return fail(
+      "CONTROL_NOT_CONFIGURED",
+      "Production onboarding is not configured.",
       503,
+      "configuration",
+    );
+  }
+  if (!validProvisioningKey(provisioningKey())) {
+    return fail(
+      "PROVISIONING_NOT_CONFIGURED",
+      "Secure client onboarding is not configured on this deployment.",
+      503,
+      "configuration",
     );
   }
   if (!request.headers.get("content-type")?.startsWith("application/json")) {
-    return invalid("Expected a JSON onboarding request.");
+    return fail(
+      "VALIDATION_ERROR",
+      "Expected a JSON onboarding request.",
+      400,
+      "request_validation",
+    );
   }
 
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    const parsed = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return fail(
+        "VALIDATION_ERROR",
+        "Invalid onboarding request.",
+        400,
+        "request_validation",
+      );
+    }
+    body = parsed as Record<string, unknown>;
   } catch {
-    return invalid("Invalid onboarding request.");
+    return fail(
+      "VALIDATION_ERROR",
+      "Invalid onboarding request.",
+      400,
+      "request_validation",
+    );
   }
-  const operation = clean(body.operation, 32);
-  if (!allowedOperations.has(operation)) return invalid("Unsupported onboarding operation.");
+
+  operation = clean(body.operation, 32);
+  if (!allowedOperations.has(operation)) {
+    return fail(
+      "VALIDATION_ERROR",
+      "Unsupported onboarding operation.",
+      400,
+      "request_validation",
+    );
+  }
   const payload = validatePayload(operation, body.payload);
-  if (!payload) return invalid("Some onboarding fields are missing or invalid.");
+  if (!payload) {
+    return fail(
+      "VALIDATION_ERROR",
+      "Some onboarding fields are missing or invalid.",
+      400,
+      "request_validation",
+    );
+  }
 
   const serialized = JSON.stringify(payload);
   if (Buffer.byteLength(serialized, "utf8") > 20_000) {
-    return invalid("Onboarding request is too large.");
+    return fail(
+      "VALIDATION_ERROR",
+      "Onboarding request is too large.",
+      400,
+      "request_validation",
+    );
   }
   const ciphertext = encryptProvisioningPayload(provisioningKey(), serialized);
   if (!ciphertext) {
-    return response(
-      {
-        error: {
-          code: "PROVISIONING_NOT_CONFIGURED",
-          message: "Secure client onboarding is not configured on this deployment.",
-        },
-      },
+    return fail(
+      "PROVISIONING_NOT_CONFIGURED",
+      "Secure client onboarding is not configured on this deployment.",
       503,
+      "payload_encryption",
     );
   }
+
+  trace("secret_sync_started");
   try {
     await syncProvisioningKeyToGitHub();
   } catch (error) {
     const failure = describeProvisioningSyncFailure(error);
-    console.error("[JobSift onboarding] GitHub provisioning secret sync failed", {
+    trace("secret_sync_failed", {
       code: failure.code,
       stage: failure.stage,
       http_status: failure.httpStatus ?? null,
@@ -390,33 +491,66 @@ export async function POST(request: NextRequest) {
           stage: failure.stage,
           ...(failure.httpStatus ? { http_status: failure.httpStatus } : {}),
         },
+        data: {
+          state: "failed",
+          operation,
+          request_id: requestId,
+          control_request_id: controlRequestId,
+        },
       },
       503,
+      controlRequestId,
     );
   }
 
-  const requestId = randomUUID();
-  const controlRequestId = randomUUID();
-  const dispatched = await github("/actions/workflows/" + workflow + "/dispatches", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ref: "main",
-      inputs: {
-        request_id: requestId,
-        operation,
-        payload_ciphertext: ciphertext,
-        control_request_id: controlRequestId,
-      },
-    }),
-  });
-  if (dispatched.status !== 204) {
-    return response(
-      { error: { code: "ONBOARDING_DISPATCH_FAILED", message: "JobSift could not start this onboarding action." } },
+  let dispatched: Response;
+  trace("workflow_dispatch_started");
+  try {
+    dispatched = await github("/actions/workflows/" + workflow + "/dispatches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref: "main",
+        inputs: {
+          request_id: requestId,
+          operation,
+          payload_ciphertext: ciphertext,
+          control_request_id: controlRequestId,
+        },
+      }),
+    });
+  } catch {
+    return fail(
+      "ONBOARDING_DISPATCH_REQUEST_FAILED",
+      "JobSift could not reach GitHub to start this action.",
       502,
+      "workflow_dispatch",
     );
   }
-  return response({ data: { state: "queued", control_request_id: controlRequestId } }, 202);
+
+  if (dispatched.status !== 204) {
+    return fail(
+      "ONBOARDING_DISPATCH_FAILED",
+      "GitHub rejected the request to start this action.",
+      502,
+      "workflow_dispatch",
+      dispatched.status,
+    );
+  }
+
+  trace("workflow_dispatch_accepted");
+  return response(
+    {
+      data: {
+        state: "queued",
+        operation,
+        request_id: requestId,
+        control_request_id: controlRequestId,
+      },
+    },
+    202,
+    controlRequestId,
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -443,60 +577,173 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("control_request_id")?.trim().toLowerCase() ?? "";
   if (!validRequestId(controlRequestId)) return invalid("A valid onboarding request is required.");
 
+  let stage = "workflow_lookup";
+  let runId: number | null = null;
   try {
     const runsResponse = await github(
       "/actions/workflows/" + workflow + "/runs?event=workflow_dispatch&per_page=100",
     );
-    if (!runsResponse.ok) throw new Error("runs");
+    if (!runsResponse.ok) {
+      throw new Error("GitHub workflow lookup failed with HTTP " + runsResponse.status);
+    }
     const runsBody = (await runsResponse.json()) as { workflow_runs?: GithubRun[] };
     const run = (runsBody.workflow_runs ?? []).find(
       (item) => item.display_title === titlePrefix + controlRequestId,
     );
-    if (!run) return response({ data: { state: "queued" } });
+    if (!run) {
+      return response(
+        {
+          data: {
+            state: "queued",
+            control_request_id: controlRequestId,
+            workflow_run_id: null,
+          },
+        },
+        200,
+        controlRequestId,
+      );
+    }
+    runId = run.id;
+
+    const runMeta = {
+      workflow_run_id: run.id,
+      workflow_run_url: clean(run.html_url, 500),
+      run_number: Number.isInteger(run.run_number) ? run.run_number : null,
+      created_at: clean(run.created_at, 64),
+      updated_at: clean(run.updated_at, 64),
+      completed_at: clean(run.completed_at, 64),
+    };
+
     if (run.status !== "completed") {
-      return response({ data: { state: run.status || "in_progress" } });
+      return response(
+        {
+          data: {
+            state: run.status || "in_progress",
+            control_request_id: controlRequestId,
+            ...runMeta,
+          },
+        },
+        200,
+        controlRequestId,
+      );
     }
 
+    stage = "job_lookup";
     const jobsResponse = await github("/actions/runs/" + run.id + "/jobs?per_page=100");
-    if (!jobsResponse.ok) throw new Error("jobs");
+    if (!jobsResponse.ok) {
+      throw new Error("GitHub workflow job lookup failed with HTTP " + jobsResponse.status);
+    }
     const jobsBody = (await jobsResponse.json()) as {
       jobs?: Array<{ id: number; name: string }>;
     };
     const job = (jobsBody.jobs ?? []).find((item) => item.name === "provision");
-    if (!job) throw new Error("provision job");
+    if (!job) throw new Error("Provisioning job was not found.");
+
+    stage = "workflow_logs";
     const logsResponse = await github("/actions/jobs/" + job.id + "/logs");
-    if (!logsResponse.ok) throw new Error("logs");
+    if (!logsResponse.ok) {
+      throw new Error("GitHub workflow logs could not be read (HTTP " + logsResponse.status + ").");
+    }
     const logs = await logsResponse.text();
 
     if (run.conclusion === "success") {
-      const ciphertext = parseTextMarker(
-        logs,
-        "JOBSIFT_PROVISION_RESULT_CIPHERTEXT=",
-      );
-      const plaintext = decryptProvisioningPayload(
-        provisioningKey(),
-        ciphertext,
-      );
-      if (!plaintext) throw new Error("result");
+      stage = "result_decryption";
+      const ciphertext = parseTextMarker(logs, "JOBSIFT_PROVISION_RESULT_CIPHERTEXT=");
+      const plaintext = decryptProvisioningPayload(provisioningKey(), ciphertext);
+      if (!plaintext) throw new Error("The encrypted operation result could not be verified.");
       const marker = JSON.parse(plaintext) as Record<string, unknown>;
+      const resultRequestId = clean(marker.request_id, 36);
+      const resultControlId = clean(marker.control_request_id, 36);
+      const operation = clean(marker.operation, 32);
+      if (
+        !validRequestId(resultRequestId) ||
+        resultControlId !== controlRequestId ||
+        !allowedOperations.has(operation)
+      ) {
+        throw new Error("The operation result did not match its request reference.");
+      }
       const result = publicResult(marker.result);
-      if (!result) throw new Error("result");
-      return response({ data: { state: "ready", result } });
+      if (!result) throw new Error("The operation result was invalid.");
+      console.info("[JobSift onboarding] operation completed", {
+        trace_id: controlRequestId,
+        request_id: resultRequestId,
+        operation,
+        workflow_run_id: run.id,
+        conclusion: run.conclusion,
+      });
+      return response(
+        {
+          data: {
+            state: "ready",
+            operation,
+            request_id: resultRequestId,
+            control_request_id: controlRequestId,
+            result,
+            ...runMeta,
+          },
+        },
+        200,
+        controlRequestId,
+      );
     }
 
+    stage = "worker_failure";
     const error = parseMarker(logs, "JOBSIFT_PROVISION_ERROR=");
-    return response({
-      data: {
-        state: "failed",
-        message:
-          clean(error?.message, 500) ||
-          "JobSift could not complete this onboarding action. Check the Sheet and try again.",
-      },
+    const errorControlId = clean(error?.control_request_id, 36);
+    if (errorControlId && errorControlId !== controlRequestId) {
+      throw new Error("The worker failure did not match its request reference.");
+    }
+    const errorRequestId = clean(error?.request_id, 36);
+    const operation = clean(error?.operation, 32);
+    const code = clean(error?.code, 80) || "PROVISIONING_FAILED";
+    const message =
+      clean(error?.message, 500) ||
+      "JobSift could not complete this action. Check the connection and try again.";
+    console.error("[JobSift onboarding] operation failed", {
+      trace_id: controlRequestId,
+      request_id: validRequestId(errorRequestId) ? errorRequestId : null,
+      operation: allowedOperations.has(operation) ? operation : null,
+      workflow_run_id: run.id,
+      code,
     });
-  } catch {
     return response(
-      { error: { code: "ONBOARDING_STATUS_FAILED", message: "JobSift could not read onboarding status." } },
+      {
+        data: {
+          state: "failed",
+          code,
+          stage: "worker_execution",
+          message,
+          operation: allowedOperations.has(operation) ? operation : null,
+          request_id: validRequestId(errorRequestId) ? errorRequestId : null,
+          control_request_id: controlRequestId,
+          conclusion: run.conclusion,
+          ...runMeta,
+        },
+      },
+      200,
+      controlRequestId,
+    );
+  } catch {
+    console.error("[JobSift onboarding] status lookup failed", {
+      trace_id: controlRequestId,
+      workflow_run_id: runId,
+      stage,
+    });
+    return response(
+      {
+        error: {
+          code: "ONBOARDING_STATUS_FAILED",
+          message: "JobSift could not verify this action's status. Use the request reference when checking logs.",
+          stage,
+        },
+        data: {
+          state: "unknown",
+          control_request_id: controlRequestId,
+          workflow_run_id: runId,
+        },
+      },
       502,
+      controlRequestId,
     );
   }
 }
