@@ -1971,12 +1971,6 @@ test("onboarding backend control reports worker health with a trace reference", 
   });
 
   await page.goto("/clients/new");
-  await page.getByLabel("Client name").fill("Health Check Client");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByLabel("Role titles").fill("Software Engineer");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "Continue" }).click();
-
   await page.getByRole("button", { name: "Check backend" }).click();
   await expect(
     page.getByText("Backend verified: database and Google authentication are working."),
