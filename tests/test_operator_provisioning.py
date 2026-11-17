@@ -41,7 +41,7 @@ def create_payload():
             "work_modes": ["remote"],
             "exclusions": ["Director"],
             "preferred_terms": ["Python"],
-            "freshness_hours": 24,
+            "freshness_hours": 48,
         },
         "daily_limit": 250,
         "delivery_mode": "review",
@@ -108,10 +108,11 @@ def test_create_client_persists_sheet_brief_and_active_profile(tmp_path):
     assert client.display_name == "Acme Software"
     assert client.brief.target_roles == ["Software Engineer", "Backend Developer"]
     assert client.brief.target_market.countries == {"US"}
-    assert client.brief.target_market.unknown_policy == "reject"
+    assert client.brief.target_market.unknown_policy == "review"
     assert client.brief.work_mode.modes == {"remote"}
-    assert client.brief.posting_freshness.max_age_hours == 24
-    assert client.brief.posting_freshness.unknown_policy == "reject"
+    assert client.brief.work_mode.unknown_policy == "review"
+    assert client.brief.posting_freshness.max_age_hours == 48
+    assert client.brief.posting_freshness.unknown_policy == "allow"
     assert client.brief.avoid_terms == ["Director"]
     assert client.brief.preferred_terms == ["Python"]
 
@@ -259,6 +260,22 @@ def test_create_client_rejects_daily_limit_above_product_ceiling(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     payload = create_payload()
     payload["daily_limit"] = 2001
+
+    with pytest.raises(ValueError):
+        process_request(
+            repo,
+            request_id=str(uuid4()),
+            operation="create_client",
+            payload=payload,
+            gateway=FakeSheet(),
+        )
+
+
+
+def test_create_client_rejects_freshness_above_48_hours(tmp_path):
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    payload = create_payload()
+    payload["criteria"]["freshness_hours"] = 49
 
     with pytest.raises(ValueError):
         process_request(

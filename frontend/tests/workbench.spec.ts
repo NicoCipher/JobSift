@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import sodium from "libsodium-wrappers";
+import { encryptGithubActionSecret } from "../lib/github-secret";
 import {
   canonicalTimeZone,
   validBatchId,
@@ -11,6 +13,26 @@ import {
 } from "../lib/operator-capability";
 import { issueSheetHandle, readSheetHandle } from "../lib/sheet-handle";
 import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
+
+test("GitHub provisioning secrets are encrypted with libsodium sealed boxes", async () => {
+  await sodium.ready;
+  const keypair = sodium.crypto_box_keypair();
+  const publicKey = sodium.to_base64(
+    keypair.publicKey,
+    sodium.base64_variants.ORIGINAL,
+  );
+  const encrypted = await encryptGithubActionSecret(
+    "test-provisioning-secret",
+    publicKey,
+  );
+  const opened = sodium.crypto_box_seal_open(
+    sodium.from_base64(encrypted, sodium.base64_variants.ORIGINAL),
+    keypair.publicKey,
+    keypair.privateKey,
+  );
+  expect(sodium.to_string(opened)).toBe("test-provisioning-secret");
+});
+
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
 }) => {
@@ -1786,7 +1808,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.getByText("Software Engineer, Backend Developer")).toBeVisible();
-  await expect(page.getByText("Last 24 hours · unknown age rejected")).toBeVisible();
+  await expect(page.getByText("Last 48 hours · undated jobs included")).toBeVisible();
   await page.getByRole("button", { name: "Create client" }).click();
 
   await expect(page.getByRole("heading", { name: "Acme Software is ready" })).toBeVisible();
@@ -1800,7 +1822,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
       role_titles: ["Software Engineer", "Backend Developer"],
       country: "US",
       work_modes: ["remote"],
-      freshness_hours: 24,
+      freshness_hours: 48,
     },
     daily_limit: 250,
     delivery_mode: "review",

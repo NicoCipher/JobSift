@@ -105,7 +105,7 @@ class CriteriaPayload(BaseModel):
     work_modes: list[str]
     exclusions: list[str] = Field(default_factory=list)
     preferred_terms: list[str] = Field(default_factory=list)
-    freshness_hours: int = Field(default=24, ge=1, le=24)
+    freshness_hours: int = Field(default=48, ge=1, le=48)
 
     @field_validator("role_titles", "work_modes")
     @classmethod
@@ -227,18 +227,18 @@ def _search_brief(client_id: str, criteria: CriteriaPayload) -> SearchBrief:
             "target_market": {
                 "countries": [criteria.country],
                 "intent": "must",
-                "unknown_policy": "reject",
+                "unknown_policy": "review",
             },
             "work_mode": {
                 "modes": criteria.work_modes,
                 "intent": "must",
-                "unknown_policy": "reject",
+                "unknown_policy": "review",
             },
             "avoid_terms": criteria.exclusions,
             "preferred_terms": criteria.preferred_terms,
             "posting_freshness": {
                 "max_age_hours": criteria.freshness_hours,
-                "unknown_policy": "reject",
+                "unknown_policy": "allow",
             },
         }
     )

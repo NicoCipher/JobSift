@@ -6,6 +6,7 @@ import {
   validProvisioningKey,
 } from "../../../lib/provisioning-crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { encryptGithubActionSecret } from "../../../lib/github-secret";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +126,7 @@ function validatePayload(operation: string, raw: unknown): Record<string, unknow
     workModes.some((mode) => !["remote", "hybrid", "onsite"].includes(mode.toLowerCase())) ||
     !Number.isInteger(freshnessHours) ||
     freshnessHours < 1 ||
-    freshnessHours > 24 ||
+    freshnessHours > 48 ||
     !Number.isInteger(dailyLimit) ||
     dailyLimit < 1 ||
     dailyLimit > 2000 ||
@@ -176,6 +177,33 @@ async function github(path: string, init?: RequestInit) {
     cache: "no-store",
     signal: AbortSignal.timeout(10000),
   });
+}
+
+
+async function syncProvisioningKeyToGitHub() {
+  const rawKey = provisioningKey();
+  if (!validProvisioningKey(rawKey)) throw new Error("PROVISIONING_KEY_INVALID");
+
+  const publicKeyResponse = await github("/actions/secrets/public-key");
+  if (!publicKeyResponse.ok) throw new Error("GITHUB_SECRET_PUBLIC_KEY_UNAVAILABLE");
+  const publicKey = (await publicKeyResponse.json()) as {
+    key?: string;
+    key_id?: string;
+  };
+  if (!publicKey.key || !publicKey.key_id) {
+    throw new Error("GITHUB_SECRET_PUBLIC_KEY_INVALID");
+  }
+
+  const encryptedValue = await encryptGithubActionSecret(rawKey, publicKey.key);
+  const updateResponse = await github("/actions/secrets/JOBSIFT_PROVISIONING_KEY", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      encrypted_value: encryptedValue,
+      key_id: publicKey.key_id,
+    }),
+  });
+  if (!updateResponse.ok) throw new Error("GITHUB_SECRET_WRITE_FAILED");
 }
 
 function publicResult(value: unknown): Record<string, unknown> | null {
@@ -294,6 +322,20 @@ export async function POST(request: NextRequest) {
       503,
     );
   }
+  try {
+    await syncProvisioningKeyToGitHub();
+  } catch {
+    return response(
+      {
+        error: {
+          code: "PROVISIONING_SECRET_SYNC_FAILED",
+          message: "Secure onboarding could not sync its GitHub Actions secret. The configured GitHub token needs repository Actions secrets write permission.",
+        },
+      },
+      503,
+    );
+  }
+
   const requestId = randomUUID();
   const controlRequestId = randomUUID();
   const dispatched = await github("/actions/workflows/" + workflow + "/dispatches", {
