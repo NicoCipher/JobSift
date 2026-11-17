@@ -295,12 +295,26 @@ def inspect_sheet(
 
 
 
-def health_check(repository, gateway, *, request_factory=None) -> dict[str, object]:
-    """Verify the worker's database connection and Google credential refresh."""
+def health_check(
+    database_url: str,
+    gateway,
+    *,
+    database_connect=None,
+    request_factory=None,
+) -> dict[str, object]:
+    """Verify Neon and Google authentication without writing to the database."""
     try:
-        with repository.connect() as connection:
-            row = connection.execute("SELECT 1 AS ok").fetchone()
-            if row is None or int(row["ok"]) != 1:
+        if not database_url.strip():
+            raise ValueError("database URL is missing")
+        if database_connect is None:
+            import psycopg
+
+            connect = psycopg.connect
+        else:
+            connect = database_connect
+        with connect(database_url, connect_timeout=8) as connection:
+            row = connection.execute("SELECT 1").fetchone()
+            if row is None or int(row[0]) != 1:
                 raise RuntimeError("database health query returned an unexpected result")
     except Exception as exc:
         raise ProvisioningFailure(
@@ -509,11 +523,7 @@ def process_request(
         return current.result or {}
 
     try:
-        if operation == "health_check":
-            if payload:
-                raise ValueError("health check payload must be empty")
-            result = health_check(repository, gateway)
-        elif operation == "inspect_sheet":
+        if operation == "inspect_sheet":
             value = InspectSheetPayload.model_validate(payload)
             result = inspect_sheet(
                 sheet_url=value.sheet_url,
@@ -586,30 +596,55 @@ def main() -> None:
     request_id = os.getenv("JOBSIFT_PROVISION_REQUEST_ID", "").strip().casefold()
     operation = os.getenv("JOBSIFT_PROVISION_OPERATION", "").strip()
     payload_file = os.getenv("JOBSIFT_PROVISION_PAYLOAD_FILE", "").strip()
+    control_request_id = os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip()
     if not request_id or not operation or not payload_file:
         raise SystemExit("provisioning request ID, operation and payload are required")
     parsed = UUID(request_id)
     if str(parsed) != request_id:
         raise SystemExit("provisioning request ID must be canonical")
 
-    repository = create_repository(
-        Path(os.getenv("JOBSIFT_DATABASE", "/tmp/jobsift-provision.sqlite3"))
-    )
     try:
-        result = process_request(
-            repository,
-            request_id=request_id,
-            operation=operation,
-            payload=_read_payload(Path(payload_file)),
-            gateway=GoogleSheetsGateway(),
-        )
+        payload = _read_payload(Path(payload_file))
+        if operation == "health_check":
+            if payload:
+                raise ProvisioningFailure(
+                    "Backend health checks do not accept a payload.",
+                    code="VALIDATION_ERROR",
+                )
+            try:
+                gateway = GoogleSheetsGateway()
+            except Exception as exc:
+                raise ProvisioningFailure(
+                    "Google Sheets runtime credentials are unavailable.",
+                    code="GOOGLE_AUTH_UNAVAILABLE",
+                ) from exc
+            result = health_check(
+                os.getenv("NEON_DATABASE_URL", ""),
+                gateway,
+            )
+        elif operation in {"inspect_sheet", "create_client"}:
+            repository = create_repository(
+                Path(os.getenv("JOBSIFT_DATABASE", "/tmp/jobsift-provision.sqlite3"))
+            )
+            result = process_request(
+                repository,
+                request_id=request_id,
+                operation=operation,
+                payload=payload,
+                gateway=GoogleSheetsGateway(),
+            )
+        else:
+            raise ProvisioningFailure(
+                "The requested backend operation is not supported.",
+                code="VALIDATION_ERROR",
+            )
     except ProvisioningFailure as exc:
         print(
             "JOBSIFT_PROVISION_ERROR="
             + json.dumps(
                 {
                     "request_id": request_id,
-                    "control_request_id": os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip(),
+                    "control_request_id": control_request_id,
                     "operation": operation,
                     "code": exc.code,
                     "message": str(exc)[:500],
@@ -625,7 +660,7 @@ def main() -> None:
             + json.dumps(
                 {
                     "request_id": request_id,
-                    "control_request_id": os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip(),
+                    "control_request_id": control_request_id,
                     "operation": operation,
                     "code": "PROVISIONING_UNEXPECTED",
                     "message": (
@@ -643,7 +678,7 @@ def main() -> None:
         + _encrypt_result(
             {
                 "request_id": request_id,
-                "control_request_id": os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip(),
+                "control_request_id": control_request_id,
                 "operation": operation,
                 "result": result,
             }
