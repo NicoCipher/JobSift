@@ -92,6 +92,7 @@ export function ClientOnboardingWizard() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [traceId, setTraceId] = useState("");
+  const [operationWarning, setOperationWarning] = useState("");
   const [healthState, setHealthState] = useState<"unchecked" | "checking" | "ready" | "attention">("unchecked");
   const [healthMessage, setHealthMessage] = useState("");
   const [created, setCreated] = useState<CreatedClient | null>(null);
@@ -156,6 +157,7 @@ export function ClientOnboardingWizard() {
           state?: unknown;
           result?: unknown;
           message?: unknown;
+          workflow_warning?: unknown;
         };
         meta?: { trace_id?: unknown };
       };
@@ -164,6 +166,11 @@ export function ClientOnboardingWizard() {
       if (state === "ready" && body.data?.result && typeof body.data.result === "object") {
         setBusy(false);
         setMessage("");
+        setOperationWarning(
+          body.data.workflow_warning === "post_operation_workflow_step_failed"
+            ? "The operation completed, but its status snapshot did not refresh. Do not repeat it; use this reference while the status is recovered."
+            : "",
+        );
         onReady(body.data.result as Record<string, unknown>);
         return;
       }
@@ -205,6 +212,7 @@ export function ClientOnboardingWizard() {
     setBusy(true);
     setMessage("");
     setTraceId("");
+    setOperationWarning("");
     try {
       const response = await fetch("/api/onboarding", {
         method: "POST",
@@ -241,6 +249,7 @@ export function ClientOnboardingWizard() {
   async function checkBackend() {
     setMessage("");
     setTraceId("");
+    setOperationWarning("");
     setHealthState("checking");
     setHealthMessage("Checking the backend launch path…");
     try {
@@ -389,6 +398,7 @@ export function ClientOnboardingWizard() {
 
       {message ? <OperatorNotice tone="error" title="Please check this step"><p>{message}</p></OperatorNotice> : null}
       {traceId ? <p className="metadata">Operation reference: <code>{traceId}</code></p> : null}
+      {operationWarning ? <p className="metadata">{operationWarning}</p> : null}
 
       {step === 1 ? (
         <section className="section-block onboarding-panel">
