@@ -121,11 +121,16 @@ export async function GET(request: NextRequest) {
   ]);
 
   const publicKeyBody = publicKey.body;
+  const encodedPublicKey =
+    typeof publicKeyBody?.key === "string" ? publicKeyBody.key : "";
+  const decodedPublicKey = encodedPublicKey
+    ? Buffer.from(encodedPublicKey, "base64")
+    : Buffer.alloc(0);
   const publicKeyValid = Boolean(
     publicKey.status === 200 &&
-    typeof publicKeyBody?.key === "string" &&
-    publicKeyBody.key &&
-    typeof publicKeyBody.key_id === "string" &&
+    decodedPublicKey.length === 32 &&
+    decodedPublicKey.toString("base64") === encodedPublicKey &&
+    typeof publicKeyBody?.key_id === "string" &&
     publicKeyBody.key_id,
   );
   const workflowActive =
