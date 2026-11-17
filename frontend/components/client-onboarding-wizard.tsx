@@ -333,7 +333,7 @@ export function ClientOnboardingWizard() {
               placeholder={"Software Engineer\nBackend Developer"}
               rows={4}
             />
-            <span className="metadata">One per line or separated by commas.</span>
+            <span className="metadata">Add the job titles the client wants. One per line is easiest.</span>
           </label>
 
           <div className="onboarding-two-col">
@@ -345,7 +345,7 @@ export function ClientOnboardingWizard() {
                 maxLength={2}
                 aria-describedby="country-help"
               />
-              <span id="country-help" className="metadata">Two-letter country code, e.g. US.</span>
+              <span id="country-help" className="metadata">Use a 2-letter code: US (United States), GB (United Kingdom), CA (Canada).</span>
             </label>
             <label>
               Freshness
@@ -377,25 +377,28 @@ export function ClientOnboardingWizard() {
             </div>
           </fieldset>
 
-          <label>
-            Exclude
-            <textarea
-              value={exclusions}
-              onChange={(event) => setExclusions(event.target.value)}
-              placeholder="Senior Director, clearance required"
-              rows={3}
-            />
-            <span className="metadata">Words or phrases that should count against a match.</span>
-          </label>
-          <label>
-            Preferred terms <span className="metadata">(optional)</span>
-            <textarea
-              value={preferred}
-              onChange={(event) => setPreferred(event.target.value)}
-              placeholder="Python, backend, distributed systems"
-              rows={3}
-            />
-          </label>
+          <details className="criteria-advanced">
+            <summary>Optional filters (you can skip these)</summary>
+            <label>
+              Exclude jobs containing
+              <textarea
+                value={exclusions}
+                onChange={(event) => setExclusions(event.target.value)}
+                placeholder="Senior Director, clearance required"
+                rows={3}
+              />
+              <span className="metadata">Add titles or phrases that should rule a job out.</span>
+            </label>
+            <label>
+              Prefer jobs mentioning <span className="metadata">(optional)</span>
+              <textarea
+                value={preferred}
+                onChange={(event) => setPreferred(event.target.value)}
+                placeholder="Python, backend, distributed systems"
+                rows={3}
+              />
+            </label>
+          </details>
         </section>
       ) : null}
 
@@ -412,7 +415,7 @@ export function ClientOnboardingWizard() {
             />
           </label>
           <label>
-            Daily reset timezone
+            When should the daily limit reset?
             <input
               value={timezone}
               onChange={(event) => setTimezone(event.target.value)}
