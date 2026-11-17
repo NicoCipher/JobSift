@@ -34,7 +34,10 @@ test("onboarding health preflight checks GitHub access without exposing secrets"
         key_id: "test-key",
       });
     }
-    if (url.endsWith("/actions/workflows/operator-client-provision.yml")) {
+    if (
+      url.endsWith("/actions/workflows/operator-client-provision.yml") ||
+      url.endsWith("/actions/workflows/operator-health-check.yml")
+    ) {
       return Response.json({ state: "active" });
     }
     return Response.json({ name: url.split("/").pop(), updated_at: "2026-11-17T00:00:00Z" });
@@ -312,7 +315,10 @@ test("backend preflight allows the launch path to create a missing provisioning 
         key_id: "test-key",
       });
     }
-    if (url.endsWith("/actions/workflows/operator-client-provision.yml")) {
+    if (
+      url.endsWith("/actions/workflows/operator-client-provision.yml") ||
+      url.endsWith("/actions/workflows/operator-health-check.yml")
+    ) {
       return Response.json({ state: "active" });
     }
     if (url.endsWith("/actions/secrets/JOBSIFT_PROVISIONING_KEY")) {
