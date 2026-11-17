@@ -9,6 +9,7 @@ import {
 import { FixtureJobSiftApi } from "../lib/api/fixture-api";
 import { LiveJobSiftApi } from "../lib/api/live-api";
 import { GET as proxyRead } from "../app/api/operator/[...path]/route";
+import { GET as onboardingHealth } from "../app/api/onboarding/health/route";
 import { NextRequest } from "next/server";
 import type { ApiError } from "../lib/contracts/service";
 import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
@@ -16,6 +17,56 @@ const query = {
   client_id: "example-client",
   destination_id: "example-destination",
 };
+
+test("onboarding health preflight checks GitHub access without exposing secrets", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.JOBSIFT_GITHUB_TOKEN;
+  const previousKey = process.env.JOBSIFT_PROVISIONING_KEY;
+  process.env.JOBSIFT_GITHUB_TOKEN = "test-github-token";
+  process.env.JOBSIFT_PROVISIONING_KEY = Buffer.alloc(32, 7).toString("base64url");
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/actions/secrets/public-key")) {
+      return Response.json({ key: "public-key-placeholder", key_id: "test-key" });
+    }
+    if (url.endsWith("/actions/workflows/operator-client-provision.yml")) {
+      return Response.json({ state: "active" });
+    }
+    return Response.json({ name: url.split("/").pop(), updated_at: "2026-11-17T00:00:00Z" });
+  };
+
+  try {
+    const request = new NextRequest("http://localhost:3000/api/onboarding/health");
+    const response = await onboardingHealth(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.ready).toBe(true);
+    expect(body.data.checks).toMatchObject({
+      github_token: "configured",
+      provisioning_key: "configured",
+      actions_public_key: { status: "available", http_status: 200 },
+      workflow: { status: "active", http_status: 200 },
+      secret_write_permission: "not_verified",
+      secret_value_match: "not_verifiable",
+      database_connectivity: "not_checked",
+      google_sheets_authentication: "not_checked",
+    });
+    expect(body.meta.trace_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(JSON.stringify(body)).not.toContain("test-github-token");
+    expect(JSON.stringify(body)).not.toContain(process.env.JOBSIFT_PROVISIONING_KEY);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
+    else process.env.JOBSIFT_GITHUB_TOKEN = previousToken;
+    if (previousKey === undefined) delete process.env.JOBSIFT_PROVISIONING_KEY;
+    else process.env.JOBSIFT_PROVISIONING_KEY = previousKey;
+  }
+});
+
 test("control validation canonicalizes timezone aliases and rejects malformed IDs", () => {
   expect(canonicalTimeZone("america/new_york")).toBe("America/New_York");
   expect(canonicalTimeZone(" Africa/Lagos ")).toBe("Africa/Lagos");
