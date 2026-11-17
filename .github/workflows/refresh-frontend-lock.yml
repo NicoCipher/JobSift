@@ -11,6 +11,8 @@ on:
 permissions:
   contents: write
 
+# This one-time branch-scoped workflow is removed after lockfile generation.
+
 concurrency:
   group: jobsift-frontend-lock-refresh
   cancel-in-progress: false
