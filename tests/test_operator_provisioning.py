@@ -322,9 +322,10 @@ class FakeDatabaseConnection:
         return (1,)
 
 
-def fake_database_connect(url, *, connect_timeout):
+def fake_database_connect(url, *, connect_timeout, options):
     assert url == "postgresql://test"
     assert connect_timeout == 8
+    assert options == "-c default_transaction_read_only=on"
     return FakeDatabaseConnection()
 
 
@@ -366,7 +367,7 @@ def test_backend_health_check_reports_database_failure_without_google_call():
 
     gateway = FakeHealthGateway()
 
-    def unavailable_database(url, *, connect_timeout):
+    def unavailable_database(url, *, connect_timeout, options):
         raise OSError("private database detail")
 
     with pytest.raises(ProvisioningFailure) as raised:
