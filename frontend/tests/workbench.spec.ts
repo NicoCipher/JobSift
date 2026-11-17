@@ -1,3 +1,18 @@
+import { test, expect } from "@playwright/test";
+import sodium from "libsodium-wrappers";
+import { encryptGithubActionSecret } from "../lib/github-secret";
+import {
+  canonicalTimeZone,
+  validBatchId,
+  validGenerationId,
+  validRemovedOrdinals,
+} from "../lib/control-validation";
+import {
+  issueOperatorCapability,
+  verifyOperatorCapability,
+} from "../lib/operator-capability";
+import { issueSheetHandle, readSheetHandle } from "../lib/sheet-handle";
+import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 
 test("GitHub provisioning secrets are encrypted with libsodium sealed boxes", async () => {
   await sodium.ready;
@@ -18,21 +33,6 @@ test("GitHub provisioning secrets are encrypted with libsodium sealed boxes", as
   expect(sodium.to_string(opened)).toBe("test-provisioning-secret");
 });
 
-import { test, expect } from "@playwright/test";
-import sodium from "libsodium-wrappers";
-import { encryptGithubActionSecret } from "../lib/github-secret";
-import {
-  canonicalTimeZone,
-  validBatchId,
-  validGenerationId,
-  validRemovedOrdinals,
-} from "../lib/control-validation";
-import {
-  issueOperatorCapability,
-  verifyOperatorCapability,
-} from "../lib/operator-capability";
-import { issueSheetHandle, readSheetHandle } from "../lib/sheet-handle";
-import { isOperatorProfileAllowed, parseOperatorProfiles } from "../lib/operator-profiles";
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
   page,
 }) => {
