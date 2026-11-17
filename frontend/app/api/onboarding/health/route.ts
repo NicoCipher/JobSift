@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const apiBase = "https://api.github.com/repos/NicoCipher/JobSift";
 const workflowPath = "/actions/workflows/operator-client-provision.yml";
+const healthWorkflowPath = "/actions/workflows/operator-health-check.yml";
 const requiredSecrets = [
   "JOBSIFT_PROVISIONING_KEY",
   "NEON_DATABASE_URL",
@@ -114,9 +115,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const [publicKey, workflow, ...secretProbes] = await Promise.all([
+  const [publicKey, workflow, healthWorkflow, ...secretProbes] = await Promise.all([
     githubGet("/actions/secrets/public-key", token),
     githubGet(workflowPath, token),
+    githubGet(healthWorkflowPath, token),
     ...requiredSecrets.map((name) => githubGet("/actions/secrets/" + name, token)),
   ]);
 
@@ -140,6 +142,13 @@ export async function GET(request: NextRequest) {
     : workflow.status === 200
       ? "inactive"
       : statusLabel(workflow.status);
+  const healthWorkflowActive =
+    healthWorkflow.status === 200 && healthWorkflow.body?.state === "active";
+  const healthWorkflowStatus = healthWorkflowActive
+    ? "active"
+    : healthWorkflow.status === 200
+      ? "inactive"
+      : statusLabel(healthWorkflow.status);
   const publicKeyStatus = publicKeyValid
     ? "available"
     : publicKey.status === 200
@@ -161,15 +170,20 @@ export async function GET(request: NextRequest) {
     const index = requiredSecrets.indexOf(name as (typeof requiredSecrets)[number]);
     return index >= 0 && secretProbes[index].status === 200;
   });
-  const ready = keyConfigured && publicKeyValid && workflowActive && workerSecretsPresent;
+  const ready =
+    keyConfigured &&
+    publicKeyValid &&
+    workflowActive &&
+    healthWorkflowActive &&
+    workerSecretsPresent;
 
   let summary = "Backend preflight passed. The worker check will verify database connectivity and Google authentication.";
   if (!keyConfigured) {
     summary = "The secure provisioning key is missing or invalid in Vercel Production.";
   } else if (!publicKeyValid) {
     summary = "GitHub denied or failed the Actions secrets API check. Check the token's repository access and Secrets permissions.";
-  } else if (!workflowActive) {
-    summary = "The GitHub provisioning workflow is missing, inaccessible, or inactive.";
+  } else if (!workflowActive || !healthWorkflowActive) {
+    summary = "A required GitHub provisioning or health workflow is missing, inaccessible, or inactive.";
   } else if (!workerSecretsPresent) {
     summary = "The Neon database URL or Google service-account secret is missing or inaccessible.";
   }
@@ -179,6 +193,7 @@ export async function GET(request: NextRequest) {
     ready,
     github_public_key: publicKey.status,
     workflow: workflow.status,
+    health_workflow: healthWorkflow.status,
     repository_secrets: secretProbes.map((probe) => probe.status),
   });
 
@@ -197,6 +212,10 @@ export async function GET(request: NextRequest) {
           workflow: {
             status: workflowStatus,
             http_status: workflow.status,
+          },
+          health_workflow: {
+            status: healthWorkflowStatus,
+            http_status: healthWorkflow.status,
           },
           repository_secrets: repositorySecrets,
           secret_write_permission: "not_verified",
