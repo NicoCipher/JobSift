@@ -38,3 +38,4 @@ jobs:
           NODE
 
 # Triggered only for this review branch.
+# Re-run audit against the patched lockfile.
