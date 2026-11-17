@@ -307,13 +307,34 @@ class FakeHealthGateway:
         self.session = SimpleNamespace(credentials=self.credentials)
 
 
-def test_backend_health_check_verifies_database_and_google_auth(tmp_path):
-    repo = SQLiteRepository(tmp_path / "health.db")
+class FakeDatabaseConnection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def execute(self, sql):
+        assert sql == "SELECT 1"
+        return self
+
+    def fetchone(self):
+        return (1,)
+
+
+def fake_database_connect(url, *, connect_timeout):
+    assert url == "postgresql://test"
+    assert connect_timeout == 8
+    return FakeDatabaseConnection()
+
+
+def test_backend_health_check_verifies_database_and_google_auth():
     gateway = FakeHealthGateway()
 
     result = health_check(
-        repo,
+        "postgresql://test",
         gateway,
+        database_connect=fake_database_connect,
         request_factory=lambda: object(),
     )
 
@@ -323,21 +344,42 @@ def test_backend_health_check_verifies_database_and_google_auth(tmp_path):
     assert result["checked_at"]
 
 
-def test_backend_health_check_returns_safe_google_auth_failure(tmp_path):
+def test_backend_health_check_returns_safe_google_auth_failure():
     from job_scout.operator_provisioning import ProvisioningFailure
 
-    repo = SQLiteRepository(tmp_path / "health.db")
     gateway = FakeHealthGateway(fail=True)
 
     with pytest.raises(ProvisioningFailure) as raised:
         health_check(
-            repo,
+            "postgresql://test",
             gateway,
+            database_connect=fake_database_connect,
             request_factory=lambda: object(),
         )
 
     assert raised.value.code == "GOOGLE_AUTH_FAILED"
     assert "private credential detail" not in str(raised.value)
+
+
+def test_backend_health_check_reports_database_failure_without_google_call():
+    from job_scout.operator_provisioning import ProvisioningFailure
+
+    gateway = FakeHealthGateway()
+
+    def unavailable_database(url, *, connect_timeout):
+        raise OSError("private database detail")
+
+    with pytest.raises(ProvisioningFailure) as raised:
+        health_check(
+            "postgresql://test",
+            gateway,
+            database_connect=unavailable_database,
+            request_factory=lambda: object(),
+        )
+
+    assert raised.value.code == "DATABASE_UNAVAILABLE"
+    assert "private database detail" not in str(raised.value)
+    assert gateway.credentials.refreshed is False
 
 
 def test_provisioning_result_envelope_hides_private_result_fields(monkeypatch):
