@@ -6,7 +6,14 @@ import {
   validProvisioningKey,
 } from "../../../lib/provisioning-crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { encryptGithubActionSecret } from "../../../lib/github-secret";
+import {
+  encryptGithubActionSecret,
+  InvalidGithubActionsPublicKeyError,
+} from "../../../lib/github-secret";
+import {
+  describeProvisioningSyncFailure,
+  ProvisioningSyncError,
+} from "../../../lib/provisioning-sync-error";
 
 export const dynamic = "force-dynamic";
 
@@ -182,28 +189,72 @@ async function github(path: string, init?: RequestInit) {
 
 async function syncProvisioningKeyToGitHub() {
   const rawKey = provisioningKey();
-  if (!validProvisioningKey(rawKey)) throw new Error("PROVISIONING_KEY_INVALID");
-
-  const publicKeyResponse = await github("/actions/secrets/public-key");
-  if (!publicKeyResponse.ok) throw new Error("GITHUB_SECRET_PUBLIC_KEY_UNAVAILABLE");
-  const publicKey = (await publicKeyResponse.json()) as {
-    key?: string;
-    key_id?: string;
-  };
-  if (!publicKey.key || !publicKey.key_id) {
-    throw new Error("GITHUB_SECRET_PUBLIC_KEY_INVALID");
+  if (!validProvisioningKey(rawKey)) {
+    throw new ProvisioningSyncError("PROVISIONING_KEY_INVALID");
   }
 
-  const encryptedValue = await encryptGithubActionSecret(rawKey, publicKey.key);
-  const updateResponse = await github("/actions/secrets/JOBSIFT_PROVISIONING_KEY", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      encrypted_value: encryptedValue,
-      key_id: publicKey.key_id,
-    }),
-  });
-  if (!updateResponse.ok) throw new Error("GITHUB_SECRET_WRITE_FAILED");
+  let publicKeyResponse: Response;
+  try {
+    publicKeyResponse = await github("/actions/secrets/public-key");
+  } catch {
+    throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_REQUEST_FAILED");
+  }
+  if (!publicKeyResponse.ok) {
+    throw new ProvisioningSyncError(
+      "GITHUB_PUBLIC_KEY_REQUEST_FAILED",
+      publicKeyResponse.status,
+    );
+  }
+
+  let publicKey: { key?: string; key_id?: string };
+  try {
+    publicKey = (await publicKeyResponse.json()) as {
+      key?: string;
+      key_id?: string;
+    };
+  } catch {
+    throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID");
+  }
+  if (
+    !publicKey ||
+    typeof publicKey !== "object" ||
+    typeof publicKey.key !== "string" ||
+    !publicKey.key ||
+    typeof publicKey.key_id !== "string" ||
+    !publicKey.key_id
+  ) {
+    throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID");
+  }
+
+  let encryptedValue: string;
+  try {
+    encryptedValue = await encryptGithubActionSecret(rawKey, publicKey.key);
+  } catch (error) {
+    if (error instanceof InvalidGithubActionsPublicKeyError) {
+      throw new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID");
+    }
+    throw new ProvisioningSyncError("GITHUB_SECRET_ENCRYPTION_FAILED");
+  }
+
+  let updateResponse: Response;
+  try {
+    updateResponse = await github("/actions/secrets/JOBSIFT_PROVISIONING_KEY", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        encrypted_value: encryptedValue,
+        key_id: publicKey.key_id,
+      }),
+    });
+  } catch {
+    throw new ProvisioningSyncError("GITHUB_SECRET_WRITE_FAILED");
+  }
+  if (!updateResponse.ok) {
+    throw new ProvisioningSyncError(
+      "GITHUB_SECRET_WRITE_FAILED",
+      updateResponse.status,
+    );
+  }
 }
 
 function publicResult(value: unknown): Record<string, unknown> | null {
@@ -324,12 +375,20 @@ export async function POST(request: NextRequest) {
   }
   try {
     await syncProvisioningKeyToGitHub();
-  } catch {
+  } catch (error) {
+    const failure = describeProvisioningSyncFailure(error);
+    console.error("[JobSift onboarding] GitHub provisioning secret sync failed", {
+      code: failure.code,
+      stage: failure.stage,
+      http_status: failure.httpStatus ?? null,
+    });
     return response(
       {
         error: {
-          code: "PROVISIONING_SECRET_SYNC_FAILED",
-          message: "Secure onboarding could not sync its GitHub Actions secret. The configured GitHub token needs repository Actions secrets write permission.",
+          code: failure.code,
+          message: failure.message,
+          stage: failure.stage,
+          ...(failure.httpStatus ? { http_status: failure.httpStatus } : {}),
         },
       },
       503,
