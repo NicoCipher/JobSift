@@ -12,6 +12,7 @@ import { GET as proxyRead } from "../app/api/operator/[...path]/route";
 import { GET as onboardingHealth } from "../app/api/onboarding/health/route";
 import { POST as onboardingLaunch } from "../app/api/onboarding/route";
 import { NextRequest } from "next/server";
+import sodium from "libsodium-wrappers";
 import type { ApiError } from "../lib/contracts/service";
 import { canonicalTimeZone, validBatchId } from "../lib/control-validation";
 const query = {
@@ -383,6 +384,81 @@ test("onboarding launch failures include a trace ID and exact GitHub stage", asy
     expect(response.headers.get("X-JobSift-Trace-Id")).toBe(body.meta.trace_id);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain("/actions/secrets/public-key");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
+    else process.env.JOBSIFT_GITHUB_TOKEN = previousToken;
+    if (previousKey === undefined) delete process.env.JOBSIFT_PROVISIONING_KEY;
+    else process.env.JOBSIFT_PROVISIONING_KEY = previousKey;
+  }
+});
+
+
+test("health operation dispatches to the isolated non-mutating workflow", async () => {
+  await sodium.ready;
+  const originalFetch = globalThis.fetch;
+  const previousToken = process.env.JOBSIFT_GITHUB_TOKEN;
+  const previousKey = process.env.JOBSIFT_PROVISIONING_KEY;
+  const calls: Array<{ url: string; method: string; body?: string }> = [];
+  const keyPair = sodium.crypto_box_keypair();
+  const publicKey = sodium.to_base64(
+    keyPair.publicKey,
+    sodium.base64_variants.ORIGINAL,
+  );
+  process.env.JOBSIFT_GITHUB_TOKEN = "test-github-token";
+  process.env.JOBSIFT_PROVISIONING_KEY = Buffer.alloc(32, 10).toString("base64url");
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    calls.push({
+      url,
+      method,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+    if (url.endsWith("/actions/secrets/public-key")) {
+      return Response.json({ key: publicKey, key_id: "test-key" });
+    }
+    if (url.endsWith("/actions/secrets/JOBSIFT_PROVISIONING_KEY") && method === "PUT") {
+      return new Response(null, { status: 201 });
+    }
+    if (url.endsWith("/actions/workflows/operator-health-check.yml/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  try {
+    const request = new NextRequest("http://localhost:3000/api/onboarding", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:3000",
+        "sec-fetch-site": "same-origin",
+      },
+      body: JSON.stringify({ operation: "health_check", payload: {} }),
+    });
+    const response = await onboardingLaunch(request);
+    const body = await response.json();
+    const dispatch = calls.find((call) => call.url.endsWith("/dispatches"));
+    const dispatchBody = dispatch?.body ? JSON.parse(dispatch.body) : null;
+
+    expect(response.status).toBe(202);
+    expect(body.data).toMatchObject({
+      state: "queued",
+      operation: "health_check",
+    });
+    expect(body.data.control_request_id).toBe(body.meta.trace_id);
+    expect(body.data.request_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(dispatch?.url).toContain("/operator-health-check.yml/dispatches");
+    expect(dispatchBody.inputs).toMatchObject({
+      operation: "health_check",
+      request_id: body.data.request_id,
+      control_request_id: body.data.control_request_id,
+    });
+    expect(dispatchBody.inputs.payload_ciphertext).not.toBe("{}");
   } finally {
     globalThis.fetch = originalFetch;
     if (previousToken === undefined) delete process.env.JOBSIFT_GITHUB_TOKEN;
