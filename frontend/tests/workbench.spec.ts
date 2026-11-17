@@ -1,4 +1,26 @@
+
+test("GitHub provisioning secrets are encrypted with libsodium sealed boxes", async () => {
+  await sodium.ready;
+  const keypair = sodium.crypto_box_keypair();
+  const publicKey = sodium.to_base64(
+    keypair.publicKey,
+    sodium.base64_variants.ORIGINAL,
+  );
+  const encrypted = await encryptGithubActionSecret(
+    "test-provisioning-secret",
+    publicKey,
+  );
+  const opened = sodium.crypto_box_seal_open(
+    sodium.from_base64(encrypted, sodium.base64_variants.ORIGINAL),
+    keypair.publicKey,
+    keypair.privateKey,
+  );
+  expect(sodium.to_string(opened)).toBe("test-provisioning-secret");
+});
+
 import { test, expect } from "@playwright/test";
+import sodium from "libsodium-wrappers";
+import { encryptGithubActionSecret } from "../lib/github-secret";
 import {
   canonicalTimeZone,
   validBatchId,
