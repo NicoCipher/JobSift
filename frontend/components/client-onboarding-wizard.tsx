@@ -387,6 +387,23 @@ export function ClientOnboardingWizard() {
         <Link href="/clients" className="operator-text-link"><UiIcon name="arrow-right" size={16}/> Cancel setup</Link>
       </section>
 
+      <div className="backend-health-check" aria-live="polite">
+        <button
+          type="button"
+          className="secondary-action"
+          disabled={busy || healthState === "checking"}
+          onClick={() => void checkBackend()}
+        >
+          {healthState === "checking" ? "Checking backend…" : "Check backend"}
+        </button>
+        <span>
+          {healthMessage ||
+            (healthState === "ready"
+              ? "Backend verified."
+              : "Check the backend before entering client details.")}
+        </span>
+      </div>
+
       <ol className="onboarding-steps" aria-label="Client setup progress">
         {["Client", "Criteria", "Delivery", "Google Sheet", "Confirm"].map((label, index) => (
           <li
@@ -568,22 +585,6 @@ export function ClientOnboardingWizard() {
 
       {step === 4 ? (
         <section className="section-block onboarding-panel">
-          <div className="backend-health-check" aria-live="polite">
-            <button
-              type="button"
-              className="secondary-action"
-              disabled={busy || healthState === "checking"}
-              onClick={() => void checkBackend()}
-            >
-              {healthState === "checking" ? "Checking backend…" : "Check backend"}
-            </button>
-            <span>
-              {healthMessage ||
-                (healthState === "ready"
-                  ? "Backend verified."
-                  : "Check the launch path before inspecting the Sheet.")}
-            </span>
-          </div>
           <form className="sheet-inspect-form" onSubmit={inspectSheet}>
             <label>
               Google Sheet URL
