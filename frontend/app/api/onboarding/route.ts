@@ -20,7 +20,9 @@ export const dynamic = "force-dynamic";
 const owner = "NicoCipher";
 const repo = "JobSift";
 const workflow = "operator-client-provision.yml";
+const healthWorkflow = "operator-health-check.yml";
 const titlePrefix = "Provision operator client · ";
+const healthTitlePrefix = "JobSift backend health · ";
 const allowedOperations = new Set(["health_check", "inspect_sheet", "create_client"]);
 
 type GithubRun = {
@@ -508,10 +510,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const selectedWorkflow = operation === "health_check" ? healthWorkflow : workflow;
   let dispatched: Response;
-  trace("workflow_dispatch_started");
+  trace("workflow_dispatch_started", { workflow: selectedWorkflow });
   try {
-    dispatched = await github("/actions/workflows/" + workflow + "/dispatches", {
+    dispatched = await github("/actions/workflows/" + selectedWorkflow + "/dispatches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -593,16 +596,31 @@ export async function GET(request: NextRequest) {
   let stage = "workflow_lookup";
   let runId: number | null = null;
   try {
-    const runsResponse = await github(
-      "/actions/workflows/" + workflow + "/runs?event=workflow_dispatch&per_page=100",
-    );
-    if (!runsResponse.ok) {
-      throw new Error("GitHub workflow lookup failed with HTTP " + runsResponse.status);
+    const [runsResponse, healthRunsResponse] = await Promise.all([
+      github(
+        "/actions/workflows/" + workflow + "/runs?event=workflow_dispatch&per_page=100",
+      ),
+      github(
+        "/actions/workflows/" + healthWorkflow + "/runs?event=workflow_dispatch&per_page=100",
+      ),
+    ]);
+    if (!runsResponse.ok || !healthRunsResponse.ok) {
+      throw new Error(
+        "GitHub workflow lookup failed with HTTP " +
+          (!runsResponse.ok ? runsResponse.status : healthRunsResponse.status),
+      );
     }
-    const runsBody = (await runsResponse.json()) as { workflow_runs?: GithubRun[] };
-    const run = (runsBody.workflow_runs ?? []).find(
-      (item) => item.display_title === titlePrefix + controlRequestId,
-    );
+    const [runsBody, healthRunsBody] = await Promise.all([
+      runsResponse.json() as Promise<{ workflow_runs?: GithubRun[] }>,
+      healthRunsResponse.json() as Promise<{ workflow_runs?: GithubRun[] }>,
+    ]);
+    const run =
+      (runsBody.workflow_runs ?? []).find(
+        (item) => item.display_title === titlePrefix + controlRequestId,
+      ) ??
+      (healthRunsBody.workflow_runs ?? []).find(
+        (item) => item.display_title === healthTitlePrefix + controlRequestId,
+      );
     if (!run) {
       return response(
         {
