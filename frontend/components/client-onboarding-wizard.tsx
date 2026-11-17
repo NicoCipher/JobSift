@@ -239,6 +239,8 @@ export function ClientOnboardingWizard() {
   }
 
   async function checkBackend() {
+    setMessage("");
+    setTraceId("");
     setHealthState("checking");
     setHealthMessage("Checking the backend launch path…");
     try {
