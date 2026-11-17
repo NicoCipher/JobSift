@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 import sodium from "libsodium-wrappers";
-import { encryptGithubActionSecret } from "../lib/github-secret";
+import {
+  encryptGithubActionSecret,
+  InvalidGithubActionsPublicKeyError,
+} from "../lib/github-secret";
 import {
   canonicalTimeZone,
   validBatchId,
@@ -40,6 +43,14 @@ test("onboarding secret-sync diagnostics identify the failing GitHub stage safel
   });
   expect(publicKeyDenied.message).toContain("HTTP 401");
 
+  const malformedPublicKey = describeProvisioningSyncFailure(
+    new ProvisioningSyncError("GITHUB_PUBLIC_KEY_RESPONSE_INVALID"),
+  );
+  expect(malformedPublicKey).toMatchObject({
+    code: "GITHUB_PUBLIC_KEY_RESPONSE_INVALID",
+    stage: "public_key_validation",
+  });
+
   const invalidKey = describeProvisioningSyncFailure(
     new ProvisioningSyncError("PROVISIONING_KEY_INVALID"),
   );
@@ -75,6 +86,16 @@ test("GitHub provisioning secrets are encrypted with libsodium sealed boxes", as
     keypair.privateKey,
   );
   expect(sodium.to_string(opened)).toBe("test-provisioning-secret");
+
+  await expect(
+    encryptGithubActionSecret("test", "not-valid-base64!"),
+  ).rejects.toBeInstanceOf(InvalidGithubActionsPublicKeyError);
+  await expect(
+    encryptGithubActionSecret(
+      "test",
+      sodium.to_base64(new Uint8Array(8), sodium.base64_variants.ORIGINAL),
+    ),
+  ).rejects.toBeInstanceOf(InvalidGithubActionsPublicKeyError);
 });
 
 test("Jobs opens and closes with Enter/Esc, restores focus, and guards typing", async ({
