@@ -156,8 +156,12 @@ export async function GET(request: NextRequest) {
       },
     ]),
   );
-  const allSecretsPresent = secretProbes.every((probe) => probe.status === 200);
-  const ready = keyConfigured && publicKeyValid && workflowActive && allSecretsPresent;
+  const workerSecretNames = ["NEON_DATABASE_URL", "GOOGLE_SERVICE_ACCOUNT_JSON"];
+  const workerSecretsPresent = workerSecretNames.every((name) => {
+    const index = requiredSecrets.indexOf(name as (typeof requiredSecrets)[number]);
+    return index >= 0 && secretProbes[index].status === 200;
+  });
+  const ready = keyConfigured && publicKeyValid && workflowActive && workerSecretsPresent;
 
   let summary = "Backend preflight passed. The worker check will verify database connectivity and Google authentication.";
   if (!keyConfigured) {
@@ -166,8 +170,8 @@ export async function GET(request: NextRequest) {
     summary = "GitHub denied or failed the Actions secrets API check. Check the token's repository access and Secrets permissions.";
   } else if (!workflowActive) {
     summary = "The GitHub provisioning workflow is missing, inaccessible, or inactive.";
-  } else if (!allSecretsPresent) {
-    summary = "One or more required GitHub Actions secrets are missing or inaccessible.";
+  } else if (!workerSecretsPresent) {
+    summary = "The Neon database URL or Google service-account secret is missing or inaccessible.";
   }
 
   console.info("[JobSift onboarding] backend preflight", {
