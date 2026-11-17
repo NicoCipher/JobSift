@@ -596,31 +596,18 @@ export async function GET(request: NextRequest) {
   let stage = "workflow_lookup";
   let runId: number | null = null;
   try {
-    const [runsResponse, healthRunsResponse] = await Promise.all([
-      github(
-        "/actions/workflows/" + workflow + "/runs?event=workflow_dispatch&per_page=100",
-      ),
-      github(
-        "/actions/workflows/" + healthWorkflow + "/runs?event=workflow_dispatch&per_page=100",
-      ),
-    ]);
-    if (!runsResponse.ok || !healthRunsResponse.ok) {
-      throw new Error(
-        "GitHub workflow lookup failed with HTTP " +
-          (!runsResponse.ok ? runsResponse.status : healthRunsResponse.status),
-      );
+    const runsResponse = await github(
+      "/actions/runs?event=workflow_dispatch&per_page=100",
+    );
+    if (!runsResponse.ok) {
+      throw new Error("GitHub workflow lookup failed with HTTP " + runsResponse.status);
     }
-    const [runsBody, healthRunsBody] = await Promise.all([
-      runsResponse.json() as Promise<{ workflow_runs?: GithubRun[] }>,
-      healthRunsResponse.json() as Promise<{ workflow_runs?: GithubRun[] }>,
-    ]);
-    const run =
-      (runsBody.workflow_runs ?? []).find(
-        (item) => item.display_title === titlePrefix + controlRequestId,
-      ) ??
-      (healthRunsBody.workflow_runs ?? []).find(
-        (item) => item.display_title === healthTitlePrefix + controlRequestId,
-      );
+    const runsBody = (await runsResponse.json()) as { workflow_runs?: GithubRun[] };
+    const run = (runsBody.workflow_runs ?? []).find(
+      (item) =>
+        item.display_title === titlePrefix + controlRequestId ||
+        item.display_title === healthTitlePrefix + controlRequestId,
+    );
     if (!run) {
       return response(
         {
