@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - fix/client-onboarding-48h-policy
-    paths:
-      - .github/workflows/temp-npm-audit.yml
 
 permissions:
   contents: read
