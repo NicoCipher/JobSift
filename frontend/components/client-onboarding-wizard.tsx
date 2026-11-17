@@ -25,6 +25,13 @@ type CreatedClient = {
 
 type PendingAction = {
   control_request_id: string;
+  request_id?: string;
+};
+
+type WorkerHealth = {
+  database_status: string;
+  google_auth_status: string;
+  checked_at: string;
 };
 
 
@@ -84,6 +91,10 @@ export function ClientOnboardingWizard() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [traceId, setTraceId] = useState("");
+  const [operationWarning, setOperationWarning] = useState("");
+  const [healthState, setHealthState] = useState<"unchecked" | "checking" | "ready" | "attention">("unchecked");
+  const [healthMessage, setHealthMessage] = useState("");
   const [created, setCreated] = useState<CreatedClient | null>(null);
   const pollTimer = useRef<number | null>(null);
 
@@ -132,6 +143,7 @@ export function ClientOnboardingWizard() {
   async function pollAction(
     controlRequestId: string,
     onReady: (value: Record<string, unknown>) => void,
+    onFailure?: (message: string) => void,
     attempt = 0,
   ) {
     try {
@@ -145,62 +157,141 @@ export function ClientOnboardingWizard() {
           state?: unknown;
           result?: unknown;
           message?: unknown;
+          workflow_warning?: unknown;
         };
+        meta?: { trace_id?: unknown };
       };
+      if (validRequestId(body.meta?.trace_id)) setTraceId(body.meta.trace_id);
       const state = typeof body.data?.state === "string" ? body.data.state : "";
       if (state === "ready" && body.data?.result && typeof body.data.result === "object") {
         setBusy(false);
         setMessage("");
+        setOperationWarning(
+          body.data.workflow_warning === "post_operation_workflow_step_failed"
+            ? "The operation completed, but a later workflow step failed. Do not repeat it; use this reference while status is recovered."
+            : "",
+        );
         onReady(body.data.result as Record<string, unknown>);
         return;
       }
       if (state === "failed") {
+        const failure = typeof body.data?.message === "string"
+          ? body.data.message
+          : "JobSift could not complete this step.";
         setBusy(false);
-        setMessage(
-          typeof body.data?.message === "string"
-            ? body.data.message
-            : "JobSift could not complete this step.",
-        );
+        setMessage(failure);
+        onFailure?.(failure);
         return;
       }
       if (attempt >= 60) {
+        const failure = "This action did not finish. Check its reference before retrying.";
         setBusy(false);
-        setMessage("This action did not finish. Try again from the current step.");
+        setMessage(failure);
+        onFailure?.(failure);
         return;
       }
       const delay = attempt < 8 ? 1500 : 5000;
       pollTimer.current = window.setTimeout(
-        () => void pollAction(controlRequestId, onReady, attempt + 1),
+        () => void pollAction(controlRequestId, onReady, onFailure, attempt + 1),
         delay,
       );
     } catch (error) {
+      const failure = error instanceof Error ? error.message : "Could not read onboarding status.";
       setBusy(false);
-      setMessage(error instanceof Error ? error.message : "Could not read onboarding status.");
+      setMessage(failure);
+      onFailure?.(failure);
     }
   }
 
   async function dispatch(
-    operation: "inspect_sheet" | "create_client",
+    operation: "health_check" | "inspect_sheet" | "create_client",
     payload: Record<string, unknown>,
     onReady: (value: Record<string, unknown>) => void,
+    onFailure?: (message: string) => void,
   ) {
     setBusy(true);
     setMessage("");
+    setTraceId("");
+    setOperationWarning("");
     try {
       const response = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ operation, payload }),
       });
-      const body = (await readJson(response)) as { data?: PendingAction };
-      const requestId = body.data?.control_request_id;
-      if (!validRequestId(requestId)) {
-        throw new Error("JobSift could not correlate this onboarding action.");
+      const raw = await response.json().catch(() => null) as {
+        data?: PendingAction;
+        error?: { message?: unknown };
+        meta?: { trace_id?: unknown };
+      } | null;
+      if (validRequestId(raw?.meta?.trace_id)) setTraceId(raw.meta.trace_id);
+      if (!response.ok || !raw) {
+        throw new Error(
+          typeof raw?.error?.message === "string"
+            ? raw.error.message
+            : "JobSift could not start this action.",
+        );
       }
-      await pollAction(requestId, onReady);
+      const requestId = raw.data?.control_request_id;
+      if (!validRequestId(requestId)) {
+        throw new Error("JobSift could not correlate this action.");
+      }
+      setTraceId(requestId);
+      await pollAction(requestId, onReady, onFailure);
     } catch (error) {
+      const failure = error instanceof Error ? error.message : "Could not start onboarding.";
       setBusy(false);
-      setMessage(error instanceof Error ? error.message : "Could not start onboarding.");
+      setMessage(failure);
+      onFailure?.(failure);
+    }
+  }
+
+  async function checkBackend() {
+    setMessage("");
+    setTraceId("");
+    setOperationWarning("");
+    setHealthState("checking");
+    setHealthMessage("Checking the backend launch path…");
+    try {
+      const response = await fetch("/api/onboarding/health", { cache: "no-store" });
+      const body = (await readJson(response)) as {
+        data?: { ready?: unknown; summary?: unknown };
+        meta?: { trace_id?: unknown };
+      };
+      if (validRequestId(body.meta?.trace_id)) setTraceId(body.meta.trace_id);
+      if (body.data?.ready !== true) {
+        const failure = typeof body.data?.summary === "string"
+          ? body.data.summary
+          : "Backend preflight needs attention.";
+        setHealthState("attention");
+        setHealthMessage(failure);
+        return;
+      }
+      setHealthMessage("Launch preflight passed. Verifying database and Google authentication…");
+      await dispatch(
+        "health_check",
+        {},
+        (value) => {
+          const result = value as unknown as WorkerHealth;
+          const healthy =
+            result.database_status === "connected" &&
+            result.google_auth_status === "authenticated";
+          setHealthState(healthy ? "ready" : "attention");
+          setHealthMessage(
+            healthy
+              ? "Backend verified: database and Google authentication are working."
+              : "The worker returned an incomplete health result.",
+          );
+        },
+        (failure) => {
+          setHealthState("attention");
+          setHealthMessage(failure);
+        },
+      );
+    } catch (error) {
+      const failure = error instanceof Error ? error.message : "Backend check could not be completed.";
+      setHealthState("attention");
+      setHealthMessage(failure);
     }
   }
 
@@ -267,6 +358,8 @@ export function ClientOnboardingWizard() {
           <div><span>Sheet</span><strong>{created.sheet_status === "ready" ? "Connected" : "Needs attention"}</strong></div>
           <div><span>Criteria revision</span><strong>{created.brief_revision ?? "—"}</strong></div>
         </div>
+        {traceId ? <p className="metadata">Operation reference: <code>{traceId}</code></p> : null}
+        {operationWarning ? <p className="metadata">{operationWarning}</p> : null}
         <div className="onboarding-actions">
           <Link href="/clients" className="client-primary-action"><UiIcon name="users" size={17}/> View clients</Link>
         </div>
@@ -306,6 +399,8 @@ export function ClientOnboardingWizard() {
       </ol>
 
       {message ? <OperatorNotice tone="error" title="Please check this step"><p>{message}</p></OperatorNotice> : null}
+      {traceId ? <p className="metadata">Operation reference: <code>{traceId}</code></p> : null}
+      {operationWarning ? <p className="metadata">{operationWarning}</p> : null}
 
       {step === 1 ? (
         <section className="section-block onboarding-panel">
@@ -473,6 +568,22 @@ export function ClientOnboardingWizard() {
 
       {step === 4 ? (
         <section className="section-block onboarding-panel">
+          <div className="backend-health-check" aria-live="polite">
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={busy || healthState === "checking"}
+              onClick={() => void checkBackend()}
+            >
+              {healthState === "checking" ? "Checking backend…" : "Check backend"}
+            </button>
+            <span>
+              {healthMessage ||
+                (healthState === "ready"
+                  ? "Backend verified."
+                  : "Check the launch path before inspecting the Sheet.")}
+            </span>
+          </div>
           <form className="sheet-inspect-form" onSubmit={inspectSheet}>
             <label>
               Google Sheet URL

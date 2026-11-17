@@ -1917,3 +1917,69 @@ test("Add Client wizard stays usable at 320px", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "What jobs should JobSift find?" })).toBeVisible();
   await expect(page.getByLabel("Role titles")).toBeVisible();
 });
+
+
+test("onboarding backend control reports worker health with a trace reference", async ({ page }) => {
+  const controlRequestId = "44444444-4444-4444-8444-444444444444";
+
+  await page.route("**/api/onboarding/health", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: { ready: true, summary: "Backend preflight passed." },
+        meta: { trace_id: "55555555-5555-4555-8555-555555555555" },
+      }),
+    });
+  });
+  await page.route("**/api/onboarding", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.fulfill({ status: 404, body: "not found" });
+      return;
+    }
+    expect(request.postDataJSON()).toMatchObject({
+      operation: "health_check",
+      payload: {},
+    });
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: { state: "queued", control_request_id: controlRequestId },
+        meta: { trace_id: controlRequestId },
+      }),
+    });
+  });
+  await page.route("**/api/onboarding?*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          state: "ready",
+          control_request_id: controlRequestId,
+          result: {
+            database_status: "connected",
+            google_auth_status: "authenticated",
+            checked_at: "2026-11-17T15:00:00Z",
+          },
+        },
+        meta: { trace_id: controlRequestId },
+      }),
+    });
+  });
+
+  await page.goto("/clients/new");
+  await page.getByLabel("Client name").fill("Health Check Client");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Role titles").fill("Software Engineer");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await page.getByRole("button", { name: "Check backend" }).click();
+  await expect(
+    page.getByText("Backend verified: database and Google authentication are working."),
+  ).toBeVisible();
+  await expect(page.getByText(controlRequestId)).toBeVisible();
+});

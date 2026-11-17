@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import contextmanager
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.operator_clients import OperatorClientStore, OperatorProvisioningStore
 from job_scout.operator_provisioning import (
     _encrypt_result,
+    health_check,
     inspect_sheet,
     process_request,
     propose_mapping,
@@ -285,6 +287,100 @@ def test_create_client_rejects_freshness_above_48_hours(tmp_path):
             payload=payload,
             gateway=FakeSheet(),
         )
+
+
+
+class FakeCredentials:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.refreshed = False
+
+    def refresh(self, request):
+        self.refreshed = True
+        if self.fail:
+            raise RuntimeError("private credential detail")
+
+
+class FakeHealthGateway:
+    def __init__(self, *, fail: bool = False):
+        self.credentials = FakeCredentials(fail=fail)
+        self.session = SimpleNamespace(credentials=self.credentials)
+
+
+class FakeDatabaseConnection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def execute(self, sql):
+        assert sql == "SELECT 1"
+        return self
+
+    def fetchone(self):
+        return (1,)
+
+
+def fake_database_connect(url, *, connect_timeout, options):
+    assert url == "postgresql://test"
+    assert connect_timeout == 8
+    assert options == "-c default_transaction_read_only=on"
+    return FakeDatabaseConnection()
+
+
+def test_backend_health_check_verifies_database_and_google_auth():
+    gateway = FakeHealthGateway()
+
+    result = health_check(
+        "postgresql://test",
+        gateway,
+        database_connect=fake_database_connect,
+        request_factory=lambda: object(),
+    )
+
+    assert result["database_status"] == "connected"
+    assert result["google_auth_status"] == "authenticated"
+    assert gateway.credentials.refreshed is True
+    assert result["checked_at"]
+
+
+def test_backend_health_check_returns_safe_google_auth_failure():
+    from job_scout.operator_provisioning import ProvisioningFailure
+
+    gateway = FakeHealthGateway(fail=True)
+
+    with pytest.raises(ProvisioningFailure) as raised:
+        health_check(
+            "postgresql://test",
+            gateway,
+            database_connect=fake_database_connect,
+            request_factory=lambda: object(),
+        )
+
+    assert raised.value.code == "GOOGLE_AUTH_FAILED"
+    assert "private credential detail" not in str(raised.value)
+
+
+def test_backend_health_check_reports_database_failure_without_google_call():
+    from job_scout.operator_provisioning import ProvisioningFailure
+
+    gateway = FakeHealthGateway()
+
+    def unavailable_database(url, *, connect_timeout, options):
+        raise OSError("private database detail")
+
+    with pytest.raises(ProvisioningFailure) as raised:
+        health_check(
+            "postgresql://test",
+            gateway,
+            database_connect=unavailable_database,
+            request_factory=lambda: object(),
+        )
+
+    assert raised.value.code == "DATABASE_UNAVAILABLE"
+    assert "private database detail" not in str(raised.value)
+    assert gateway.credentials.refreshed is False
 
 
 def test_provisioning_result_envelope_hides_private_result_fields(monkeypatch):

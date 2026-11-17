@@ -39,10 +39,14 @@ from job_scout.storage.factory import create_repository
 class ProvisioningFailure(ValueError):
     """Safe operator-facing provisioning failure with no private payload values."""
 
+    def __init__(self, message: str, *, code: str = "PROVISIONING_ERROR") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 def _safe_failure(error: Exception) -> tuple[str, str]:
     if isinstance(error, ProvisioningFailure):
-        return "PROVISIONING_ERROR", str(error)
+        return error.code, str(error)
     if isinstance(error, ValidationError):
         return "VALIDATION_ERROR", "Some client setup fields are invalid."
     if isinstance(error, BatchConflict):
@@ -290,6 +294,64 @@ def inspect_sheet(
     }
 
 
+
+def health_check(
+    database_url: str,
+    gateway,
+    *,
+    database_connect=None,
+    request_factory=None,
+) -> dict[str, object]:
+    """Verify Neon and Google authentication without writing to the database."""
+    try:
+        if not database_url.strip():
+            raise ValueError("database URL is missing")
+        if database_connect is None:
+            import psycopg
+
+            connect = psycopg.connect
+        else:
+            connect = database_connect
+        with connect(
+            database_url,
+            connect_timeout=8,
+            options="-c default_transaction_read_only=on",
+        ) as connection:
+            row = connection.execute("SELECT 1").fetchone()
+            if row is None or int(row[0]) != 1:
+                raise RuntimeError("database health query returned an unexpected result")
+    except Exception as exc:
+        raise ProvisioningFailure(
+            "The JobSift database connection could not be verified.",
+            code="DATABASE_UNAVAILABLE",
+        ) from exc
+
+    credentials = getattr(getattr(gateway, "session", None), "credentials", None)
+    if credentials is None:
+        raise ProvisioningFailure(
+            "Google Sheets runtime credentials are unavailable.",
+            code="GOOGLE_AUTH_UNAVAILABLE",
+        )
+    try:
+        if request_factory is None:
+            from google.auth.transport.requests import Request
+
+            request = Request()
+        else:
+            request = request_factory()
+        credentials.refresh(request)
+    except Exception as exc:
+        raise ProvisioningFailure(
+            "Google Sheets authentication could not be verified.",
+            code="GOOGLE_AUTH_FAILED",
+        ) from exc
+
+    return {
+        "database_status": "connected",
+        "google_auth_status": "authenticated",
+        "checked_at": datetime.now(UTC).isoformat(),
+    }
+
 def _activate_operator_client(
     repository,
     *,
@@ -527,7 +589,7 @@ def process_request(
             code=code,
             message=message,
         )
-        raise ProvisioningFailure(message) from exc
+        raise ProvisioningFailure(message, code=code) from exc
 
     if operation != "create_client":
         requests.complete(request_id, result)
@@ -538,30 +600,57 @@ def main() -> None:
     request_id = os.getenv("JOBSIFT_PROVISION_REQUEST_ID", "").strip().casefold()
     operation = os.getenv("JOBSIFT_PROVISION_OPERATION", "").strip()
     payload_file = os.getenv("JOBSIFT_PROVISION_PAYLOAD_FILE", "").strip()
+    control_request_id = os.getenv("JOBSIFT_CONTROL_REQUEST_ID", "").strip()
     if not request_id or not operation or not payload_file:
         raise SystemExit("provisioning request ID, operation and payload are required")
     parsed = UUID(request_id)
     if str(parsed) != request_id:
         raise SystemExit("provisioning request ID must be canonical")
 
-    repository = create_repository(
-        Path(os.getenv("JOBSIFT_DATABASE", "/tmp/jobsift-provision.sqlite3"))
-    )
     try:
-        result = process_request(
-            repository,
-            request_id=request_id,
-            operation=operation,
-            payload=_read_payload(Path(payload_file)),
-            gateway=GoogleSheetsGateway(),
-        )
+        payload = _read_payload(Path(payload_file))
+        if operation == "health_check":
+            if payload:
+                raise ProvisioningFailure(
+                    "Backend health checks do not accept a payload.",
+                    code="VALIDATION_ERROR",
+                )
+            try:
+                gateway = GoogleSheetsGateway()
+            except Exception as exc:
+                raise ProvisioningFailure(
+                    "Google Sheets runtime credentials are unavailable.",
+                    code="GOOGLE_AUTH_UNAVAILABLE",
+                ) from exc
+            result = health_check(
+                os.getenv("NEON_DATABASE_URL", ""),
+                gateway,
+            )
+        elif operation in {"inspect_sheet", "create_client"}:
+            repository = create_repository(
+                Path(os.getenv("JOBSIFT_DATABASE", "/tmp/jobsift-provision.sqlite3"))
+            )
+            result = process_request(
+                repository,
+                request_id=request_id,
+                operation=operation,
+                payload=payload,
+                gateway=GoogleSheetsGateway(),
+            )
+        else:
+            raise ProvisioningFailure(
+                "The requested backend operation is not supported.",
+                code="VALIDATION_ERROR",
+            )
     except ProvisioningFailure as exc:
         print(
             "JOBSIFT_PROVISION_ERROR="
             + json.dumps(
                 {
                     "request_id": request_id,
+                    "control_request_id": control_request_id,
                     "operation": operation,
+                    "code": exc.code,
                     "message": str(exc)[:500],
                 },
                 sort_keys=True,
@@ -575,9 +664,11 @@ def main() -> None:
             + json.dumps(
                 {
                     "request_id": request_id,
+                    "control_request_id": control_request_id,
                     "operation": operation,
+                    "code": "PROVISIONING_UNEXPECTED",
                     "message": (
-                        "JobSift could not verify the Google Sheet or save the client."
+                        "JobSift could not verify the Google Sheet or complete the operation."
                     ),
                 },
                 sort_keys=True,
@@ -591,6 +682,7 @@ def main() -> None:
         + _encrypt_result(
             {
                 "request_id": request_id,
+                "control_request_id": control_request_id,
                 "operation": operation,
                 "result": result,
             }
