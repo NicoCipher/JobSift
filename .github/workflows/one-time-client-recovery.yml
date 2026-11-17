@@ -1,0 +1,113 @@
+name: One-time JobSift Client Recovery
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobsift-client-delivery-mutation
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JOBSIFT_DATABASE: /tmp/jobsift-recovery.sqlite3
+      JOBSIFT_PERSISTENCE_BACKEND: postgres
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      JOBSIFT_PROFILE_CONTROL_ID: "108e3ec72837a447"
+      JOBSIFT_STALE_BATCH_ID: "f96331fa-7c62-5793-b2e5-ea395286d416"
+      JOBSIFT_EXPECTED_GENERATION_ID: "b359d443-851e-44d2-9b99-4a789ef6b8e1"
+      JOBSIFT_EXPECTED_CLIENT_ID: "taiwo_operator_sourcing_v1"
+      JOBSIFT_EXPECTED_DESTINATION_ID: "taiwo-test-jobs"
+      JOBSIFT_INVENTORY_RETENTION_HOURS: "72"
+      JOBSIFT_PLAN_DIR: config/sourcing_plans
+      JOBSIFT_REPORTS_DIR: /tmp/jobsift-recovery-runs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install JobSift
+        run: python -m pip install -e '.[sheets,postgres]'
+
+      - name: Validate production credentials
+        run: |
+          test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
+
+      - name: Configure Google credentials
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
+          chmod 600 "$RUNNER_TEMP/google-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Verify the exact stale batch and review-only profile
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from job_scout.storage.factory import create_repository
+
+          repository = create_repository(Path(os.environ["JOBSIFT_DATABASE"]))
+          with repository.connect() as connection:
+              batch = connection.execute(
+                  "SELECT generation_id,client_id,destination,status,assembled_at,"
+                  "delivered_at,export_before_sha256,export_after_sha256,selected_count "
+                  "FROM daily_batches WHERE batch_id=?",
+                  (os.environ["JOBSIFT_STALE_BATCH_ID"],),
+              ).fetchone()
+              expected = {
+                  "generation_id": os.environ["JOBSIFT_EXPECTED_GENERATION_ID"],
+                  "client_id": os.environ["JOBSIFT_EXPECTED_CLIENT_ID"],
+                  "destination": "client-sheet://" + os.environ["JOBSIFT_EXPECTED_DESTINATION_ID"],
+                  "status": "prepared",
+                  "assembled_at": "2026-10-05T12:13:52.442866+00:00",
+                  "delivered_at": None,
+                  "export_before_sha256": None,
+                  "export_after_sha256": None,
+                  "selected_count": 1,
+              }
+              if batch is None or any(batch[key] != value for key, value in expected.items()):
+                  raise SystemExit("Safety check failed: stale batch no longer matches the reviewed record.")
+              profile = connection.execute(
+                  "SELECT status,delivery_mode FROM client_delivery_profiles "
+                  "WHERE client_id=? AND destination_id=?",
+                  (os.environ["JOBSIFT_EXPECTED_CLIENT_ID"], os.environ["JOBSIFT_EXPECTED_DESTINATION_ID"]),
+              ).fetchone()
+              destination = connection.execute(
+                  "SELECT status FROM client_sheet_destinations "
+                  "WHERE client_id=? AND destination_id=?",
+                  (os.environ["JOBSIFT_EXPECTED_CLIENT_ID"], os.environ["JOBSIFT_EXPECTED_DESTINATION_ID"]),
+              ).fetchone()
+              if profile is None or profile["status"] != "active" or profile["delivery_mode"] != "review":
+                  raise SystemExit("Safety check failed: profile is not active in review mode.")
+              if destination is None or destination["status"] != "ready":
+                  raise SystemExit("Safety check failed: Google Sheet destination is not ready.")
+          print("Safety checks passed. Exactly one unpublished October 5 batch is eligible for discard.")
+          PY
+
+      - name: Discard only the stale unpublished batch
+        run: |
+          python -m job_scout.cli delivery-profile discard-batch \
+            --database "$JOBSIFT_DATABASE" \
+            --profile-id "$JOBSIFT_PROFILE_CONTROL_ID" \
+            --batch-id "$JOBSIFT_STALE_BATCH_ID"
+
+      - name: Match existing inventory without crawling or auto-releasing
+        run: python -m job_scout.profile_delivery_runner
+
+      - name: Capture safe operator snapshot
+        if: ${{ always() }}
+        run: python -m job_scout.operator_snapshot
