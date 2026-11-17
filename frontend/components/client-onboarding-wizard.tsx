@@ -545,7 +545,7 @@ export function ClientOnboardingWizard() {
             <div><span>Client</span><strong>{clientName}</strong></div>
             <div><span>Roles</span><strong>{roleTitles.join(", ")}</strong></div>
             <div><span>Market</span><strong>{country.toUpperCase()} · {workModes.join(", ")}</strong></div>
-            <div><span>Freshness</span><strong>Last {freshness} hours · unknown age rejected</strong></div>
+            <div><span>Freshness</span><strong>Last {freshness} hours · undated jobs included</strong></div>
             <div><span>Delivery</span><strong>{deliveryMode === "review" ? "Review first" : "Auto"} · up to {dailyLimit}/day</strong></div>
             <div><span>Daily reset</span><strong>{timezone}</strong></div>
             <div><span>Sheet</span><strong>{sheetTab} · required columns mapped</strong></div>
