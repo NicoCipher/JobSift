@@ -28,7 +28,10 @@ test("onboarding health preflight checks GitHub access without exposing secrets"
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith("/actions/secrets/public-key")) {
-      return Response.json({ key: "public-key-placeholder", key_id: "test-key" });
+      return Response.json({
+        key: Buffer.alloc(32, 1).toString("base64"),
+        key_id: "test-key",
+      });
     }
     if (url.endsWith("/actions/workflows/operator-client-provision.yml")) {
       return Response.json({ state: "active" });
