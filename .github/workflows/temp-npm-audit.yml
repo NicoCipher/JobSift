@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: jobsift-onboarding-validation
+  cancel-in-progress: true
+
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -18,23 +22,22 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Audit frontend dependencies
+      - name: Frontend lint, build and browser tests
         run: |
           cd frontend
           npm ci --ignore-scripts
+          npm run lint
+          npm run build
+          npx playwright install --with-deps chromium
+          npm test
+      - name: Audit frontend dependencies
+        run: |
+          cd frontend
           npm audit --json > /tmp/npm-audit.json || true
           node - <<'NODE'
           const fs = require("node:fs");
           const audit = JSON.parse(fs.readFileSync("/tmp/npm-audit.json", "utf8"));
-          const rows = Object.entries(audit.vulnerabilities || {}).map(([name, item]) => ({
-            name,
-            severity: item.severity,
-            direct: item.isDirect,
-            range: item.range,
-            fixAvailable: item.fixAvailable,
-            via: (item.via || []).map((entry) => typeof entry === "string" ? entry : entry.title)
-          }));
-          console.log(JSON.stringify({metadata: audit.metadata?.vulnerabilities, vulnerabilities: rows}, null, 2));
+          console.log(JSON.stringify({metadata: audit.metadata?.vulnerabilities, vulnerabilities: Object.keys(audit.vulnerabilities || {})}, null, 2));
           NODE
 
 # Triggered only for this review branch.
