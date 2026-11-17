@@ -682,8 +682,11 @@ def test_postgres_bulk_upsert_skips_payload_rewrite_for_timestamp_only_observati
         before["last_verified_at"]
     )
 
-    changed_without_fingerprint_change = seen.model_copy(
-        update={"apply_url": "https://apply.payload-churn.example/jobs/1"}
+    changed_without_fingerprint_change = Job.model_validate(
+        {
+            **seen.model_dump(),
+            "apply_url": "https://apply.payload-churn.example/jobs/1",
+        }
     )
     repository.upsert_jobs([changed_without_fingerprint_change])
 
