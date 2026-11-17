@@ -64,6 +64,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend
         run: npm ci
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
       - name: Frontend lint and types
         run: npm run lint
       - name: Frontend build
