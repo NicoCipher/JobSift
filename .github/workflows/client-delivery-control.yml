@@ -1,9 +1,6 @@
 name: Client Delivery Control
 
 on:
-  push:
-    branches:
-      - ops/repair-client-batch-20261117
   workflow_dispatch:
     inputs:
       operation:
@@ -118,66 +115,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/google-service-account.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-service-account.json" >> "$GITHUB_ENV"
 
-      - name: Recover the exact stale unpublished batch
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ops/repair-client-batch-20261117' }}
-        env:
-          RECOVERY_PROFILE_ID: "108e3ec72837a447"
-          RECOVERY_BATCH_ID: "f96331fa-7c62-5793-b2e5-ea395286d416"
-          RECOVERY_GENERATION_ID: "b359d443-851e-44d2-9b99-4a789ef6b8e1"
-          RECOVERY_CLIENT_ID: "taiwo_operator_sourcing_v1"
-          RECOVERY_DESTINATION_ID: "taiwo-test-jobs"
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          from job_scout.storage.factory import create_repository
-
-          repository = create_repository(Path(os.environ["JOBSIFT_DATABASE"]))
-          with repository.connect() as connection:
-              batch = connection.execute(
-                  "SELECT generation_id,client_id,destination,status,assembled_at,"
-                  "delivered_at,export_before_sha256,export_after_sha256,selected_count "
-                  "FROM daily_batches WHERE batch_id=?",
-                  (os.environ["RECOVERY_BATCH_ID"],),
-              ).fetchone()
-              expected = {
-                  "generation_id": os.environ["RECOVERY_GENERATION_ID"],
-                  "client_id": os.environ["RECOVERY_CLIENT_ID"],
-                  "destination": "client-sheet://" + os.environ["RECOVERY_DESTINATION_ID"],
-                  "status": "prepared",
-                  "assembled_at": "2026-10-05T12:13:52.442866+00:00",
-                  "delivered_at": None,
-                  "export_before_sha256": None,
-                  "export_after_sha256": None,
-                  "selected_count": 1,
-              }
-              if batch is None or any(batch[key] != value for key, value in expected.items()):
-                  raise SystemExit("Safety check failed: stale batch no longer matches the reviewed record.")
-              profile = connection.execute(
-                  "SELECT status,delivery_mode FROM client_delivery_profiles "
-                  "WHERE client_id=? AND destination_id=?",
-                  (os.environ["RECOVERY_CLIENT_ID"], os.environ["RECOVERY_DESTINATION_ID"]),
-              ).fetchone()
-              destination = connection.execute(
-                  "SELECT status FROM client_sheet_destinations "
-                  "WHERE client_id=? AND destination_id=?",
-                  (os.environ["RECOVERY_CLIENT_ID"], os.environ["RECOVERY_DESTINATION_ID"]),
-              ).fetchone()
-              if profile is None or profile["status"] != "active" or profile["delivery_mode"] != "review":
-                  raise SystemExit("Safety check failed: profile is not active in review mode.")
-              if destination is None or destination["status"] != "ready":
-                  raise SystemExit("Safety check failed: Google Sheet destination is not ready.")
-          print("Safety checks passed. Exactly one unpublished October 5 batch is eligible for discard.")
-          PY
-          python -m job_scout.cli delivery-profile discard-batch \
-            --database "$JOBSIFT_DATABASE" \
-            --profile-id "$RECOVERY_PROFILE_ID" \
-            --batch-id "$RECOVERY_BATCH_ID"
-          JOBSIFT_PROFILE_CONTROL_ID="$RECOVERY_PROFILE_ID" python -m job_scout.profile_delivery_runner
-          python -m job_scout.operator_snapshot
-
       - name: Apply control
-        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
           CONTROL_OPERATION: ${{ inputs.operation }}
