@@ -17,7 +17,7 @@ from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
 from job_scout.domain.models import SearchBrief
-from job_scout.export.batch_csv import destination_lock, plan_csv, publish_csv
+from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
@@ -216,6 +216,32 @@ def _recover_after_stale_release(
     if _is_stale_release_failure(recovered):
         return "reconcile", recovered
     return "continue", recovered
+
+
+def _discard_stale_manual_export_if_unpublished(
+    store: DailyBatchStore,
+    batch: DailyBatchResult,
+    path: Path,
+) -> bool:
+    """Discard a stale manual batch only when its CSV is still at the journal's before-image."""
+    if not _is_stale_release_failure(batch):
+        return False
+    with destination_lock(path):
+        before, _after = store.export_journal(
+            batch.batch_id,
+            expected_generation_id=batch.generation_id,
+        )
+        if before is None:
+            return False
+        observed = file_digest(path)
+        if observed != before:
+            return False
+        store.discard_stale_manual_export(
+            batch.batch_id,
+            expected_generation_id=batch.generation_id,
+            observed_destination_digest=observed,
+        )
+    return True
 
 
 def _unresolved_batch(
@@ -490,6 +516,18 @@ def run_once(
     )
 
     while unresolved is not None:
+        # A stale manual CSV batch can be discarded only if its generation-bound
+        # journal and the locked destination digest prove that publication never
+        # happened. Google Sheets and changed CSV destinations still reconcile.
+        if config.manual_export and _is_stale_release_failure(unresolved):
+            if _discard_stale_manual_export_if_unpublished(
+                store, unresolved, config.csv_path.resolve()
+            ):
+                unresolved = store.recover_unresolved(brief.client_id, destination)
+                if unresolved is None:
+                    break
+                continue
+
         # An empty prepared manual batch must not occupy the daily idempotency
         # slot. Discard with the batch generation so a concurrent replacement
         # cannot be removed accidentally. Journaled publication remains guarded
