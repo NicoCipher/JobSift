@@ -133,8 +133,12 @@ def classify_remote(
         r"(?:is|will be|remains)\s+(?:(?:fully|100\s*%|100\s+percent)\s+remote|remote[- ]only)\b"
         r"|\b(?:this|the)\s+(?:role|position|job|opportunity)\s+is\s+remote[- ]only\b"
         r"|\b(?:you will|you can|you may)\s+work(?:ing)?\s+"
-        r"(?:fully\s+)?remotely(?:\s+from\s+anywhere)?\b"
-        r"|\b(?:fully|100\s*%|100\s+percent)\s+remote\s+"
+        r"(?:fully\s+remotely|remotely\s+from\s+anywhere)\b"
+        r"|\b(?:this|the)\s+(?:is\s+)?(?:a\s+)?"
+        r"(?:fully|100\s*%|100\s+percent)\s+remote"
+        r"(?:\s+[a-z][a-z0-9&/-]*){0,5}\s+"
+        r"(?:role|position|job|opportunity)\b"
+        r"|(?:fully|100\s*%|100\s+percent)\s+remote\s+"
         r"(?:role|position|job|opportunity)\b"
         r"|\bremote[- ]only\s+(?:role|position|job|opportunity)\b",
         body,
