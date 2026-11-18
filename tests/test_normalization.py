@@ -87,7 +87,7 @@ def test_negated_remote_description_is_not_affirmative(description: str) -> None
         "This position is 100% remote.",
         "The job is remote-only.",
         "You will work remotely from anywhere in the United States.",
-        "This remote position is open to US candidates.",
+        "This position is fully remote and open to US candidates.",
     ],
 )
 def test_explicit_fully_remote_description_is_affirmative(description: str) -> None:
@@ -96,3 +96,4 @@ def test_explicit_fully_remote_description_is_affirmative(description: str) -> N
 
 def test_bare_remote_mention_in_description_is_unknown() -> None:
     assert classify_remote(None, "Remote collaboration is part of our culture.") is RemoteStatus.UNKNOWN
+    assert classify_remote(None, "This is a remote role.") is RemoteStatus.UNKNOWN
