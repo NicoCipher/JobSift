@@ -71,7 +71,6 @@ jobs:
       JOBSIFT_SHEET_TAB: ${{ vars.JOBSIFT_SHEET_TAB }}
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
 
     steps:
       - uses: actions/checkout@v4
@@ -86,15 +85,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[sheets,postgres]'
 
-      - name: Validate runtime configuration
+      - name: Validate runtime database configuration
         shell: bash
         run: |
-          if [[ "${{ inputs.manual_export }}" != "true" && "${{ inputs.validate }}" != "true" ]]; then
-            test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
-          fi
           if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.validate }}" != "true" ]]; then
             test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
           fi
+
+      - name: Validate Google credentials
+        if: ${{ inputs.manual_export != true && inputs.validate != true }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
 
       - name: Configure run mode
         shell: bash
@@ -141,6 +145,8 @@ jobs:
 
       - name: Write Google service account credentials
         if: ${{ inputs.manual_export != true && inputs.validate != true }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         shell: bash
         run: |
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
