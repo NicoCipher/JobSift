@@ -487,6 +487,56 @@ class DailyBatchStore:
                 raise BatchConflict("batch revision changed")
             return result
 
+    def discard_stale_manual_export(
+        self,
+        batch_id: str,
+        *,
+        expected_generation_id: str | None,
+        observed_destination_digest: str,
+    ) -> DailyBatchResult:
+        """Discard a stale failed CSV batch only when its journal proves no write occurred.
+
+        The caller must hold the destination lock while obtaining the observed
+        digest and invoking this method. Sheet destinations must use reconciliation.
+        """
+        if expected_generation_id is None:
+            raise BatchConflict("batch generation missing")
+        with self.repository.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute(
+                "SELECT generation_id,status,error,delivered_at,export_before_sha256,"
+                "export_after_sha256 FROM daily_batches WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+            if row is None:
+                raise BatchConflict("batch not found")
+            if row["generation_id"] != expected_generation_id:
+                raise BatchConflict("batch revision changed")
+            if (
+                row["status"] != "failed"
+                or row["delivered_at"] is not None
+                or not (row["error"] or "").startswith(
+                    "prepared posting is no longer fresh at delivery:"
+                )
+                or row["export_before_sha256"] is None
+                or row["export_after_sha256"] is None
+            ):
+                raise BatchConflict("batch is not an unpublished stale manual export")
+            if observed_destination_digest != row["export_before_sha256"]:
+                raise BatchConflict(
+                    "manual CSV destination changed; reconcile before retry"
+                )
+            result = self._load(c, batch_id)
+            c.execute("DELETE FROM daily_batch_candidates WHERE batch_id=?", (batch_id,))
+            c.execute("DELETE FROM daily_batch_items WHERE batch_id=?", (batch_id,))
+            deleted = c.execute(
+                "DELETE FROM daily_batches WHERE batch_id=? AND generation_id=?",
+                (batch_id, expected_generation_id),
+            ).rowcount
+            if deleted != 1:
+                raise BatchConflict("batch revision changed")
+            return result
+
     def recover_unresolved(self, client_id: str, destination: str) -> DailyBatchResult | None:
         """Resolve safe stale failures and return the next batch requiring action.
 
