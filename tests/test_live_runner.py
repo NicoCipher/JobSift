@@ -1232,3 +1232,51 @@ def test_run_once_discards_resumed_empty_manual_batch_generation(tmp_path, monke
         "batch_id": "resumed-empty",
         "generation_id": "generation-9",
     }
+
+
+
+def test_stale_manual_csv_recovery_discards_only_before_image(tmp_path):
+    path = tmp_path / "jobs.csv"
+    batch = SimpleNamespace(
+        batch_id="stale-manual",
+        generation_id="generation-10",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale",
+    )
+    observed = {}
+    store = SimpleNamespace(
+        export_journal=lambda *_, **__: ("absent", "after-image"),
+        discard_stale_manual_export=lambda batch_id, **kwargs: observed.update(
+            batch_id=batch_id, **kwargs
+        ),
+    )
+
+    assert live_runner._discard_stale_manual_export_if_unpublished(
+        store, batch, path
+    )
+    assert observed == {
+        "batch_id": "stale-manual",
+        "expected_generation_id": "generation-10",
+        "observed_destination_digest": "absent",
+    }
+
+
+def test_stale_manual_csv_recovery_preserves_changed_destination(tmp_path):
+    path = tmp_path / "jobs.csv"
+    path.write_text("some output", encoding="utf-8")
+    batch = SimpleNamespace(
+        batch_id="stale-manual",
+        generation_id="generation-11",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale",
+    )
+    observed = []
+    store = SimpleNamespace(
+        export_journal=lambda *_, **__: ("before-image", "after-image"),
+        discard_stale_manual_export=lambda *_, **__: observed.append("discarded"),
+    )
+
+    assert not live_runner._discard_stale_manual_export_if_unpublished(
+        store, batch, path
+    )
+    assert observed == []
