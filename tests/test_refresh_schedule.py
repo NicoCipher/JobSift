@@ -10,6 +10,7 @@ from job_scout.storage.sqlite import SQLiteRepository
 
 def test_prepare_scheduled_cohort_recovers_and_resolves_in_one_store(tmp_path):
     repository = SQLiteRepository(tmp_path / "prepare.sqlite3")
+    InventoryRunStore(repository)
     store = InventoryRefreshScheduleStore(repository)
     start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
     first = store.next_due(now=start)
