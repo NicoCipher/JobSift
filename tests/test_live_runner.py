@@ -1139,3 +1139,96 @@ def test_manual_export_artifact_upload_is_success_only_and_short_lived():
     assert "/tmp/latest-sourcing.csv" in artifact_config
     assert "/tmp/jobsift-run-result.json" in artifact_config
     assert "retention-days: 3" in artifact_config
+
+
+
+def test_manual_export_rejects_direct_validation_configuration(tmp_path):
+    with pytest.raises(ValueError, match="manual export cannot be combined"):
+        LiveRunnerConfig(
+            plan_path=tmp_path / "plan.json",
+            database_path=tmp_path / "jobs.sqlite3",
+            csv_path=tmp_path / "jobs.csv",
+            reports_dir=tmp_path / "runs",
+            spreadsheet_id=None,
+            sheet_tab=None,
+            quota=5,
+            interval_seconds=86400,
+            timezone="Africa/Lagos",
+            auto_release=False,
+            allow_partial=False,
+            run_once=True,
+            validation_only=True,
+            manual_export=True,
+        )
+
+
+def test_manual_export_ignores_inherited_sheet_settings(monkeypatch):
+    monkeypatch.setenv("JOBSIFT_DATABASE", "/tmp/jobsift.sqlite3")
+    monkeypatch.setenv("JOBSIFT_CSV", "/tmp/jobsift-export.csv")
+    monkeypatch.setenv("JOBSIFT_MANUAL_EXPORT", "true")
+    monkeypatch.setenv("JOBSIFT_AUTO_RELEASE", "false")
+    monkeypatch.setenv("JOBSIFT_DISCARD_PREPARED", "false")
+    monkeypatch.setenv("JOBSIFT_VALIDATION_ONLY", "false")
+    monkeypatch.setenv("JOBSIFT_PROFILE_MANAGED", "false")
+    monkeypatch.setenv("JOBSIFT_SHEET_ID", "inherited-sheet-id")
+    monkeypatch.delenv("JOBSIFT_SHEET_TAB", raising=False)
+
+    config = LiveRunnerConfig.from_env()
+
+    assert config.manual_export is True
+    assert config.spreadsheet_id is None
+    assert config.sheet_tab is None
+
+
+def test_run_once_discards_resumed_empty_manual_batch_generation(tmp_path, monkeypatch):
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text("{}", encoding="utf-8")
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id=None,
+        sheet_tab=None,
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        manual_export=True,
+    )
+    empty_batch = SimpleNamespace(
+        batch_id="resumed-empty",
+        generation_id="generation-9",
+        status="prepared",
+        selected_count=0,
+        shortfall=5,
+        request=SimpleNamespace(requested_quota=5),
+    )
+    observed = {}
+    store = SimpleNamespace(
+        discard_prepared=lambda batch_id, *, expected_generation_id: observed.update(
+            batch_id=batch_id, generation_id=expected_generation_id
+        )
+    )
+    repository = SimpleNamespace(remote_url="")
+    plan = SimpleNamespace(plan_id="operator-plan")
+    brief = SimpleNamespace(client_id="operator-client")
+    monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "_unresolved_batch",
+        lambda *_, **__: empty_batch,
+    )
+
+    result = live_runner.run_once(config, repository=repository)
+
+    assert result["action"] == "manual_export_empty"
+    assert result["batch_id"] == "resumed-empty"
+    assert observed == {
+        "batch_id": "resumed-empty",
+        "generation_id": "generation-9",
+    }
