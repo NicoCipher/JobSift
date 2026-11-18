@@ -85,6 +85,11 @@ def test_postgres_bulk_retention_prunes_without_losing_delivery_or_unresolved_st
         update={"source": "workday", "source_board_id": "workday-retention-board"}
     )
     repository.upsert_jobs([deleted, delivered, unresolved, fresh, non_incremental])
+    # Seed the retained identity as undelivered; pruning must promote it.
+    repository.record_pruned_identities(
+        [delivered],
+        pruned_at=now - timedelta(minutes=1),
+    )
     repository.mark_exported(
         delivered.id,
         "retention-client",
