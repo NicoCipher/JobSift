@@ -843,6 +843,7 @@ class PostgresRepository(SQLiteRepository):
                 counts["compacted_jobs"] = int(summary["compacted_jobs"])
                 counts["deleted_jobs"] = int(summary["deleted_jobs"])
 
+            # Keep the first descriptive snapshot; only promote the delivered bit.
             connection.execute(
                 """
                 INSERT INTO job_identity_ledger (
