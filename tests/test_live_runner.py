@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -836,3 +837,270 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
         "retention": None,
     }
 
+
+
+
+def test_manual_export_mode_requires_exclusive_operator_run(monkeypatch):
+    monkeypatch.setenv("JOBSIFT_DATABASE", "/tmp/jobsift.sqlite3")
+    monkeypatch.setenv("JOBSIFT_CSV", "/tmp/jobsift-export.csv")
+    monkeypatch.setenv("JOBSIFT_MANUAL_EXPORT", "true")
+    monkeypatch.setenv("JOBSIFT_AUTO_RELEASE", "false")
+    monkeypatch.setenv("JOBSIFT_DISCARD_PREPARED", "false")
+    monkeypatch.setenv("JOBSIFT_VALIDATION_ONLY", "false")
+    monkeypatch.setenv("JOBSIFT_PROFILE_MANAGED", "false")
+
+    config = LiveRunnerConfig.from_env()
+    assert config.manual_export is True
+    assert config.auto_release is False
+    assert config.validation_only is False
+
+    monkeypatch.setenv("JOBSIFT_AUTO_RELEASE", "true")
+    with pytest.raises(ValueError, match="manual export cannot be combined"):
+        LiveRunnerConfig.from_env()
+
+
+def test_manual_export_materializes_only_frozen_delivered_rows(tmp_path):
+    rows = [
+        {
+            "Job Title": "Software Engineer",
+            "Company Name": "Example",
+            "Job Link": "https://example.com/careers/123",
+            "Job Description": "Build reliable software",
+            "Job Platform": "greenhouse",
+        }
+    ]
+    store = SimpleNamespace(export_rows=lambda batch_id: rows)
+    batch = SimpleNamespace(batch_id="frozen-batch", status="delivered")
+    first_path = tmp_path / "first" / "jobs.csv"
+    second_path = tmp_path / "second" / "jobs.csv"
+
+    live_runner._materialize_manual_export(store, batch, first_path)
+    first_bytes = first_path.read_bytes()
+    live_runner._materialize_manual_export(store, batch, first_path)
+    live_runner._materialize_manual_export(store, batch, second_path)
+
+    assert first_path.read_bytes() == first_bytes
+    assert second_path.read_bytes() == first_bytes
+    assert first_bytes.count(b"https://example.com/careers/123") == 1
+
+
+def test_manual_export_replay_uses_csv_destination_without_sheet_lookup(tmp_path, monkeypatch):
+    csv_path = tmp_path / "operator-export" / "jobs.csv"
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=csv_path,
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id=None,
+        sheet_tab=None,
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        manual_export=True,
+    )
+    batch = SimpleNamespace(batch_id="delivered-batch", status="delivered")
+    rows = [
+        {
+            "Job Title": "Software Engineer",
+            "Company Name": "Example",
+            "Job Link": "https://example.com/careers/123",
+            "Job Description": "Build reliable software",
+            "Job Platform": "greenhouse",
+        }
+    ]
+    store = SimpleNamespace(export_rows=lambda batch_id: rows)
+    repository = SimpleNamespace(remote_url="")
+    observed = {}
+
+    monkeypatch.setattr(
+        live_runner,
+        "_runtime_plan",
+        lambda _: (SimpleNamespace(plan_id="pilot"), tmp_path / "brief.json"),
+    )
+    monkeypatch.setattr(
+        live_runner, "load_search_brief", lambda _: SimpleNamespace(client_id="client")
+    )
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: (_ for _ in ()).throw(AssertionError("manual export must not inspect Sheets")),
+    )
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+
+    def existing_batch(repository, *, client_id, destination, idempotency_key):
+        observed["destination"] = destination
+        return batch
+
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", existing_batch)
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda store, batch, *, action, **kwargs: {"action": action},
+    )
+
+    result = live_runner.run_once(config)
+
+    assert result == {"action": "already_exported_today"}
+    assert observed["destination"] == str(csv_path.resolve())
+    assert csv_path.is_file()
+    assert b"https://example.com/careers/123" in csv_path.read_bytes()
+
+
+def test_manual_export_runner_fails_closed_when_batch_is_not_delivered(monkeypatch):
+    config = SimpleNamespace(manual_export=True, run_once=True)
+    monkeypatch.setattr(LiveRunnerConfig, "from_env", lambda: config)
+    monkeypatch.setattr(
+        live_runner,
+        "run_once",
+        lambda _: {"action": "manual_export_failed", "batch_status": "failed"},
+    )
+
+    with pytest.raises(RuntimeError, match="manual CSV export did not reach delivered status"):
+        live_runner.main()
+
+
+def test_manual_export_fresh_run_finalizes_local_csv_without_sheet_access(tmp_path, monkeypatch):
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text("{}", encoding="utf-8")
+    csv_path = tmp_path / "operator-export" / "jobs.csv"
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=csv_path,
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id=None,
+        sheet_tab=None,
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        manual_export=True,
+    )
+    completed_at = datetime(2026, 11, 18, 10, 0, tzinfo=UTC)
+    plan = SimpleNamespace(plan_id="pilot")
+    brief = SimpleNamespace(
+        client_id="client",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(max_age_hours=24, unknown_policy="reject"),
+    )
+    report = SimpleNamespace(
+        run_id="inventory-run",
+        status="success",
+        started_at=completed_at,
+        completed_at=completed_at,
+        targets=[],
+    )
+    evaluation = SimpleNamespace(
+        run_id=report.run_id,
+        evaluated_at=completed_at,
+        total_matched=1,
+        total_needs_review=0,
+        total_rejected=0,
+    )
+    prepared = SimpleNamespace(
+        batch_id="manual-batch",
+        generation_id="generation-1",
+        status="prepared",
+    )
+    delivered = SimpleNamespace(
+        batch_id="manual-batch",
+        generation_id="generation-1",
+        status="delivered",
+    )
+    repository = SimpleNamespace(remote_url="")
+    store = SimpleNamespace(
+        evidence_digest=lambda *args, **kwargs: "a" * 64,
+        export_rows=lambda batch_id: [],
+    )
+    captured = {}
+
+    monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: (_ for _ in ()).throw(AssertionError("manual export must not inspect Sheets")),
+    )
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", lambda *_, **__: report)
+    monkeypatch.setattr(live_runner, "evaluate_inventory_run", lambda **_: evaluation)
+    monkeypatch.setattr(
+        live_runner,
+        "InventoryRunStore",
+        lambda _: SimpleNamespace(active_job_ids=lambda *args, **kwargs: ("job-1",)),
+    )
+    monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
+
+    def prepare(*, repository, request):
+        captured["request"] = request
+        return prepared
+
+    def finalize(*, repository, batch_id, expected_generation_id):
+        captured["finalize"] = (batch_id, expected_generation_id)
+        return delivered
+
+    monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
+    monkeypatch.setattr(live_runner, "finalize_daily_batch", finalize)
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda store, batch, *, action, **kwargs: {
+            "action": action,
+            "batch_status": batch.status,
+        },
+    )
+
+    result = live_runner.run_once(config)
+
+    assert result == {"action": "manual_exported", "batch_status": "delivered"}
+    assert captured["request"].destination == str(csv_path.resolve())
+    assert captured["request"].destination_id is None
+    assert captured["finalize"] == ("manual-batch", "generation-1")
+
+
+def test_live_export_plan_enforces_24h_us_fully_remote_fail_closed_profile():
+    plan_path = (
+        Path(__file__).resolve().parents[1]
+        / "config/sourcing_plans/taiwo_software_remote_us_v2.json"
+    )
+    plan = SourcingPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    brief = live_runner.load_search_brief(
+        (plan_path.parent / plan.search_brief).resolve()
+    )
+
+    assert brief.target_market.countries == {"United States"}
+    assert brief.target_market.intent.value == "must"
+    assert brief.target_market.unknown_policy.value == "reject"
+    assert {mode.value for mode in brief.work_mode.modes} == {"remote"}
+    assert brief.work_mode.intent.value == "must"
+    assert brief.work_mode.unknown_policy.value == "reject"
+    assert brief.posting_freshness.max_age_hours == 24
+    assert brief.posting_freshness.unknown_policy.value == "reject"
+
+
+def test_manual_export_artifact_upload_is_success_only_and_short_lived():
+    workflow_path = (
+        Path(__file__).resolve().parents[1] / ".github/workflows/live-jobs.yml"
+    )
+    workflow = workflow_path.read_text(encoding="utf-8")
+    artifact_step = workflow.index("Upload operator-owned CSV export")
+    artifact_config = workflow[artifact_step:]
+
+    assert "if: ${{ inputs.manual_export == true && success() }}" in artifact_config
+    assert "uses: actions/upload-artifact@v4" in artifact_config
+    assert "/tmp/latest-sourcing.csv" in artifact_config
+    assert "/tmp/jobsift-run-result.json" in artifact_config
+    assert "retention-days: 3" in artifact_config

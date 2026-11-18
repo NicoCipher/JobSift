@@ -1,7 +1,7 @@
-# GitHub Actions + Turso live runner
+# GitHub Actions + Neon live runner
 
-JobSift's production runner uses GitHub Actions for compute and Turso for durable
-SQLite-compatible state. No always-on server or persistent Render disk is required.
+JobSift's production runner uses GitHub Actions for compute and Neon/Postgres for
+durable state. No always-on server or persistent Render disk is required.
 
 ## Safety model
 
@@ -23,69 +23,58 @@ SQLite-compatible state. No always-on server or persistent Render disk is requir
   delivered batches and any batch with an export journal, so uncertain Sheet I/O
   can never be erased.
 - Manual validation mode runs the real sourcing plan and SearchBrief against a
-  fresh local SQLite database with Turso disabled. It returns a `validated`
+  fresh local SQLite database with the Neon/Postgres backend disabled. It returns a `validated`
   result, cannot release or discard, does not alter production delivery history,
   and performs no Google Sheets write. Use it for same-day policy/source checks
   without bypassing the production one-batch-per-day guard.
 - GitHub Actions concurrency allows only one production run at a time.
-- The stable Taiwo client ID and Turso database preserve historical/delivery
+- The stable client ID and Neon database preserve historical/delivery
   suppression across ephemeral GitHub runners.
 
-## Turso persistence
+## Neon persistence
 
-When both `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are present,
-`SQLiteRepository` opens a local Turso Sync replica at the configured
-`JOBSIFT_DATABASE` path.
+The production workflow sets `JOBSIFT_PERSISTENCE_BACKEND=postgres` and reads
+`NEON_DATABASE_URL` from GitHub Actions secrets. Each run uses an ephemeral
+GitHub-hosted runner while JobSift's durable inventory, match, and delivery state
+remain in the Neon database. Manual CSV export and Google Sheets delivery use the
+same production database and existing workflow concurrency locks.
 
-Each GitHub Actions run starts with a fresh local database path. Turso Sync
-bootstraps that local replica from the remote database when it is first opened.
-The workflow concurrency lock guarantees there is only one production writer.
-
-For each repository transaction JobSift then:
-
-1. opens the synced local replica;
-2. executes the existing SQLite transaction locally;
-3. commits locally;
-4. pushes the committed transaction to Turso.
-
-JobSift deliberately does not long-poll Turso before every small repository
-operation. A fresh Actions run already bootstraps remote state, and the
-single-writer lock prevents another production run from changing it underneath
-the current run.
-
-This is important for Sheets recovery. The batch delivery journal is pushed to
-Turso before external Sheet I/O. If a run dies after a Sheet append, the next run
-can pull that journal, inspect the Sheet after-image, and finish without
-duplicating the rows.
-
-Without the Turso environment variables, JobSift keeps using the standard local
-SQLite backend for development and tests.
+Production runs fail before sourcing when `NEON_DATABASE_URL` is unavailable.
+Validation mode is the explicit exception: it switches to an isolated local
+SQLite database and does not touch production state.
 
 ## Required repository secrets
 
 In GitHub repository Settings > Secrets and variables > Actions > Secrets, add:
 
-- `TURSO_DATABASE_URL`
-- `TURSO_AUTH_TOKEN`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `NEON_DATABASE_URL`
+- `GOOGLE_SERVICE_ACCOUNT_JSON` (Google Sheets delivery only)
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` is the complete service-account key JSON. Never
-commit it to the repository.
+commit it to the repository. Manual CSV export does not require or receive this
+credential.
 
 ## Required repository variables
 
-In Settings > Secrets and variables > Actions > Variables, add:
+In Settings > Secrets and variables > Actions > Variables, configure these only
+when using the legacy Google Sheets destination path:
 
 - `JOBSIFT_SHEET_ID`
 - `JOBSIFT_SHEET_TAB`
 
-For the current production sheet, the tab is `Sheet1`.
+Manual CSV export does not require either variable. For the current production
+Sheet path, the tab is `Sheet1`.
 
 ## Production source set
 
 The live workflow now uses
 `config/sourcing_plans/taiwo_software_remote_us_v2.json`, a seven-employer
 source set documented in [Production software sources V2](production-sources-v2.md).
+
+That plan now references `config/search_briefs/taiwo_software_remote_us_v2.json`:
+US market evidence and fully remote status are required, unknown market/work-mode
+values are rejected, and postings must have a trustworthy timestamp no older than
+24 hours. The older v1 brief remains unchanged for historical compatibility.
 
 The seven-employer set is intentionally bounded. It is large enough to test a
 five-job, five-employer batch, but it is not evidence that 25, 50, or 100 distinct
@@ -96,6 +85,34 @@ distinct-employer yield.
 target blocks preparation rather than silently pretending the source set was
 complete. This is conservative and may become an availability bottleneck as the
 target count grows; change it only with an explicit completeness policy.
+
+## Operator-owned manual CSV export
+
+The same live runner has an explicit `JOBSIFT_MANUAL_EXPORT=true` mode, exposed
+as the **manual_export** input in Actions > Live JobSift. It uses the verified
+production sourcing plan and durable database, but sets the batch destination to
+the runner-owned CSV path. It does not resolve a registered client destination,
+read the legacy Sheet variables, create Google credentials, or call Google Sheets.
+
+Manual export finalizes the frozen batch through the existing journalled CSV
+publisher, then uploads the CSV and run-result JSON as a GitHub Actions artifact.
+Artifacts are named with the workflow run and attempt IDs and retained for three
+days. The artifact is an operator handoff, not a client Sheet publication or
+proof that a client received the jobs.
+
+If a successful CSV export is delivered to the database but artifact upload fails,
+a retry on the same local day rebuilds the missing ephemeral CSV from the
+immutable delivered batch rows before uploading. It does not source a second
+batch or append duplicate rows. The runner's existing production concurrency
+locks remain in force. Manual export cannot be combined with Sheet release,
+discard, validation, or profile-managed delivery.
+
+To use it, open Actions > Live JobSift > Run workflow, set **manual_export=true**,
+leave release/discard/validate false, and choose quota 5 for the first controlled
+run. After success, download the `jobsift-manual-export-*` artifact and inspect
+both the CSV and run-result JSON. A partial/failed source run remains blocked by
+`JOBSIFT_ALLOW_PARTIAL=false`; do not widen the source set or concurrency as part
+of this first export.
 
 ## First pilot
 

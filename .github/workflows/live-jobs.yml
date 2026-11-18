@@ -14,7 +14,7 @@ on:
         default: false
         type: boolean
       validate:
-        description: Run isolated sourcing validation only; never touch Turso or Sheets
+        description: Run isolated sourcing validation only; never touch Neon or Sheets
         required: true
         default: false
         type: boolean
@@ -31,6 +31,11 @@ on:
           - "100"
           - "150"
           - "200"
+      manual_export:
+        description: Source and export a reviewed CSV artifact without connecting to a client Sheet
+        required: true
+        default: false
+        type: boolean
 # The scheduled refresh caches shared inventory across client evaluations.
 # Serialize this manual workflow with it so job payloads cannot change mid-match.
 concurrency:
@@ -66,7 +71,6 @@ jobs:
       JOBSIFT_SHEET_TAB: ${{ vars.JOBSIFT_SHEET_TAB }}
       JOBSIFT_PERSISTENCE_BACKEND: postgres
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
 
     steps:
       - uses: actions/checkout@v4
@@ -81,13 +85,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[sheets,postgres]'
 
-      - name: Validate runtime configuration
+      - name: Validate runtime database configuration
         shell: bash
         run: |
-          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
           if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ inputs.validate }}" != "true" ]]; then
             test -n "$NEON_DATABASE_URL" || { echo "Missing NEON_DATABASE_URL secret"; exit 1; }
           fi
+
+      - name: Validate Google credentials
+        if: ${{ inputs.manual_export != true && inputs.validate != true }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || { echo "Missing GOOGLE_SERVICE_ACCOUNT_JSON secret"; exit 1; }
 
       - name: Configure run mode
         shell: bash
@@ -97,13 +108,27 @@ jobs:
               echo "release and discard cannot both be true"
               exit 1
             fi
-            if [[ "${{ inputs.validate }}" == "true" && ( "${{ inputs.release }}" == "true" || "${{ inputs.discard }}" == "true" ) ]]; then
-              echo "validation cannot be combined with release or discard"
+            if [[ "${{ inputs.validate }}" == "true" && ( "${{ inputs.release }}" == "true" || "${{ inputs.discard }}" == "true" || "${{ inputs.manual_export }}" == "true" ) ]]; then
+              echo "validation cannot be combined with release, discard, or manual export"
               exit 1
             fi
-            echo "JOBSIFT_AUTO_RELEASE=${{ inputs.release }}" >> "$GITHUB_ENV"
-            echo "JOBSIFT_DISCARD_PREPARED=${{ inputs.discard }}" >> "$GITHUB_ENV"
-            echo "JOBSIFT_VALIDATION_ONLY=${{ inputs.validate }}" >> "$GITHUB_ENV"
+            if [[ "${{ inputs.manual_export }}" == "true" && ( "${{ inputs.release }}" == "true" || "${{ inputs.discard }}" == "true" ) ]]; then
+              echo "manual export cannot be combined with Sheet release or discard"
+              exit 1
+            fi
+            echo "JOBSIFT_MANUAL_EXPORT=${{ inputs.manual_export }}" >> "$GITHUB_ENV"
+            if [[ "${{ inputs.manual_export }}" == "true" ]]; then
+              echo "JOBSIFT_AUTO_RELEASE=false" >> "$GITHUB_ENV"
+              echo "JOBSIFT_DISCARD_PREPARED=false" >> "$GITHUB_ENV"
+              echo "JOBSIFT_VALIDATION_ONLY=false" >> "$GITHUB_ENV"
+              echo "JOBSIFT_DESTINATION_ID=" >> "$GITHUB_ENV"
+              echo "JOBSIFT_SHEET_ID=" >> "$GITHUB_ENV"
+              echo "JOBSIFT_SHEET_TAB=" >> "$GITHUB_ENV"
+            else
+              echo "JOBSIFT_AUTO_RELEASE=${{ inputs.release }}" >> "$GITHUB_ENV"
+              echo "JOBSIFT_DISCARD_PREPARED=${{ inputs.discard }}" >> "$GITHUB_ENV"
+              echo "JOBSIFT_VALIDATION_ONLY=${{ inputs.validate }}" >> "$GITHUB_ENV"
+            fi
             echo "JOBSIFT_BATCH_QUOTA=${{ inputs.quota }}" >> "$GITHUB_ENV"
             if [[ "${{ inputs.validate }}" == "true" ]]; then
               echo "JOBSIFT_DATABASE=/tmp/jobsift-validation.sqlite3" >> "$GITHUB_ENV"
@@ -114,16 +139,34 @@ jobs:
             echo "JOBSIFT_AUTO_RELEASE=false" >> "$GITHUB_ENV"
             echo "JOBSIFT_DISCARD_PREPARED=false" >> "$GITHUB_ENV"
             echo "JOBSIFT_VALIDATION_ONLY=false" >> "$GITHUB_ENV"
+            echo "JOBSIFT_MANUAL_EXPORT=false" >> "$GITHUB_ENV"
             echo "JOBSIFT_BATCH_QUOTA=5" >> "$GITHUB_ENV"
           fi
 
       - name: Write Google service account credentials
+        if: ${{ inputs.manual_export != true && inputs.validate != true }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         shell: bash
         run: |
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/google-service-account.json"
           chmod 600 "$RUNNER_TEMP/google-service-account.json"
 
       - name: Run JobSift
+        shell: bash
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/google-service-account.json
-        run: python -m job_scout.live_runner
+        run: |
+          set -o pipefail
+          python -m job_scout.live_runner | tee /tmp/jobsift-run-result.json
+
+      - name: Upload operator-owned CSV export
+        if: ${{ inputs.manual_export == true && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobsift-manual-export-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/latest-sourcing.csv
+            /tmp/jobsift-run-result.json
+          if-no-files-found: error
+          retention-days: 3
