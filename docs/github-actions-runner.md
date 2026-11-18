@@ -1,7 +1,7 @@
-# GitHub Actions + Turso live runner
+# GitHub Actions + Neon live runner
 
-JobSift's production runner uses GitHub Actions for compute and Turso for durable
-SQLite-compatible state. No always-on server or persistent Render disk is required.
+JobSift's production runner uses GitHub Actions for compute and Neon/Postgres for
+durable state. No always-on server or persistent Render disk is required.
 
 ## Safety model
 
@@ -28,58 +28,41 @@ SQLite-compatible state. No always-on server or persistent Render disk is requir
   and performs no Google Sheets write. Use it for same-day policy/source checks
   without bypassing the production one-batch-per-day guard.
 - GitHub Actions concurrency allows only one production run at a time.
-- The stable Taiwo client ID and Turso database preserve historical/delivery
+- The stable client ID and Neon database preserve historical/delivery
   suppression across ephemeral GitHub runners.
 
-## Turso persistence
+## Neon persistence
 
-When both `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are present,
-`SQLiteRepository` opens a local Turso Sync replica at the configured
-`JOBSIFT_DATABASE` path.
+The production workflow sets `JOBSIFT_PERSISTENCE_BACKEND=postgres` and reads
+`NEON_DATABASE_URL` from GitHub Actions secrets. Each run uses an ephemeral
+GitHub-hosted runner while JobSift's durable inventory, match, and delivery state
+remain in the Neon database. Manual CSV export and Google Sheets delivery use the
+same production database and existing workflow concurrency locks.
 
-Each GitHub Actions run starts with a fresh local database path. Turso Sync
-bootstraps that local replica from the remote database when it is first opened.
-The workflow concurrency lock guarantees there is only one production writer.
-
-For each repository transaction JobSift then:
-
-1. opens the synced local replica;
-2. executes the existing SQLite transaction locally;
-3. commits locally;
-4. pushes the committed transaction to Turso.
-
-JobSift deliberately does not long-poll Turso before every small repository
-operation. A fresh Actions run already bootstraps remote state, and the
-single-writer lock prevents another production run from changing it underneath
-the current run.
-
-This is important for Sheets recovery. The batch delivery journal is pushed to
-Turso before external Sheet I/O. If a run dies after a Sheet append, the next run
-can pull that journal, inspect the Sheet after-image, and finish without
-duplicating the rows.
-
-Without the Turso environment variables, JobSift keeps using the standard local
-SQLite backend for development and tests.
-
+Production runs fail before sourcing when `NEON_DATABASE_URL` is unavailable.
+Validation mode is the explicit exception: it switches to an isolated local
+SQLite database and does not touch production state.
 ## Required repository secrets
 
 In GitHub repository Settings > Secrets and variables > Actions > Secrets, add:
 
-- `TURSO_DATABASE_URL`
-- `TURSO_AUTH_TOKEN`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `NEON_DATABASE_URL`
+- `GOOGLE_SERVICE_ACCOUNT_JSON` (Google Sheets delivery only)
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` is the complete service-account key JSON. Never
-commit it to the repository.
+commit it to the repository. Manual CSV export does not require or receive this
+credential.
 
 ## Required repository variables
 
-In Settings > Secrets and variables > Actions > Variables, add:
+In Settings > Secrets and variables > Actions > Variables, configure these only
+when using the legacy Google Sheets destination path:
 
 - `JOBSIFT_SHEET_ID`
 - `JOBSIFT_SHEET_TAB`
 
-For the current production sheet, the tab is `Sheet1`.
+Manual CSV export does not require either variable. For the current production
+Sheet path, the tab is `Sheet1`.
 
 ## Production source set
 
