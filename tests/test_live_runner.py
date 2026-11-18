@@ -961,3 +961,110 @@ def test_manual_export_runner_fails_closed_when_batch_is_not_delivered(monkeypat
 
     with pytest.raises(RuntimeError, match="manual CSV export did not reach delivered status"):
         live_runner.main()
+
+
+def test_manual_export_fresh_run_finalizes_local_csv_without_sheet_access(tmp_path, monkeypatch):
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text("{}", encoding="utf-8")
+    csv_path = tmp_path / "operator-export" / "jobs.csv"
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=csv_path,
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id=None,
+        sheet_tab=None,
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        manual_export=True,
+    )
+    completed_at = datetime(2026, 11, 18, 10, 0, tzinfo=UTC)
+    plan = SimpleNamespace(plan_id="pilot")
+    brief = SimpleNamespace(
+        client_id="client",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(max_age_hours=24, unknown_policy="reject"),
+    )
+    report = SimpleNamespace(
+        run_id="inventory-run",
+        status="success",
+        started_at=completed_at,
+        completed_at=completed_at,
+        targets=[],
+    )
+    evaluation = SimpleNamespace(
+        run_id=report.run_id,
+        evaluated_at=completed_at,
+        total_matched=1,
+        total_needs_review=0,
+        total_rejected=0,
+    )
+    prepared = SimpleNamespace(
+        batch_id="manual-batch",
+        generation_id="generation-1",
+        status="prepared",
+    )
+    delivered = SimpleNamespace(
+        batch_id="manual-batch",
+        generation_id="generation-1",
+        status="delivered",
+    )
+    repository = SimpleNamespace(remote_url="")
+    store = SimpleNamespace(
+        evidence_digest=lambda *args, **kwargs: "a" * 64,
+        export_rows=lambda batch_id: [],
+    )
+    captured = {}
+
+    monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "create_repository", lambda _: repository)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "ClientSheetDestinationStore",
+        lambda _: (_ for _ in ()).throw(AssertionError("manual export must not inspect Sheets")),
+    )
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", lambda *_, **__: report)
+    monkeypatch.setattr(live_runner, "evaluate_inventory_run", lambda **_: evaluation)
+    monkeypatch.setattr(
+        live_runner,
+        "InventoryRunStore",
+        lambda _: SimpleNamespace(active_job_ids=lambda *args, **kwargs: ("job-1",)),
+    )
+    monkeypatch.setattr(live_runner, "_source_failures", lambda _: ())
+
+    def prepare(*, repository, request):
+        captured["request"] = request
+        return prepared
+
+    def finalize(*, repository, batch_id, expected_generation_id):
+        captured["finalize"] = (batch_id, expected_generation_id)
+        return delivered
+
+    monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
+    monkeypatch.setattr(live_runner, "finalize_daily_batch", finalize)
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda store, batch, *, action, **kwargs: {
+            "action": action,
+            "batch_status": batch.status,
+        },
+    )
+
+    result = live_runner.run_once(config)
+
+    assert result == {"action": "manual_exported", "batch_status": "delivered"}
+    assert captured["request"].destination == str(csv_path.resolve())
+    assert captured["request"].destination_id is None
+    assert captured["finalize"] == ("manual-batch", "generation-1")
