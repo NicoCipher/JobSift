@@ -17,6 +17,7 @@ from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
 from job_scout.domain.models import SearchBrief
+from job_scout.export.batch_csv import plan_csv, publish_csv
 from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
@@ -83,6 +84,7 @@ class LiveRunnerConfig:
     inventory_retention_hours: int = 72
     profile_managed: bool = False
     source_before_delivery: bool = True
+    manual_export: bool = False
 
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
@@ -91,10 +93,14 @@ class LiveRunnerConfig:
         auto_release = _boolean("JOBSIFT_AUTO_RELEASE")
         discard_prepared = _boolean("JOBSIFT_DISCARD_PREPARED")
         validation_only = _boolean("JOBSIFT_VALIDATION_ONLY")
+        manual_export = _boolean("JOBSIFT_MANUAL_EXPORT")
+        profile_managed = _boolean("JOBSIFT_PROFILE_MANAGED")
         if auto_release and discard_prepared:
             raise ValueError("release and discard modes cannot both be enabled")
-        if validation_only and (auto_release or discard_prepared):
-            raise ValueError("validation mode cannot release or discard production batches")
+        if validation_only and (auto_release or discard_prepared or manual_export):
+            raise ValueError("validation mode cannot release, discard, or export production batches")
+        if manual_export and (auto_release or discard_prepared or profile_managed):
+            raise ValueError("manual export cannot be combined with Sheet release, discard, or profile-managed delivery")
         destination_id = os.getenv("JOBSIFT_DESTINATION_ID", "").strip() or None
         spreadsheet_id = os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
         sheet_tab = os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
@@ -126,8 +132,9 @@ class LiveRunnerConfig:
             inventory_retention_hours=_positive_integer(
                 "JOBSIFT_INVENTORY_RETENTION_HOURS", 72
             ),
-            profile_managed=_boolean("JOBSIFT_PROFILE_MANAGED"),
+            profile_managed=profile_managed,
             source_before_delivery=_boolean("JOBSIFT_SOURCE_BEFORE_DELIVERY", True),
+            manual_export=manual_export,
         )
 
 
@@ -199,6 +206,17 @@ def _unresolved_batch(
 ) -> DailyBatchResult | None:
     """Delegate unresolved delivery recovery to the transactional state machine."""
     return DailyBatchStore(repository).recover_unresolved(client_id, destination)
+
+
+def _materialize_manual_export(
+    store: DailyBatchStore, batch: DailyBatchResult, path: Path
+) -> None:
+    """Rebuild a missing ephemeral artifact from the immutable delivered batch."""
+    if batch.status != "delivered" or path.exists():
+        return
+    rows = store.export_rows(batch.batch_id)
+    before, after = plan_csv(path, rows)
+    publish_csv(path, rows, before, after)
 
 
 def _candidate_job_ids(
@@ -368,7 +386,11 @@ def run_once(
         raise ValueError("validation mode must use a local-only repository")
     store = DailyBatchStore(repository)
     destination_record = None
-    if config.validation_only:
+    if config.manual_export:
+        if config.profile_managed:
+            raise ValueError("manual export cannot use profile-managed Sheet delivery")
+        destination = str(config.csv_path.resolve())
+    elif config.validation_only:
         destination = (
             sheet_destination(config.spreadsheet_id, config.sheet_tab)
             if config.spreadsheet_id is not None and config.sheet_tab is not None
@@ -526,7 +548,7 @@ def run_once(
                 continue
             return _batch_payload(store, unresolved, action="recovered_release")
 
-        if config.auto_release or profile_auto_release:
+        if config.auto_release or config.manual_export or profile_auto_release:
             if profile is not None and profile_store is not None:
                 try:
                     unresolved, _reconciliation, effective_quota = (
@@ -591,7 +613,7 @@ def run_once(
                     )
                 unresolved = recovered
                 continue
-            action = "resumed_release"
+            action = "resumed_manual_export" if config.manual_export else "resumed_release"
         else:
             action = "awaiting_release"
         return _batch_payload(store, unresolved, action=action)
@@ -624,7 +646,7 @@ def run_once(
             "destination": destination,
         }
 
-    if config.auto_release:
+    if config.auto_release and not config.manual_export:
         return {
             "action": "nothing_to_release",
             "plan_id": plan_id,
@@ -642,6 +664,13 @@ def run_once(
             idempotency_key=idempotency_key,
         )
         if today is not None:
+            if config.manual_export:
+                _materialize_manual_export(store, today, config.csv_path.resolve())
+                return _batch_payload(
+                    store,
+                    today,
+                    action=("already_exported_today" if today.status == "delivered" else "manual_export_unavailable"),
+                )
             return _batch_payload(store, today, action="already_ran_today")
 
     if brief_sha is None:
@@ -771,7 +800,15 @@ def run_once(
         source_failures=failures,
     )
     batch = prepare_daily_batch(repository=repository, request=request)
-    action = "validated" if config.validation_only else "prepared"
+    if config.manual_export:
+        batch = finalize_daily_batch(
+            repository=repository,
+            batch_id=batch.batch_id,
+            expected_generation_id=batch.generation_id,
+        )
+        action = "manual_exported" if batch.status == "delivered" else "manual_export_failed"
+    else:
+        action = "validated" if config.validation_only else "prepared"
 
     # A review-mode scope with zero selected jobs is not something an operator
     # can meaningfully approve. Do not leave it as an unresolved prepared batch,
