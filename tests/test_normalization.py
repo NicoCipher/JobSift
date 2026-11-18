@@ -99,3 +99,43 @@ def test_explicit_fully_remote_description_is_affirmative(description: str) -> N
 def test_bare_remote_mention_in_description_is_unknown() -> None:
     assert classify_remote(None, "Remote collaboration is part of our culture.") is RemoteStatus.UNKNOWN
     assert classify_remote(None, "This is a remote role.") is RemoteStatus.UNKNOWN
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "You cannot work fully remotely.",
+        "You can't work fully remotely.",
+        "You are not able to work fully remotely.",
+        "This role does not allow you to work remotely.",
+    ],
+)
+def test_negated_fully_remote_wording_is_rejected(description: str) -> None:
+    assert classify_remote(None, description) is RemoteStatus.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "This is a fully remote role.",
+        "This position is 100% remote.",
+        "The job is remote-only.",
+        "You will work remotely from anywhere in the United States.",
+        "This position is fully remote and open to US candidates.",
+    ],
+)
+def test_role_or_applicant_specific_remote_evidence_passes(description: str) -> None:
+    assert classify_remote(None, description) is RemoteStatus.REMOTE
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "You will support customers working fully remotely.",
+        "Our customers work fully remotely, but this role is based in Boston.",
+        "The team supports clients in a fully remote environment.",
+    ],
+)
+def test_third_party_remote_arrangement_does_not_classify_role(
+    description: str,
+) -> None:
+    assert classify_remote(None, description) is RemoteStatus.UNKNOWN
