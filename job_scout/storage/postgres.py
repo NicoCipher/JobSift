@@ -864,17 +864,11 @@ class PostgresRepository(SQLiteRepository):
                 WHERE NOT unresolved
                   AND payload_json::jsonb->>'source' IN (?,?)
                 ON CONFLICT (source,source_board_id,source_job_id) DO UPDATE SET
-                    canonical_url=excluded.canonical_url,
-                    employer_id=COALESCE(
-                        job_identity_ledger.employer_id,
-                        excluded.employer_id
-                    ),
-                    last_seen_at=excluded.last_seen_at,
-                    pruned_at=excluded.pruned_at,
                     was_delivered=GREATEST(
                         job_identity_ledger.was_delivered,
                         excluded.was_delivered
                     )
+                WHERE job_identity_ledger.was_delivered < excluded.was_delivered
                 """,
                 (current.isoformat(), *sorted(INCREMENTAL_SOURCES)),
             )
