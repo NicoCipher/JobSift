@@ -1117,8 +1117,14 @@ def test_manual_csv_crossing_freshness_cutoff_after_journal_is_safely_retried(
     )
     store = DailyBatchStore(repo)
 
-    def plan_then_age(rows_to_export):
-        with repo.connect() as connection:
+    original_verify = store._verify_selected
+    verify_calls = 0
+
+    def verify_then_age(connection, current_batch):
+        nonlocal verify_calls
+        original_verify(connection, current_batch)
+        verify_calls += 1
+        if verify_calls == 1:
             payload = json.loads(
                 connection.execute(
                     "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
@@ -1129,11 +1135,12 @@ def test_manual_csv_crossing_freshness_cutoff_after_journal_is_safely_retried(
                 "UPDATE jobs SET payload_json=? WHERE id=?",
                 (json.dumps(payload), job.id),
             )
-        return plan_csv(path, rows_to_export)
+
+    store._verify_selected = verify_then_age
 
     failed = store.finalize(
         batch.batch_id,
-        plan_then_age,
+        lambda rows_to_export: plan_csv(path, rows_to_export),
         lambda: file_digest(path),
         lambda rows_to_export, before, after: publish_csv(
             path, rows_to_export, before, after
