@@ -67,17 +67,19 @@ def test_explicit_city_state_beats_remote_boilerplate() -> None:
 
 
 @pytest.mark.parametrize(
-    "description",
+    ("description", "expected"),
     [
-        "This is not a remote role.",
-        "This position is not fully remote.",
-        "Remote work is not available for this team.",
-        "The role is onsite, not remote.",
-        "This job is no longer remote.",
+        ("This is not a remote role.", RemoteStatus.UNKNOWN),
+        ("This position is not fully remote.", RemoteStatus.UNKNOWN),
+        ("Remote work is not available for this team.", RemoteStatus.UNKNOWN),
+        ("The role is onsite, not remote.", RemoteStatus.ONSITE),
+        ("This job is no longer remote.", RemoteStatus.UNKNOWN),
     ],
 )
-def test_negated_remote_description_is_not_affirmative(description: str) -> None:
-    assert classify_remote(None, description) is RemoteStatus.UNKNOWN
+def test_negated_remote_description_is_not_affirmative(
+    description: str, expected: RemoteStatus
+) -> None:
+    assert classify_remote(None, description) is expected
 
 
 @pytest.mark.parametrize(
