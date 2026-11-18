@@ -1089,3 +1089,18 @@ def test_live_export_plan_enforces_24h_us_fully_remote_fail_closed_profile():
     assert brief.work_mode.unknown_policy.value == "reject"
     assert brief.posting_freshness.max_age_hours == 24
     assert brief.posting_freshness.unknown_policy.value == "reject"
+
+
+def test_manual_export_artifact_upload_is_success_only_and_short_lived():
+    workflow_path = (
+        Path(__file__).resolve().parents[1] / ".github/workflows/live-jobs.yml"
+    )
+    workflow = workflow_path.read_text(encoding="utf-8")
+    artifact_step = workflow.index("Upload operator-owned CSV export")
+    artifact_config = workflow[artifact_step:]
+
+    assert "if: ${{ inputs.manual_export == true && success() }}" in artifact_config
+    assert "uses: actions/upload-artifact@v4" in artifact_config
+    assert "/tmp/latest-sourcing.csv" in artifact_config
+    assert "/tmp/jobsift-run-result.json" in artifact_config
+    assert "retention-days: 3" in artifact_config
