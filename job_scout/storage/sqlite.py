@@ -385,12 +385,8 @@ class SQLiteRepository:
                 "COALESCE((SELECT first_seen_at FROM jobs "
                 "WHERE source=? AND source_board_id=? AND source_job_id=?),?),?,?,?) "
                 "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                "canonical_url=excluded.canonical_url,"
-                "employer_id=COALESCE(excluded.employer_id,job_identity_ledger.employer_id),"
-                "company=excluded.company,"
-                "last_seen_at=excluded.last_seen_at,"
-                "pruned_at=excluded.pruned_at,"
-                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
+                "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
                 [
                     (
                         job.source,
@@ -455,12 +451,8 @@ class SQLiteRepository:
                     "first_seen_at,last_seen_at,pruned_at,was_delivered) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                    "canonical_url=excluded.canonical_url,"
-                    "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
-                    "company=excluded.company,"
-                    "last_seen_at=excluded.last_seen_at,"
-                    "pruned_at=excluded.pruned_at,"
-                    "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
+                "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
                     (
                         source,
                         board_id,
@@ -625,11 +617,8 @@ class SQLiteRepository:
                         "first_seen_at,last_seen_at,pruned_at,was_delivered) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?) "
                         "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                        "canonical_url=excluded.canonical_url,"
-                        "employer_id=COALESCE(job_identity_ledger.employer_id,excluded.employer_id),"
-                        "last_seen_at=excluded.last_seen_at,"
-                        "pruned_at=excluded.pruned_at,"
-                        "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered)",
+                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
+                "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
                         (
                             job.source,
                             job.source_board_id,
