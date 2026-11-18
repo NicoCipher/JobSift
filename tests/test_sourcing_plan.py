@@ -709,6 +709,8 @@ def test_collector_remote_evidence_flows_into_strict_selection(
     target = sourcing_plan.targets[0].source_target()
 
     class RemoteEvidenceCollector:
+        source = "greenhouse"
+
         def collect(self, requested_target):
             job = fixture_job("greenhouse", requested_target).model_copy(
                 update={
