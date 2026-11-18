@@ -691,7 +691,15 @@ class PostgresRepository(SQLiteRepository):
                     job.last_seen_at.isoformat(),
                     now,
                     state.value,
-                    job.model_dump_json(),
+                    json.dumps(
+                        {
+                            key: value
+                            for key, value in json.loads(job.model_dump_json()).items()
+                            if key not in {"discovered_at", "last_seen_at"}
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
                 )
             )
 
@@ -706,7 +714,14 @@ class PostgresRepository(SQLiteRepository):
             "last_seen_at=excluded.last_seen_at,"
             "last_verified_at=excluded.last_verified_at,"
             "lifecycle=excluded.lifecycle,"
-            "payload_json=excluded.payload_json",
+            "payload_json=CASE "
+            "WHEN (jobs.payload_json::jsonb - 'discovered_at' - 'last_seen_at') "
+            "IS DISTINCT FROM excluded.payload_json::jsonb "
+            "THEN excluded.payload_json "
+            "WHEN jsonb_exists_any(jobs.payload_json::jsonb, "
+            "ARRAY['discovered_at','last_seen_at']) "
+            "THEN (jobs.payload_json::jsonb - 'discovered_at' - 'last_seen_at')::text "
+            "ELSE jobs.payload_json END",
             rows,
         )
 
