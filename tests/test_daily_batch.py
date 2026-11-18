@@ -1078,7 +1078,8 @@ def test_delivery_lookup_helpers_bound_20k_candidate_scope():
 
 def test_manual_csv_stale_before_journal_is_discarded_without_publication(repo, tmp_path):
     path = tmp_path / "manual.csv"
-    job = posting(901, posted_at=NOW - timedelta(hours=23))
+    now = datetime.now(UTC)
+    job = posting(901, posted_at=now - timedelta(hours=23))
     seed(repo, [job])
     batch = prepare(
         repo,
@@ -1087,7 +1088,7 @@ def test_manual_csv_stale_before_journal_is_discarded_without_publication(repo, 
             path,
             [job],
             max_posting_age_hours=24,
-            freshness_evaluated_at=NOW,
+            freshness_evaluated_at=now,
         ),
     )
     with repo.connect() as connection:
@@ -1096,7 +1097,7 @@ def test_manual_csv_stale_before_journal_is_discarded_without_publication(repo, 
                 "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
             ).fetchone()[0]
         )
-        payload["posted_at"] = (NOW - timedelta(hours=25)).isoformat()
+        payload["posted_at"] = (now - timedelta(hours=25)).isoformat()
         connection.execute(
             "UPDATE jobs SET payload_json=? WHERE id=?",
             (json.dumps(payload), job.id),
@@ -1114,7 +1115,8 @@ def test_manual_csv_crossing_freshness_cutoff_after_journal_is_safely_retried(
     repo, tmp_path
 ):
     path = tmp_path / "manual.csv"
-    job = posting(902, posted_at=NOW - timedelta(hours=23))
+    now = datetime.now(UTC)
+    job = posting(902, posted_at=now - timedelta(hours=23))
     seed(repo, [job])
     batch = prepare(
         repo,
@@ -1123,7 +1125,7 @@ def test_manual_csv_crossing_freshness_cutoff_after_journal_is_safely_retried(
             path,
             [job],
             max_posting_age_hours=24,
-            freshness_evaluated_at=NOW,
+            freshness_evaluated_at=now,
         ),
     )
     store = DailyBatchStore(repo)
@@ -1141,7 +1143,7 @@ def test_manual_csv_crossing_freshness_cutoff_after_journal_is_safely_retried(
                     "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
                 ).fetchone()[0]
             )
-            payload["posted_at"] = (NOW - timedelta(hours=25)).isoformat()
+            payload["posted_at"] = (now - timedelta(hours=25)).isoformat()
             connection.execute(
                 "UPDATE jobs SET payload_json=? WHERE id=?",
                 (json.dumps(payload), job.id),
