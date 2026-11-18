@@ -409,6 +409,52 @@ def test_snapshot_includes_live_job_identity_and_posted_at_without_retention_evi
     assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
 
 
+def test_snapshot_scopes_pruned_identity_memory_to_approved_boards(tmp_path) -> None:
+    repository = SQLiteRepository(tmp_path / "inventory.db")
+    now = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+
+    def pruned_job(identifier: str, board_id: str) -> Job:
+        return Job(
+            id=f"{board_id}-{identifier}",
+            source="greenhouse",
+            source_job_id=identifier,
+            source_board_id=board_id,
+            title="Software Engineer",
+            company="Acme Inc",
+            job_url=f"https://boards.greenhouse.io/{board_id}/jobs/{identifier}",
+            canonical_url=f"https://boards.greenhouse.io/{board_id}/jobs/{identifier}",
+            content_fingerprint=f"fingerprint-{board_id}-{identifier}",
+        )
+
+    repository.record_pruned_identities(
+        [
+            pruned_job("retained-1", "acme"),
+            pruned_job("retired-1", "retired-board"),
+        ],
+        pruned_at=now,
+    )
+    registry = ProductionSourceRegistry(
+        registry_id="incremental-approved-board-test",
+        target_universe_git_blob_sha="0" * 40,
+        health_manifest_sha256="1" * 64,
+        health_evidence_updated_at="2026-10-07T00:00:00Z",
+        target_counts_by_source={"greenhouse": 1},
+        targets=[
+            ProductionTarget(
+                target_identity="greenhouse:acme",
+                source="greenhouse",
+                coordinates={"board": "acme"},
+                company_hint="Acme Inc",
+            )
+        ],
+    )
+
+    states = snapshot_incremental_target_state(repository, registry)
+
+    assert len(states) == 1
+    assert states[0].known_source_job_ids == ["retained-1"]
+
+
 
 def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
     posted_at = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
