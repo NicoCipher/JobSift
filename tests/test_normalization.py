@@ -1,3 +1,5 @@
+import pytest
+
 from job_scout.domain.models import EmploymentType, RemoteStatus
 from job_scout.normalization.core import (
     canonicalize_url,
@@ -61,3 +63,36 @@ def test_explicit_city_state_beats_remote_boilerplate() -> None:
         is RemoteStatus.REMOTE
     )
 
+
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "This is not a remote role.",
+        "This position is not fully remote.",
+        "Remote work is not available for this team.",
+        "The role is onsite, not remote.",
+        "This job is no longer remote.",
+    ],
+)
+def test_negated_remote_description_is_not_affirmative(description: str) -> None:
+    assert classify_remote(None, description) is RemoteStatus.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "This is a fully remote role.",
+        "This position is 100% remote.",
+        "The job is remote-only.",
+        "You will work remotely from anywhere in the United States.",
+        "This remote position is open to US candidates.",
+    ],
+)
+def test_explicit_fully_remote_description_is_affirmative(description: str) -> None:
+    assert classify_remote(None, description) is RemoteStatus.REMOTE
+
+
+def test_bare_remote_mention_in_description_is_unknown() -> None:
+    assert classify_remote(None, "Remote collaboration is part of our culture.") is RemoteStatus.UNKNOWN
