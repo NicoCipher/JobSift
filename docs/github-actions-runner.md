@@ -71,6 +71,11 @@ The live workflow now uses
 `config/sourcing_plans/taiwo_software_remote_us_v2.json`, a seven-employer
 source set documented in [Production software sources V2](production-sources-v2.md).
 
+That plan now references `config/search_briefs/taiwo_software_remote_us_v2.json`:
+US market evidence and fully remote status are required, unknown market/work-mode
+values are rejected, and postings must have a trustworthy timestamp no older than
+24 hours. The older v1 brief remains unchanged for historical compatibility.
+
 The seven-employer set is intentionally bounded. It is large enough to test a
 five-job, five-employer batch, but it is not evidence that 25, 50, or 100 distinct
 employers can be supplied reliably. Production expansion should follow measured
