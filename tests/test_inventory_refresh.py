@@ -745,7 +745,9 @@ def test_live_refresh_workflow_enforces_logical_scheduler_contract():
     assert '- cron: "17,47 * * * *"' in workflow
     assert "2,17,32,47" not in workflow
     assert workflow.count("group: jobsift-live-inventory-refresh") == 1
-    assert "python -m job_scout.inventory_refresh schedule-next" in scheduler_block
+    assert "python -m job_scout.inventory_refresh schedule-prepare" in scheduler_block
+    assert "--max-lag-hours 24" in scheduler_block
+    assert "--recovery-output refresh-plan/schedule-recovery.json" in scheduler_block
     assert "mkdir -p refresh-plan" in scheduler_block
     assert "--output refresh-plan/schedule.json" in scheduler_block
     assert 'trigger": "workflow_dispatch"' in scheduler_block
