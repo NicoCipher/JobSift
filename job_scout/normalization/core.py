@@ -118,9 +118,27 @@ def classify_remote(
     if not location and any(_explicit_us_city_state(value) for value in office_location_values):
         return RemoteStatus.ONSITE
 
+    # Structured provider location labels are affirmative. Free-text descriptions
+    # need explicit permission for fully remote work; a bare mention or negation
+    # must not pass a remote-only brief.
     if re.search(r"\bremote\b", structured):
         return RemoteStatus.REMOTE
-    if re.search(r"\bremote\b", body):
+    negated_remote = re.search(
+        r"\b(?:not|isn't|is not|never|no longer|cannot|can't|doesn't|does not)"
+        r"\s+(?:a\s+)?(?:fully\s+)?remote\b"
+        r"|\bremote\s+(?:isn't|is not|is no longer)\b"
+        r"|\bremote\s+work\s+(?:is\s+)?(?:not|no longer)\b",
+        body,
+    )
+    affirmative_remote = re.search(
+        r"\b(?:fully|100\s*%|100\s+percent)\s+remote\b"
+        r"|\bremote[- ]only\b"
+        r"|\bwork(?:ing)?\s+remotely\b"
+        r"|\bremote\s+(?:role|position|job)\b"
+        r"|\b(?:role|position|job)\s+(?:is|will be|remains)\s+(?:fully\s+)?remote\b",
+        body,
+    )
+    if affirmative_remote and not negated_remote:
         return RemoteStatus.REMOTE
     return RemoteStatus.UNKNOWN
 
