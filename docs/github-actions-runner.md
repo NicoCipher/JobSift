@@ -23,7 +23,7 @@ durable state. No always-on server or persistent Render disk is required.
   delivered batches and any batch with an export journal, so uncertain Sheet I/O
   can never be erased.
 - Manual validation mode runs the real sourcing plan and SearchBrief against a
-  fresh local SQLite database with Turso disabled. It returns a `validated`
+  fresh local SQLite database with the Neon/Postgres backend disabled. It returns a `validated`
   result, cannot release or discard, does not alter production delivery history,
   and performs no Google Sheets write. Use it for same-day policy/source checks
   without bypassing the production one-batch-per-day guard.
@@ -42,6 +42,7 @@ same production database and existing workflow concurrency locks.
 Production runs fail before sourcing when `NEON_DATABASE_URL` is unavailable.
 Validation mode is the explicit exception: it switches to an isolated local
 SQLite database and does not touch production state.
+
 ## Required repository secrets
 
 In GitHub repository Settings > Secrets and variables > Actions > Secrets, add:
