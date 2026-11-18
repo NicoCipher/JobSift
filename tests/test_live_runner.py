@@ -840,6 +840,38 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
 
 
 
+def test_empty_manual_export_discards_batch_and_allows_retry():
+    batch = SimpleNamespace(
+        batch_id="empty-batch",
+        generation_id="generation-2",
+        selected_count=0,
+        shortfall=5,
+        request=SimpleNamespace(requested_quota=5),
+    )
+    observed = {}
+    store = SimpleNamespace(
+        discard_prepared=lambda batch_id, *, expected_generation_id: observed.update(
+            batch_id=batch_id,
+            generation_id=expected_generation_id,
+        )
+    )
+
+    result = live_runner._discard_empty_manual_batch(store, batch)
+
+    assert result == {
+        "action": "manual_export_empty",
+        "batch_status": "discarded",
+        "batch_id": "empty-batch",
+        "selected_count": 0,
+        "requested_quota": 5,
+        "shortfall": 5,
+    }
+    assert observed == {
+        "batch_id": "empty-batch",
+        "generation_id": "generation-2",
+    }
+
+
 def test_manual_export_mode_requires_exclusive_operator_run(monkeypatch):
     monkeypatch.setenv("JOBSIFT_DATABASE", "/tmp/jobsift.sqlite3")
     monkeypatch.setenv("JOBSIFT_CSV", "/tmp/jobsift-export.csv")
@@ -1011,6 +1043,9 @@ def test_manual_export_fresh_run_finalizes_local_csv_without_sheet_access(tmp_pa
         batch_id="manual-batch",
         generation_id="generation-1",
         status="prepared",
+        selected_count=1,
+        shortfall=4,
+        request=SimpleNamespace(requested_quota=5),
     )
     delivered = SimpleNamespace(
         batch_id="manual-batch",
