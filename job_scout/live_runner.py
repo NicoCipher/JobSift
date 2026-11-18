@@ -222,6 +222,24 @@ def _materialize_manual_export(
         publish_csv(path, rows, before, after)
 
 
+def _discard_empty_manual_batch(store: DailyBatchStore, batch: DailyBatchResult):
+    """Discard an empty manual batch so it cannot consume the operator's daily slot."""
+    if batch.selected_count != 0:
+        return None
+    store.discard_prepared(
+        batch.batch_id,
+        expected_generation_id=batch.generation_id,
+    )
+    return {
+        "action": "manual_export_empty",
+        "batch_status": "discarded",
+        "batch_id": batch.batch_id,
+        "selected_count": 0,
+        "requested_quota": batch.request.requested_quota,
+        "shortfall": batch.shortfall,
+    }
+
+
 def _candidate_job_ids(
     repository: SQLiteRepository,
     *,
@@ -803,22 +821,10 @@ def run_once(
         source_failures=failures,
     )
     batch = prepare_daily_batch(repository=repository, request=request)
-    if config.manual_export and batch.selected_count == 0:
-        # An empty export is not a successful operator handoff. Remove only this
-        # unpublished generation so the operator can retry after fresh inventory
-        # arrives, rather than locking the local day with an empty delivered batch.
-        store.discard_prepared(
-            batch.batch_id,
-            expected_generation_id=batch.generation_id,
-        )
-        return {
-            "action": "manual_export_empty",
-            "batch_status": "discarded",
-            "batch_id": batch.batch_id,
-            "selected_count": 0,
-            "requested_quota": batch.request.requested_quota,
-            "shortfall": batch.shortfall,
-        }
+    if config.manual_export:
+        empty_export = _discard_empty_manual_batch(store, batch)
+        if empty_export is not None:
+            return empty_export
     if config.manual_export:
         batch = finalize_daily_batch(
             repository=repository,
