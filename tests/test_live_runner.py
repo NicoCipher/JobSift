@@ -1283,3 +1283,27 @@ def test_stale_manual_csv_recovery_preserves_changed_destination(tmp_path):
         store, batch, path
     )
     assert observed == []
+
+def test_manual_export_empty_outcome_exits_successfully(monkeypatch):
+    config = SimpleNamespace(manual_export=True, run_once=True, interval_seconds=1)
+    monkeypatch.setattr(LiveRunnerConfig, "from_env", lambda: config)
+    monkeypatch.setattr(
+        live_runner,
+        "run_once",
+        lambda _: {"action": "manual_export_empty", "batch_status": "discarded"},
+    )
+
+    live_runner.main()
+
+
+def test_manual_export_requires_delivery_for_nonempty_outcome(monkeypatch):
+    config = SimpleNamespace(manual_export=True, run_once=True, interval_seconds=1)
+    monkeypatch.setattr(LiveRunnerConfig, "from_env", lambda: config)
+    monkeypatch.setattr(
+        live_runner,
+        "run_once",
+        lambda _: {"action": "released", "batch_status": "prepared"},
+    )
+
+    with pytest.raises(RuntimeError, match="manual CSV export did not reach delivered status"):
+        live_runner.main()
