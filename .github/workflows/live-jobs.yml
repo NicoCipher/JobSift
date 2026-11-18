@@ -14,7 +14,7 @@ on:
         default: false
         type: boolean
       validate:
-        description: Run isolated sourcing validation only; never touch Turso or Sheets
+        description: Run isolated sourcing validation only; never touch Neon or Sheets
         required: true
         default: false
         type: boolean
