@@ -97,6 +97,34 @@ target blocks preparation rather than silently pretending the source set was
 complete. This is conservative and may become an availability bottleneck as the
 target count grows; change it only with an explicit completeness policy.
 
+## Operator-owned manual CSV export
+
+The same live runner has an explicit `JOBSIFT_MANUAL_EXPORT=true` mode, exposed
+as the **manual_export** input in Actions > Live JobSift. It uses the verified
+production sourcing plan and durable database, but sets the batch destination to
+the runner-owned CSV path. It does not resolve a registered client destination,
+read the legacy Sheet variables, create Google credentials, or call Google Sheets.
+
+Manual export finalizes the frozen batch through the existing journalled CSV
+publisher, then uploads the CSV and run-result JSON as a GitHub Actions artifact.
+Artifacts are named with the workflow run and attempt IDs and retained for three
+days. The artifact is an operator handoff, not a client Sheet publication or
+proof that a client received the jobs.
+
+If a successful CSV export is delivered to the database but artifact upload fails,
+a retry on the same local day rebuilds the missing ephemeral CSV from the
+immutable delivered batch rows before uploading. It does not source a second
+batch or append duplicate rows. The runner's existing production concurrency
+locks remain in force. Manual export cannot be combined with Sheet release,
+discard, validation, or profile-managed delivery.
+
+To use it, open Actions > Live JobSift > Run workflow, set **manual_export=true**,
+leave release/discard/validate false, and choose quota 5 for the first controlled
+run. After success, download the `jobsift-manual-export-*` artifact and inspect
+both the CSV and run-result JSON. A partial/failed source run remains blocked by
+`JOBSIFT_ALLOW_PARTIAL=false`; do not widen the source set or concurrency as part
+of this first export.
+
 ## First pilot
 
 1. Configure the secrets and variables above.
