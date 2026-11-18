@@ -8,6 +8,27 @@ from job_scout.storage.refresh_schedule import InventoryRefreshScheduleStore
 from job_scout.storage.sqlite import SQLiteRepository
 
 
+def test_prepare_scheduled_cohort_recovers_and_resolves_in_one_store(tmp_path):
+    repository = SQLiteRepository(tmp_path / "prepare.sqlite3")
+    store = InventoryRefreshScheduleStore(repository)
+    start = datetime(2026, 10, 4, 1, 17, tzinfo=UTC)
+    first = store.next_due(now=start)
+    assert first.should_run is True
+    assert store.mark_completed(cohort=first.cohort, completed_at=start) is True
+
+    current = start + timedelta(hours=30)
+    prepared = inventory_refresh.prepare_scheduled_cohort(
+        repository=repository,
+        max_lag_hours=24,
+        now=current,
+    )
+
+    assert prepared["should_run"] is True
+    assert prepared["cohort"] == store.cohort_for(current)
+    assert prepared["recovery"]["recovered"] is True
+    assert prepared["recovery"]["skipped_cohorts"] == 29
+
+
 def test_schedule_retries_unfinished_hour_and_noops_after_completion(tmp_path):
     repository = SQLiteRepository(tmp_path / "schedule.sqlite3")
     store = InventoryRefreshScheduleStore(repository)
