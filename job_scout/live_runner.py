@@ -17,7 +17,7 @@ from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
 from job_scout.domain.models import SearchBrief
-from job_scout.export.batch_csv import plan_csv, publish_csv
+from job_scout.export.batch_csv import destination_lock, plan_csv, publish_csv
 from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
@@ -212,11 +212,14 @@ def _materialize_manual_export(
     store: DailyBatchStore, batch: DailyBatchResult, path: Path
 ) -> None:
     """Rebuild a missing ephemeral artifact from the immutable delivered batch."""
-    if batch.status != "delivered" or path.exists():
+    if batch.status != "delivered":
         return
-    rows = store.export_rows(batch.batch_id)
-    before, after = plan_csv(path, rows)
-    publish_csv(path, rows, before, after)
+    with destination_lock(path):
+        if path.exists():
+            return
+        rows = store.export_rows(batch.batch_id)
+        before, after = plan_csv(path, rows)
+        publish_csv(path, rows, before, after)
 
 
 def _candidate_job_ids(
