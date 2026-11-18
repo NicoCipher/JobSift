@@ -300,7 +300,9 @@ jobs:
 
 
   operator-snapshot:
-    if: ${{ always() && needs.plan.result != 'cancelled' }}
+    # A snapshot is useful only when planning succeeded and selected real work.
+    # Still run after persist/delivery failures so partial mutations remain visible.
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.should_run == 'true' }}
     needs:
       - plan
       - persist-and-deliver
