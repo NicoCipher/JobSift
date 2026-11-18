@@ -665,6 +665,9 @@ def test_postgres_bulk_upsert_skips_payload_rewrite_for_timestamp_only_observati
         ).fetchone()
     assert before is not None
     original_payload = before["payload_json"]
+    original_payload_data = json.loads(original_payload)
+    assert "discovered_at" not in original_payload_data
+    assert "last_seen_at" not in original_payload_data
 
     later = now + timedelta(hours=1)
     seen = job.model_copy(update={"discovered_at": later, "last_seen_at": later})
