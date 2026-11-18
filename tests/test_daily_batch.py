@@ -1078,7 +1078,7 @@ def test_delivery_lookup_helpers_bound_20k_candidate_scope():
 
 def test_manual_csv_stale_before_journal_is_discarded_without_publication(repo, tmp_path):
     path = tmp_path / "manual.csv"
-    job = posting(901, posted_at=NOW - timedelta(hours=25))
+    job = posting(901, posted_at=NOW - timedelta(hours=23))
     seed(repo, [job])
     batch = prepare(
         repo,
@@ -1090,6 +1090,17 @@ def test_manual_csv_stale_before_journal_is_discarded_without_publication(repo, 
             freshness_evaluated_at=NOW,
         ),
     )
+    with repo.connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
+            ).fetchone()[0]
+        )
+        payload["posted_at"] = (NOW - timedelta(hours=25)).isoformat()
+        connection.execute(
+            "UPDATE jobs SET payload_json=? WHERE id=?",
+            (json.dumps(payload), job.id),
+        )
 
     failed = finalize(repo, batch)
 
