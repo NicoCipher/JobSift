@@ -49,25 +49,39 @@ def snapshot_incremental_target_state(
         key: {} for key in approved
     }
 
+    approved_pairs = sorted(approved)
+    pair_batches = [
+        approved_pairs[start : start + 400]
+        for start in range(0, len(approved_pairs), 400)
+    ]
+
     with repository.connect() as connection:
-        # Current jobs are the authoritative live crawler memory. They are not
-        # copied to the long-term identity ledger until pruning, and normal
-        # upserts intentionally clear job_retention_evidence.
+        def rows_for_approved_boards(table: str, columns: str):
+            rows = []
+            for pairs in pair_batches:
+                placeholders = ",".join("(?,?)" for _ in pairs)
+                parameters = tuple(value for pair in pairs for value in pair)
+                rows.extend(
+                    connection.execute(
+                        f"SELECT {columns} FROM {table} "
+                        f"WHERE (source,source_board_id) IN ({placeholders})",
+                        parameters,
+                    ).fetchall()
+                )
+            return rows
+
+        # Current jobs are the authoritative live crawler memory. Restrict reads
+        # to approved boards so retired targets do not consume planning bandwidth.
         if getattr(connection, "is_postgres", False):
             # Planning only needs the provider identity plus posted_at. Let Neon
             # extract that scalar instead of sending every full job description.
-            active_rows = connection.execute(
-                "SELECT source,source_board_id,source_job_id,"
-                "payload_json::jsonb->>'posted_at' AS posted_at "
-                "FROM jobs "
-                "WHERE source IN (?,?) "
-                "ORDER BY source,source_board_id,source_job_id",
-                tuple(sorted(INCREMENTAL_SOURCES)),
-            ).fetchall()
+            active_rows = rows_for_approved_boards(
+                "jobs",
+                "source,source_board_id,source_job_id,"
+                "payload_json::jsonb->>'posted_at' AS posted_at",
+            )
             for row in active_rows:
                 key = (row["source"], row["source_board_id"])
-                if key not in approved:
-                    continue
                 source_job_id = row["source_job_id"]
                 known[key].add(source_job_id)
                 if row["posted_at"]:
@@ -75,17 +89,12 @@ def snapshot_incremental_target_state(
                         row["posted_at"]
                     )
         else:
-            active_rows = connection.execute(
-                "SELECT source,source_board_id,source_job_id,payload_json "
-                "FROM jobs "
-                "WHERE source IN (?,?) "
-                "ORDER BY source,source_board_id,source_job_id",
-                tuple(sorted(INCREMENTAL_SOURCES)),
-            ).fetchall()
+            active_rows = rows_for_approved_boards(
+                "jobs",
+                "source,source_board_id,source_job_id,payload_json",
+            )
             for row in active_rows:
                 key = (row["source"], row["source_board_id"])
-                if key not in approved:
-                    continue
                 source_job_id = row["source_job_id"]
                 known[key].add(source_job_id)
                 job = Job.model_validate_json(row["payload_json"])
@@ -94,17 +103,14 @@ def snapshot_incremental_target_state(
 
         # The ledger remembers pruned identities, preventing repeated hydration
         # of postings whose age was already unknown/stale in earlier runs.
-        rows = connection.execute(
-            "SELECT source,source_board_id,source_job_id "
-            "FROM job_identity_ledger "
-            "WHERE source IN (?,?) "
-            "ORDER BY source,source_board_id,source_job_id",
-            tuple(sorted(INCREMENTAL_SOURCES)),
-        ).fetchall()
+        # Its query is scoped to approved board pairs, not every historical row.
+        rows = rows_for_approved_boards(
+            "job_identity_ledger",
+            "source,source_board_id,source_job_id",
+        )
         for row in rows:
             key = (row["source"], row["source_board_id"])
-            if key in approved:
-                known[key].add(row["source_job_id"])
+            known[key].add(row["source_job_id"])
 
     return [
         IncrementalTargetState(

@@ -409,6 +409,52 @@ def test_snapshot_includes_live_job_identity_and_posted_at_without_retention_evi
     assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
 
 
+def test_snapshot_scopes_pruned_identity_memory_to_approved_boards(tmp_path) -> None:
+    repository = SQLiteRepository(tmp_path / "inventory.db")
+    now = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+
+    def pruned_job(identifier: str, board_id: str) -> Job:
+        return Job(
+            id=f"{board_id}-{identifier}",
+            source="greenhouse",
+            source_job_id=identifier,
+            source_board_id=board_id,
+            title="Software Engineer",
+            company="Acme Inc",
+            job_url=f"https://boards.greenhouse.io/{board_id}/jobs/{identifier}",
+            canonical_url=f"https://boards.greenhouse.io/{board_id}/jobs/{identifier}",
+            content_fingerprint=f"fingerprint-{board_id}-{identifier}",
+        )
+
+    repository.record_pruned_identities(
+        [
+            pruned_job("retained-1", "acme"),
+            pruned_job("retired-1", "retired-board"),
+        ],
+        pruned_at=now,
+    )
+    registry = ProductionSourceRegistry(
+        registry_id="incremental-approved-board-test",
+        target_universe_git_blob_sha="0" * 40,
+        health_manifest_sha256="1" * 64,
+        health_evidence_updated_at="2026-10-07T00:00:00Z",
+        target_counts_by_source={"greenhouse": 1},
+        targets=[
+            ProductionTarget(
+                target_identity="greenhouse:acme",
+                source="greenhouse",
+                coordinates={"board": "acme"},
+                company_hint="Acme Inc",
+            )
+        ],
+    )
+
+    states = snapshot_incremental_target_state(repository, registry)
+
+    assert len(states) == 1
+    assert states[0].known_source_job_ids == ["retained-1"]
+
+
 
 def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
     posted_at = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
@@ -424,8 +470,8 @@ def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
     class Connection:
         is_postgres = True
 
-        def execute(self, statement, _parameters=()):
-            queries.append(statement)
+        def execute(self, statement, parameters=()):
+            queries.append((statement, tuple(parameters)))
             if "FROM jobs" in statement:
                 return Cursor(
                     [
@@ -437,7 +483,15 @@ def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
                         }
                     ]
                 )
-            return Cursor([])
+            return Cursor(
+                [
+                    {
+                        "source": "greenhouse",
+                        "source_board_id": "acme",
+                        "source_job_id": "pruned-2",
+                    }
+                ]
+            )
 
         def __enter__(self):
             return self
@@ -467,8 +521,17 @@ def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
 
     states = snapshot_incremental_target_state(Repository(), registry)
 
-    assert states[0].known_source_job_ids == ["1"]
+    assert states[0].known_source_job_ids == ["1", "pruned-2"]
     assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
-    jobs_query = next(statement for statement in queries if "FROM jobs" in statement)
+    jobs_query, jobs_parameters = next(
+        query for query in queries if "FROM jobs" in query[0]
+    )
+    ledger_query, ledger_parameters = next(
+        query for query in queries if "FROM job_identity_ledger" in query[0]
+    )
     assert "payload_json::jsonb->>'posted_at'" in jobs_query
     assert "source_job_id,payload_json FROM jobs" not in jobs_query
+    assert "WHERE (source,source_board_id) IN ((?,?))" in jobs_query
+    assert "WHERE (source,source_board_id) IN ((?,?))" in ledger_query
+    assert jobs_parameters == ("greenhouse", "acme")
+    assert ledger_parameters == ("greenhouse", "acme")
