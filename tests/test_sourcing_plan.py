@@ -706,8 +706,6 @@ def test_collector_remote_evidence_flows_into_strict_selection(
     (tmp_path / "brief.json").write_text(
         json.dumps(brief_payload), encoding="utf-8"
     )
-    target = sourcing_plan.targets[0].source_target()
-
     class RemoteEvidenceCollector:
         source = "greenhouse"
 
