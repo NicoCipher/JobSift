@@ -375,6 +375,8 @@ class SQLiteRepository:
                 if job.posted_at is not None
             ],
         )
+        # The collector reads the identity triple only. Preserve the first
+        # descriptive snapshot and only promote delivery from 0 to 1 on conflicts.
         ledger_values = [job for job in values if job.source in INCREMENTAL_SOURCES]
         if ledger_values:
             connection.executemany(
@@ -451,8 +453,8 @@ class SQLiteRepository:
                     "first_seen_at,last_seen_at,pruned_at,was_delivered) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
-                "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
+                    "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
+                    "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
                     (
                         source,
                         board_id,
@@ -617,8 +619,8 @@ class SQLiteRepository:
                         "first_seen_at,last_seen_at,pruned_at,was_delivered) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?) "
                         "ON CONFLICT(source,source_board_id,source_job_id) DO UPDATE SET "
-                "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
-                "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
+                        "was_delivered=MAX(job_identity_ledger.was_delivered,excluded.was_delivered) "
+                        "WHERE job_identity_ledger.was_delivered < excluded.was_delivered",
                         (
                             job.source,
                             job.source_board_id,
