@@ -1134,7 +1134,10 @@ def test_manual_export_artifact_upload_is_success_only_and_short_lived():
     artifact_step = workflow.index("Upload operator-owned CSV export")
     artifact_config = workflow[artifact_step:]
 
-    assert "if: ${{ inputs.manual_export == true && success() }}" in artifact_config
+    assert "Verify manual export artifacts" in workflow
+    assert "test -s /tmp/latest-sourcing.csv" in workflow
+    assert "test -s /tmp/jobsift-run-result.json" in workflow
+    assert "steps.verify-manual-export.outputs.export_ready == 'true'" in artifact_config
     assert "uses: actions/upload-artifact@v4" in artifact_config
     assert "/tmp/latest-sourcing.csv" in artifact_config
     assert "/tmp/jobsift-run-result.json" in artifact_config
