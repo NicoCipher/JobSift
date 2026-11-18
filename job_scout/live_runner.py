@@ -86,6 +86,18 @@ class LiveRunnerConfig:
     source_before_delivery: bool = True
     manual_export: bool = False
 
+    def __post_init__(self) -> None:
+        if self.manual_export and (
+            self.auto_release
+            or self.discard_prepared
+            or self.validation_only
+            or self.profile_managed
+        ):
+            raise ValueError(
+                "manual export cannot be combined with Sheet release, discard, "
+                "validation, or profile-managed delivery"
+            )
+
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
         timezone = os.getenv("JOBSIFT_TIMEZONE", "Africa/Lagos").strip() or "Africa/Lagos"
@@ -102,9 +114,14 @@ class LiveRunnerConfig:
         if manual_export and (auto_release or discard_prepared or profile_managed):
             raise ValueError("manual export cannot be combined with Sheet release, discard, or profile-managed delivery")
         destination_id = os.getenv("JOBSIFT_DESTINATION_ID", "").strip() or None
-        spreadsheet_id = os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
-        sheet_tab = os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
-        if (spreadsheet_id is None) != (sheet_tab is None):
+        # Manual CSV export must ignore inherited Sheet settings entirely.
+        spreadsheet_id = (
+            None if manual_export else os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
+        )
+        sheet_tab = (
+            None if manual_export else os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
+        )
+        if not manual_export and (spreadsheet_id is None) != (sheet_tab is None):
             raise ValueError(
                 "JOBSIFT_SHEET_ID and JOBSIFT_SHEET_TAB must be configured together"
             )
@@ -473,6 +490,19 @@ def run_once(
     )
 
     while unresolved is not None:
+        # An empty prepared manual batch must not occupy the daily idempotency
+        # slot. Discard with the batch generation so a concurrent replacement
+        # cannot be removed accidentally. Journaled publication remains guarded
+        # by the store's normal discard checks.
+        if (
+            config.manual_export
+            and unresolved.status == "prepared"
+            and unresolved.selected_count == 0
+        ):
+            empty_result = _discard_empty_manual_batch(store, unresolved)
+            if empty_result is not None:
+                return empty_result
+
         # The legacy Live JobSift release workflow predates delivery profiles.
         # If it is releasing a batch for a destination that now has a profile,
         # adopt that profile for this release so pause/quota/reconciliation
