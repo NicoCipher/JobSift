@@ -519,14 +519,17 @@ def run_once(
         # A stale manual CSV batch can be discarded only if its generation-bound
         # journal and the locked destination digest prove that publication never
         # happened. Google Sheets and changed CSV destinations still reconcile.
-        if config.manual_export and _is_stale_release_failure(unresolved):
-            if _discard_stale_manual_export_if_unpublished(
+        if (
+            config.manual_export
+            and _is_stale_release_failure(unresolved)
+            and _discard_stale_manual_export_if_unpublished(
                 store, unresolved, config.csv_path.resolve()
-            ):
-                unresolved = store.recover_unresolved(brief.client_id, destination)
-                if unresolved is None:
-                    break
-                continue
+            )
+        ):
+            unresolved = store.recover_unresolved(brief.client_id, destination)
+            if unresolved is None:
+                break
+            continue
 
         # An empty prepared manual batch must not occupy the daily idempotency
         # slot. Discard with the batch generation so a concurrent replacement
