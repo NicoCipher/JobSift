@@ -130,7 +130,7 @@ def classify_remote(
     )
     affirmative_remote = re.search(
         r"\b(?:this|the)\s+(?:role|position|job|opportunity)\s+"
-        r"(?:is|will be|remains)\s+(?:fully|100\s*%|100\s+percent)\s+remote\b"
+        r"(?:is|will be|remains)\s+(?:(?:fully|100\s*%|100\s+percent)\s+remote|remote[- ]only)\b"
         r"|\b(?:this|the)\s+(?:role|position|job|opportunity)\s+is\s+remote[- ]only\b"
         r"|\b(?:you will|you can|you may)\s+work(?:ing)?\s+"
         r"(?:fully\s+)?remotely(?:\s+from\s+anywhere)?\b"
