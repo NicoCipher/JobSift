@@ -139,3 +139,18 @@ def test_third_party_remote_arrangement_does_not_classify_role(
     description: str,
 ) -> None:
     assert classify_remote(None, description) is RemoteStatus.UNKNOWN
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("This is a fully remote software engineering position.", RemoteStatus.REMOTE),
+        ("You can work remotely on Fridays.", RemoteStatus.UNKNOWN),
+        ("You will work fully remotely.", RemoteStatus.REMOTE),
+        ("You will work remotely from anywhere.", RemoteStatus.REMOTE),
+        ("This is not a fully remote role.", RemoteStatus.UNKNOWN),
+    ],
+)
+def test_fully_remote_evidence_requires_unrestricted_role_or_applicant_permission(
+    description: str, expected: RemoteStatus
+) -> None:
+    assert classify_remote(None, description) is expected
