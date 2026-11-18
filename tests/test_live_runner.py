@@ -948,3 +948,16 @@ def test_manual_export_replay_uses_csv_destination_without_sheet_lookup(tmp_path
     assert observed["destination"] == str(csv_path.resolve())
     assert csv_path.is_file()
     assert b"https://example.com/careers/123" in csv_path.read_bytes()
+
+
+def test_manual_export_runner_fails_closed_when_batch_is_not_delivered(monkeypatch):
+    config = SimpleNamespace(manual_export=True, run_once=True)
+    monkeypatch.setattr(LiveRunnerConfig, "from_env", lambda: config)
+    monkeypatch.setattr(
+        live_runner,
+        "run_once",
+        lambda _: {"action": "manual_export_failed", "batch_status": "failed"},
+    )
+
+    with pytest.raises(RuntimeError, match="manual CSV export did not reach delivered status"):
+        live_runner.main()
