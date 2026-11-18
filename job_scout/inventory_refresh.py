@@ -939,6 +939,25 @@ def _write_json(path: Path, value) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+
+def prepare_scheduled_cohort(
+    *,
+    repository: SQLiteRepository,
+    max_lag_hours: int = 24,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Recover obsolete schedule slots and resolve the next cohort in one process."""
+    store = InventoryRefreshScheduleStore(repository)
+    recovery = store.recover_stale_backlog(max_lag_hours=max_lag_hours, now=now)
+    decision = store.next_due(now=now)
+    return {
+        "should_run": decision.should_run,
+        "cohort": decision.cohort,
+        "current_cohort": decision.current_cohort,
+        "last_completed_cohort": decision.last_completed_cohort,
+        "recovery": recovery,
+    }
+
 def complete_scheduled_cohort(
     *,
     repository: SQLiteRepository,
@@ -1284,6 +1303,12 @@ def main() -> None:
     schedule_recover.add_argument("--output", type=Path, required=True)
     schedule_recover.add_argument("--max-lag-hours", type=int, default=24)
 
+    schedule_prepare = commands.add_parser("schedule-prepare")
+    schedule_prepare.add_argument("--database", type=Path, required=True)
+    schedule_prepare.add_argument("--output", type=Path, required=True)
+    schedule_prepare.add_argument("--recovery-output", type=Path, required=True)
+    schedule_prepare.add_argument("--max-lag-hours", type=int, default=24)
+
     schedule_next = commands.add_parser("schedule-next")
     schedule_next.add_argument("--database", type=Path, required=True)
     schedule_next.add_argument("--output", type=Path, required=True)
@@ -1303,6 +1328,19 @@ def main() -> None:
                 max_lag_hours=args.max_lag_hours
             )
             _write_json(args.output, payload)
+            print(json.dumps(payload, sort_keys=True))
+            return
+
+        if args.command == "schedule-prepare":
+            args.database.parent.mkdir(parents=True, exist_ok=True)
+            repository = create_repository(args.database)
+            payload = prepare_scheduled_cohort(
+                repository=repository,
+                max_lag_hours=args.max_lag_hours,
+            )
+            recovery = payload.pop("recovery")
+            _write_json(args.output, payload)
+            _write_json(args.recovery_output, recovery)
             print(json.dumps(payload, sort_keys=True))
             return
 
