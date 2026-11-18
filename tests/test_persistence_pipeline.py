@@ -126,6 +126,8 @@ def test_stale_inventory_deletes_undelivered_and_compacts_delivered_jobs(tmp_pat
     delivered = _stored_job("old-delivered", posted_at=old)
     repo.upsert_job(undelivered)
     repo.upsert_job(delivered)
+    # Seed an undelivered identity, then verify pruning promotes it after export.
+    repo.record_pruned_identities([delivered], pruned_at=now - timedelta(minutes=1))
     repo.mark_exported(delivered.id, "client", "gsheet://sheet/Sheet1")
 
     result = repo.prune_stale_inventory(retention_hours=72, now=now)
@@ -177,3 +179,53 @@ def test_prune_skips_already_compacted_closed_payloads(tmp_path) -> None:
             "SELECT lifecycle FROM jobs WHERE id=?", (delivered.id,)
         ).fetchone()[0] == "closed"
 
+
+
+def test_repeated_identity_prune_does_not_rewrite_ledger_snapshot(tmp_path) -> None:
+    repo = SQLiteRepository(tmp_path / "jobs.db")
+    now = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
+    posting = _stored_job("repeat-prune", posted_at=now - timedelta(hours=73))
+    repo.upsert_job(posting)
+    repo.record_pruned_identities([posting], pruned_at=now)
+
+    with repo.connect() as connection:
+        connection.execute(
+            "CREATE TABLE ledger_update_probe (updates INTEGER NOT NULL)"
+        )
+        connection.execute("INSERT INTO ledger_update_probe VALUES (0)")
+        connection.execute(
+            """
+            CREATE TRIGGER count_identity_ledger_updates
+            AFTER UPDATE ON job_identity_ledger
+            BEGIN
+                UPDATE ledger_update_probe SET updates=updates+1;
+            END
+            """
+        )
+
+    later = posting.model_copy(
+        update={"last_seen_at": now + timedelta(hours=1)}
+    )
+    repo.record_pruned_identities(
+        [later],
+        pruned_at=now + timedelta(hours=1),
+    )
+
+    with repo.connect() as connection:
+        ledger = connection.execute(
+            "SELECT source,source_board_id,source_job_id,last_seen_at,pruned_at,was_delivered "
+            "FROM job_identity_ledger"
+        ).fetchone()
+        updates = connection.execute(
+            "SELECT updates FROM ledger_update_probe"
+        ).fetchone()[0]
+
+    assert (
+        ledger["source"],
+        ledger["source_board_id"],
+        ledger["source_job_id"],
+    ) == ("greenhouse", "acme", "repeat-prune")
+    assert ledger["last_seen_at"] == posting.last_seen_at.isoformat()
+    assert ledger["pruned_at"] == now.isoformat()
+    assert ledger["was_delivered"] == 0
+    assert updates == 0
