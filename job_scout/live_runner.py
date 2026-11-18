@@ -969,6 +969,8 @@ def main() -> None:
         try:
             result = run_once(config)
             print(json.dumps(result, sort_keys=True), flush=True)
+            if config.manual_export and result.get("batch_status") != "delivered":
+                raise RuntimeError("manual CSV export did not reach delivered status")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(
                 json.dumps(
