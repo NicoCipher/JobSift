@@ -133,9 +133,8 @@ def classify_remote(
     affirmative_remote = re.search(
         r"\b(?:fully|100\s*%|100\s+percent)\s+remote\b"
         r"|\bremote[- ]only\b"
-        r"|\bwork(?:ing)?\s+remotely\b"
-        r"|\bremote\s+(?:role|position|job)\b"
-        r"|\b(?:role|position|job)\s+(?:is|will be|remains)\s+(?:fully\s+)?remote\b",
+        r"|\bwork(?:ing)?\s+fully\s+remotely\b"
+        r"|\bwork(?:ing)?\s+remotely\s+from\s+anywhere\b",
         body,
     )
     if affirmative_remote and not negated_remote:
