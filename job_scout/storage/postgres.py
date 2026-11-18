@@ -691,7 +691,15 @@ class PostgresRepository(SQLiteRepository):
                     job.last_seen_at.isoformat(),
                     now,
                     state.value,
-                    job.model_dump_json(exclude={"discovered_at", "last_seen_at"}),
+                    json.dumps(
+                        {
+                            key: value
+                            for key, value in json.loads(job.model_dump_json()).items()
+                            if key not in {"discovered_at", "last_seen_at"}
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
                 )
             )
 
