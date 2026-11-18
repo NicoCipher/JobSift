@@ -300,9 +300,10 @@ jobs:
 
 
   operator-snapshot:
-    if: ${{ always() && needs.plan.result != 'cancelled' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.collect.result == 'success' && needs.persist-and-deliver.result == 'success' }}
     needs:
       - plan
+      - collect
       - persist-and-deliver
     runs-on: ubuntu-latest
     timeout-minutes: 5
