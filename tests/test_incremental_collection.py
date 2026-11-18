@@ -424,8 +424,8 @@ def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
     class Connection:
         is_postgres = True
 
-        def execute(self, statement, _parameters=()):
-            queries.append(statement)
+        def execute(self, statement, parameters=()):
+            queries.append((statement, tuple(parameters)))
             if "FROM jobs" in statement:
                 return Cursor(
                     [
@@ -437,7 +437,15 @@ def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
                         }
                     ]
                 )
-            return Cursor([])
+            return Cursor(
+                [
+                    {
+                        "source": "greenhouse",
+                        "source_board_id": "acme",
+                        "source_job_id": "pruned-2",
+                    }
+                ]
+            )
 
         def __enter__(self):
             return self
@@ -467,8 +475,17 @@ def test_postgres_incremental_snapshot_reads_posted_at_scalar_only():
 
     states = snapshot_incremental_target_state(Repository(), registry)
 
-    assert states[0].known_source_job_ids == ["1"]
+    assert states[0].known_source_job_ids == ["1", "pruned-2"]
     assert states[0].active_posted_at_by_source_job_id == {"1": posted_at}
-    jobs_query = next(statement for statement in queries if "FROM jobs" in statement)
+    jobs_query, jobs_parameters = next(
+        query for query in queries if "FROM jobs" in query[0]
+    )
+    ledger_query, ledger_parameters = next(
+        query for query in queries if "FROM job_identity_ledger" in query[0]
+    )
     assert "payload_json::jsonb->>'posted_at'" in jobs_query
     assert "source_job_id,payload_json FROM jobs" not in jobs_query
+    assert "WHERE (source,source_board_id) IN ((?,?))" in jobs_query
+    assert "WHERE (source,source_board_id) IN ((?,?))" in ledger_query
+    assert jobs_parameters == ("greenhouse", "acme")
+    assert ledger_parameters == ("greenhouse", "acme")
