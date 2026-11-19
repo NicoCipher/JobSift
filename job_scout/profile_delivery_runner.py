@@ -170,6 +170,7 @@ def run_active_profiles(
                     destination_id=profile.destination_id,
                     inventory_retention_hours=retention_hours,
                     profile_managed=True,
+                    max_profile_batch_size=50,
                     source_before_delivery=False,
                 ),
                 repository=repository,
