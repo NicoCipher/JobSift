@@ -211,6 +211,7 @@ class SourceDiscoveryStore:
                     (cutoff, cutoff, current, batch_size),
                 ).rowcount
                 deleted += max(removed, 0)
+                connection.commit()
                 if removed <= 0:
                     break
 
