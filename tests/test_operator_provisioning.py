@@ -43,7 +43,7 @@ def create_payload():
             "work_modes": ["remote"],
             "exclusions": ["Director"],
             "preferred_terms": ["Python"],
-            "freshness_hours": 48,
+            "freshness_hours": 72,
         },
         "daily_limit": 250,
         "delivery_mode": "review",
@@ -274,10 +274,10 @@ def test_create_client_rejects_daily_limit_above_product_ceiling(tmp_path):
 
 
 
-def test_create_client_rejects_freshness_above_48_hours(tmp_path):
+def test_create_client_rejects_freshness_above_72_hours(tmp_path):
     repo = SQLiteRepository(tmp_path / "jobs.db")
     payload = create_payload()
-    payload["criteria"]["freshness_hours"] = 49
+    payload["criteria"]["freshness_hours"] = 73
 
     with pytest.raises(ValueError):
         process_request(
