@@ -4,14 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from job_scout.storage.source_discovery import SourceDiscoveryStore
-from job_scout.storage.sqlite import SQLiteRepository
-
 
 NOW = datetime(2026, 11, 19, 10, 0, tzinfo=UTC)
 
 
-def _observe(store: SourceDiscoveryStore, identity: str, observed_at: datetime) -> None:
+def _observe(store, identity: str, observed_at: datetime) -> None:
     store.observe_candidate(
         target_identity=identity,
         source="greenhouse",
@@ -26,7 +23,7 @@ def _observe(store: SourceDiscoveryStore, identity: str, observed_at: datetime) 
     )
 
 
-def _record_health(store: SourceDiscoveryStore, identity: str, checked_at: datetime) -> None:
+def _record_health(store, identity: str, checked_at: datetime) -> None:
     store.record_health(
         target_identity=identity,
         checked_at=checked_at,
@@ -42,6 +39,9 @@ def _record_health(store: SourceDiscoveryStore, identity: str, checked_at: datet
 
 
 def test_prune_inactive_targets_cascades_only_stale_never_admitted_evidence(tmp_path):
+    from job_scout.storage.source_discovery import SourceDiscoveryStore
+    from job_scout.storage.sqlite import SQLiteRepository
+
     repository = SQLiteRepository(tmp_path / "targets.sqlite")
     store = SourceDiscoveryStore(repository)
 
@@ -98,6 +98,9 @@ def test_prune_inactive_targets_cascades_only_stale_never_admitted_evidence(tmp_
 
 
 def test_prune_inactive_targets_preserves_due_again_candidates_and_recent_health(tmp_path):
+    from job_scout.storage.source_discovery import SourceDiscoveryStore
+    from job_scout.storage.sqlite import SQLiteRepository
+
     repository = SQLiteRepository(tmp_path / "protected.sqlite")
     store = SourceDiscoveryStore(repository)
     old = NOW - timedelta(days=45)
@@ -135,6 +138,9 @@ def test_prune_inactive_targets_preserves_due_again_candidates_and_recent_health
 def test_prune_inactive_targets_rejects_invalid_limits(
     tmp_path, retention_days, batch_size
 ):
+    from job_scout.storage.source_discovery import SourceDiscoveryStore
+    from job_scout.storage.sqlite import SQLiteRepository
+
     store = SourceDiscoveryStore(SQLiteRepository(tmp_path / "invalid.sqlite"))
     with pytest.raises(ValueError):
         store.prune_inactive_targets(
