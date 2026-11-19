@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-
 NOW = datetime(2026, 11, 19, 10, 0, tzinfo=UTC)
 
 
