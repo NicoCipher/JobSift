@@ -151,7 +151,7 @@ function validatePayload(operation: string, raw: unknown): Record<string, unknow
     workModes.some((mode) => !["remote", "hybrid", "onsite"].includes(mode.toLowerCase())) ||
     !Number.isInteger(freshnessHours) ||
     freshnessHours < 1 ||
-    freshnessHours > 48 ||
+    freshnessHours > 72 ||
     !Number.isInteger(dailyLimit) ||
     dailyLimit < 1 ||
     dailyLimit > 2000 ||
