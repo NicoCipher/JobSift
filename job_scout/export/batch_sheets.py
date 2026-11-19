@@ -153,7 +153,8 @@ class GoogleSheetsGateway:
                 response.raise_for_status()
             except Exception as error:
                 raise OSError("Google Sheets worksheet creation failed") from error
-        existing = self.read_rows(spreadsheet_id, tab)
+        # Read the entire used range: the legacy A:I reader can miss cells farther right.
+        existing = self.read_table_rows(spreadsheet_id, tab)
         if existing:
             return
         a1 = "'" + tab.replace("'", "''") + "'!A1"
