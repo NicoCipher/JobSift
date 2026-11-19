@@ -21,7 +21,7 @@ The optional title prefilter uses configured target roles and the same existing 
 
 `releasedDate` means the date the public posting was released, not the original requisition creation date. Official documentation notes that changing published content requires reposting. A recent release must not be described as proof that the requisition itself is newly created.
 
-Only timezone-bearing timestamps become posting-age evidence. Missing or naive values remain unknown. Never substitute discovery, update, or collection times. Existing <=24h delivery freshness and unknown-age rejection remain authoritative.
+Only timezone-bearing timestamps become posting-age evidence. Missing or naive values remain unknown. Never substitute discovery, update, or collection times. The active client delivery freshness limit is 72 hours; unknown-age rejection remains authoritative.
 
 Country ISO codes normalize to deterministic full names; unmapped values do not assert eligibility. Structured remote/workplace evidence is preserved. `remote=false` alone does not prove onsite, and unknown metadata remains unknown. Descriptions and all original provider fields needed for provenance stay within normalized Job metadata.
 
