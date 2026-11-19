@@ -170,6 +170,57 @@ class SourceDiscoveryStore:
             ).rowcount
         return counts
 
+    def prune_inactive_targets(
+        self,
+        *,
+        now: datetime | None = None,
+        retention_days: int = 30,
+        batch_size: int = 250,
+    ) -> dict[str, int]:
+        """Expire stale candidates that have never passed health-gated admission.
+
+        Admitted targets and recently discovered/rechecked candidates are never
+        eligible. Deleting a target cascades only its own discovery evidence;
+        provider identity and client-delivery ledgers are unrelated and untouched.
+        Bounded batches limit lock duration and write amplification.
+        """
+        if retention_days < 1:
+            raise ValueError("target retention must be at least one day")
+        if batch_size < 1:
+            raise ValueError("target retention batch size must be positive")
+
+        current_dt = _aware(now or datetime.now(UTC))
+        current = current_dt.isoformat()
+        cutoff = (current_dt - timedelta(days=retention_days)).isoformat()
+        deleted = 0
+
+        with self.repository.connect() as connection:
+            while True:
+                _begin_write(connection)
+                removed = connection.execute(
+                    "DELETE FROM source_discovery_targets "
+                    "WHERE target_identity IN ("
+                    "SELECT target_identity FROM source_discovery_targets "
+                    "WHERE admitted=0 AND admitted_at IS NULL "
+                    "AND last_discovered_at<? "
+                    "AND (latest_health_checked_at IS NULL "
+                    "OR latest_health_checked_at<?) "
+                    "AND (next_health_check_at IS NULL OR next_health_check_at<=?) "
+                    "ORDER BY last_discovered_at,target_identity LIMIT ?"
+                    ")",
+                    (cutoff, cutoff, current, batch_size),
+                ).rowcount
+                deleted += max(removed, 0)
+                connection.commit()
+                if removed <= 0:
+                    break
+
+        return {
+            "deleted_inactive_never_admitted_targets": deleted,
+            "retention_days": retention_days,
+            "batch_size": batch_size,
+        }
+
     def get_cursor(self, *, discovery_source: str, query_id: str) -> dict[str, Any] | None:
         with self.repository.connect() as connection:
             row = connection.execute(

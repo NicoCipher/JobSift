@@ -47,6 +47,14 @@ jobs:
             --output maintenance-result/retention.json
           cat maintenance-result/retention.json >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Expire inactive source-discovery candidates
+        run: |
+          python scripts/prune_source_discovery.py \
+            --database "$JOBSIFT_DATABASE" \
+            --retention-days 30 \
+            --output maintenance-result/source-discovery-retention.json
+          cat maintenance-result/source-discovery-retention.json >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
