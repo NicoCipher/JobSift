@@ -117,7 +117,7 @@ At scale:
 4. upload normalized shard artifacts;
 5. fan in to one aggregation job;
 6. persist/dedupe/match through one authoritative writer;
-7. apply the 24-hour freshness gate and client delivery policies;
+7. apply the configured 72-hour client freshness gate and client delivery policies;
 8. freeze/release the client batch through the existing delivery journal.
 
 This avoids concurrent Turso Sync writers and prevents a single 2,000-target
@@ -130,7 +130,7 @@ At minimum record:
 - source targets attempted/succeeded/failed;
 - raw postings received;
 - postings with trustworthy age evidence;
-- postings <=24h old;
+- postings <=72h old;
 - full SearchBrief matches;
 - distinct eligible employers;
 - practical duplicates suppressed;
