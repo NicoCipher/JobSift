@@ -37,7 +37,7 @@ The owner should not need to understand GitHub Actions, Neon, workflow names, UU
 - Information disclosed in Advanced must remain discoverable by clear labels; truly hazardous recovery must be labelled as such.
 
 ## Resource guardrails
-The frontend must never trigger crawling, Sheet delivery, database writes or expensive state synchronization just by rendering or showing a status card. Manual sourcing and recovery can consume Neon transfer and GitHub Actions usage; warn before running them. Backend freshness <=24h, strict matching, dedupe, quotas, safe Sheet retries, verified capabilities and owner authentication remain authoritative.
+The frontend must never trigger crawling, Sheet delivery, database writes or expensive state synchronization just by rendering or showing a status card. Manual sourcing and recovery can consume Neon transfer and GitHub Actions usage; warn before running them. Backend freshness <=72h, strict matching, dedupe, quotas, safe Sheet retries, verified capabilities and owner authentication remain authoritative.
 
 ## Checks on every UI PR
 - Test: normal verified, pending review, paused, failed, incomplete/unknown, empty client list, uncertain delivery, and API failure.

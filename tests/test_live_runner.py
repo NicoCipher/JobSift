@@ -1106,7 +1106,7 @@ def test_manual_export_fresh_run_finalizes_local_csv_without_sheet_access(tmp_pa
     assert captured["finalize"] == ("manual-batch", "generation-1")
 
 
-def test_live_export_plan_enforces_5_day_us_fully_remote_fail_closed_profile():
+def test_live_export_plan_enforces_3_day_us_fully_remote_fail_closed_profile():
     plan_path = (
         Path(__file__).resolve().parents[1]
         / "config/sourcing_plans/taiwo_software_remote_us_v2.json"
@@ -1122,7 +1122,7 @@ def test_live_export_plan_enforces_5_day_us_fully_remote_fail_closed_profile():
     assert {mode.value for mode in brief.work_mode.modes} == {"remote"}
     assert brief.work_mode.intent.value == "must"
     assert brief.work_mode.unknown_policy.value == "reject"
-    assert brief.posting_freshness.max_age_hours == 120
+    assert brief.posting_freshness.max_age_hours == 72
     assert brief.posting_freshness.unknown_policy.value == "reject"
 
 

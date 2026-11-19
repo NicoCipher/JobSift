@@ -1873,7 +1873,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.getByText("Software Engineer, Backend Developer")).toBeVisible();
-  await expect(page.getByText("Last 48 hours · undated jobs included")).toBeVisible();
+  await expect(page.getByText("Last 72 hours · undated jobs excluded")).toBeVisible();
   await page.getByRole("button", { name: "Create client" }).click();
 
   await expect(page.getByRole("heading", { name: "Acme Software is ready" })).toBeVisible();
@@ -1887,7 +1887,7 @@ test("Add Client wizard inspects Sheet and creates a client without internal IDs
       role_titles: ["Software Engineer", "Backend Developer"],
       country: "US",
       work_modes: ["remote"],
-      freshness_hours: 48,
+      freshness_hours: 72,
     },
     daily_limit: 250,
     delivery_mode: "review",
