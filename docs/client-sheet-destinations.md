@@ -24,8 +24,9 @@ eligible for redelivery. Duplicate protection is driven by JobSift's own ledger.
    `jobsift-sheets-publisher@jobsift-510120.iam.gserviceaccount.com`
 
 3. The operator registers a stable JobSift destination ID and a column mapping.
-4. JobSift reads the workbook metadata and header row.
-5. Registration stores:
+4. During registration, JobSift creates the requested worksheet if it is missing. If that worksheet is empty, it writes the mapped headers into row 1 in separate columns. Existing non-empty worksheet contents are never overwritten.
+5. JobSift reads the workbook metadata and header row.
+6. Registration stores:
    - client ID;
    - logical destination ID;
    - spreadsheet ID;
@@ -34,8 +35,8 @@ eligible for redelivery. Duplicate protection is driven by JobSift's own ledger.
    - exact header fingerprint;
    - column mapping;
    - destination configuration fingerprint.
-6. A prepared batch freezes the destination ID and configuration fingerprint.
-7. Release re-verifies the current `sheetId`, tab name, and exact header before
+7. A prepared batch freezes the destination ID and configuration fingerprint.
+8. Release re-verifies the current `sheetId`, tab name, and exact header before
    any append.
 
 No test row is written during registration.

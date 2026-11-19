@@ -137,6 +137,38 @@ class GoogleSheetsGateway:
         except Exception as error:
             raise OSError("Google Sheets append outcome uncertain; retry this batch") from error
 
+    def ensure_client_sheet(self, spreadsheet_id: str, tab: str, headers: list[str]) -> None:
+        """Create the requested worksheet and seed headers only when it is empty."""
+        metadata = self.sheet_metadata(spreadsheet_id)
+        matches = [item for item in metadata if item.get("title") == tab]
+        if len(matches) > 1:
+            raise OSError("Google Sheets contains duplicate worksheet titles")
+        if not matches:
+            try:
+                response = self.session.post(
+                    f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}:batchUpdate",
+                    json={"requests": [{"addSheet": {"properties": {"title": tab}}}]},
+                    timeout=30,
+                )
+                response.raise_for_status()
+            except Exception as error:
+                raise OSError("Google Sheets worksheet creation failed") from error
+        # Read the entire used range: the legacy A:I reader can miss cells farther right.
+        existing = self.read_table_rows(spreadsheet_id, tab)
+        if existing:
+            return
+        a1 = "'" + tab.replace("'", "''") + "'!A1"
+        try:
+            response = self.session.put(
+                self._range_url(spreadsheet_id, a1),
+                params={"valueInputOption": "RAW"},
+                json={"majorDimension": "ROWS", "values": [headers]},
+                timeout=30,
+            )
+            response.raise_for_status()
+        except Exception as error:
+            raise OSError("Google Sheets header initialization failed") from error
+
     def sheet_metadata(self, spreadsheet_id: str) -> list[dict[str, object]]:
         try:
             response = self.session.get(
