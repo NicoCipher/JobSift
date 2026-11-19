@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import importlib
 
-from job_scout import sourcing_plan
 from strict_profile_matcher import match_profile_job
+from job_scout import sourcing_plan
 
 # evaluate_recent_inventory resolves this module global at call time. The generic
 # matcher and all frozen job_scout files remain untouched.
