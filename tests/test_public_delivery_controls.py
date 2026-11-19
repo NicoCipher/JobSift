@@ -107,3 +107,12 @@ def test_profile_configuration_workflow_keeps_dispatch_values_out_of_shell_scrip
     assert "CONTROL_PLAN: ${{ inputs.plan }}" in configure
     assert "CONTROL_TIMEZONE: ${{ inputs.timezone }}" in configure
     assert "${{ inputs." not in script
+
+
+def test_run_now_uses_profile_scoped_qualification_wrapper():
+    workflow = Path(".github/workflows/client-delivery-control.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "python scripts/run_profile_delivery.py" in workflow
+    runner = Path("scripts/run_profile_delivery.py").read_text(encoding="utf-8")
+    assert "sourcing_plan.match_job = match_profile_job" in runner

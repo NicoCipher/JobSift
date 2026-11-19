@@ -18,7 +18,8 @@
     "Product Manager",
     "Solutions Engineer",
     "Sales Engineer",
-    "Support Engineer"
+    "Support Engineer",
+    "Production Support"
   ],
   "management_roles": "avoid",
   "max_required_experience_years": null,

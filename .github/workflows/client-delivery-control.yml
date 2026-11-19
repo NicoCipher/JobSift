@@ -177,7 +177,7 @@ jobs:
             run-now)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
               JOBSIFT_PROFILE_CONTROL_ID="$profile_id" \
-                python -m job_scout.profile_delivery_runner
+                python scripts/run_profile_delivery.py
               ;;
             release-batch)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
