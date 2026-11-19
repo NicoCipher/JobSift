@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from job_scout.cli import main
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest
 from job_scout.domain.models import Job, JobMatch
+from job_scout.export.batch_csv import file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import SHEET_COLUMNS, sheet_destination
 from job_scout.history import HistoricalBlacklistEvidence, HistoricalRecord
 from job_scout.orchestration import daily_batch as batches
@@ -1072,3 +1073,107 @@ def test_delivery_lookup_helpers_bound_20k_candidate_scope():
     )
     assert len(history_connection.calls) == 40
     assert max(len(parameters) for _, parameters in history_connection.calls) <= 503
+
+
+
+def test_manual_csv_stale_before_journal_is_discarded_without_publication(repo, tmp_path):
+    path = tmp_path / "manual.csv"
+    now = datetime.now(UTC)
+    job = posting(901, posted_at=now - timedelta(hours=23))
+    seed(repo, [job])
+    batch = prepare(
+        repo,
+        request(
+            repo,
+            path,
+            [job],
+            max_posting_age_hours=24,
+            freshness_evaluated_at=now,
+        ),
+    )
+    with repo.connect() as connection:
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
+            ).fetchone()[0]
+        )
+        payload["posted_at"] = (now - timedelta(hours=25)).isoformat()
+        connection.execute(
+            "UPDATE jobs SET payload_json=? WHERE id=?",
+            (json.dumps(payload), job.id),
+        )
+
+    failed = finalize(repo, batch)
+
+    assert failed.status == "failed"
+    assert DailyBatchStore(repo).export_journal(batch.batch_id) == (None, None)
+    assert DailyBatchStore(repo).recover_unresolved(CLIENT, str(path.resolve())) is None
+    assert not path.exists()
+
+
+def test_manual_csv_crossing_freshness_cutoff_after_journal_is_safely_retried(
+    repo, tmp_path
+):
+    path = tmp_path / "manual.csv"
+    now = datetime.now(UTC)
+    job = posting(902, posted_at=now - timedelta(hours=23))
+    seed(repo, [job])
+    batch = prepare(
+        repo,
+        request(
+            repo,
+            path,
+            [job],
+            max_posting_age_hours=24,
+            freshness_evaluated_at=now,
+        ),
+    )
+    store = DailyBatchStore(repo)
+
+    original_verify = store._verify_selected
+    verify_calls = 0
+
+    def verify_then_age(connection, current_batch):
+        nonlocal verify_calls
+        original_verify(connection, current_batch)
+        verify_calls += 1
+        if verify_calls == 1:
+            payload = json.loads(
+                connection.execute(
+                    "SELECT payload_json FROM jobs WHERE id=?", (job.id,)
+                ).fetchone()[0]
+            )
+            payload["posted_at"] = (now - timedelta(hours=25)).isoformat()
+            connection.execute(
+                "UPDATE jobs SET payload_json=? WHERE id=?",
+                (json.dumps(payload), job.id),
+            )
+
+    store._verify_selected = verify_then_age
+
+    failed = store.finalize(
+        batch.batch_id,
+        lambda rows_to_export: plan_csv(path, rows_to_export),
+        lambda: file_digest(path),
+        lambda rows_to_export, before, after: publish_csv(
+            path, rows_to_export, before, after
+        ),
+        expected_generation_id=batch.generation_id,
+    )
+
+    assert failed.status == "failed"
+    before, after = store.export_journal(
+        batch.batch_id, expected_generation_id=batch.generation_id
+    )
+    assert before == "absent"
+    assert after is not None
+    assert not path.exists()
+
+    discarded = store.discard_stale_manual_export(
+        batch.batch_id,
+        expected_generation_id=batch.generation_id,
+        observed_destination_digest=file_digest(path),
+    )
+    assert discarded.status == "failed"
+    assert store.recover_unresolved(CLIENT, str(path.resolve())) is None
+    assert not path.exists()

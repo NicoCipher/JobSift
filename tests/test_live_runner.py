@@ -840,6 +840,38 @@ def test_validation_mode_sources_locally_but_never_releases(tmp_path, monkeypatc
 
 
 
+def test_empty_manual_export_discards_batch_and_allows_retry():
+    batch = SimpleNamespace(
+        batch_id="empty-batch",
+        generation_id="generation-2",
+        selected_count=0,
+        shortfall=5,
+        request=SimpleNamespace(requested_quota=5),
+    )
+    observed = {}
+    store = SimpleNamespace(
+        discard_prepared=lambda batch_id, *, expected_generation_id: observed.update(
+            batch_id=batch_id,
+            generation_id=expected_generation_id,
+        )
+    )
+
+    result = live_runner._discard_empty_manual_batch(store, batch)
+
+    assert result == {
+        "action": "manual_export_empty",
+        "batch_status": "discarded",
+        "batch_id": "empty-batch",
+        "selected_count": 0,
+        "requested_quota": 5,
+        "shortfall": 5,
+    }
+    assert observed == {
+        "batch_id": "empty-batch",
+        "generation_id": "generation-2",
+    }
+
+
 def test_manual_export_mode_requires_exclusive_operator_run(monkeypatch):
     monkeypatch.setenv("JOBSIFT_DATABASE", "/tmp/jobsift.sqlite3")
     monkeypatch.setenv("JOBSIFT_CSV", "/tmp/jobsift-export.csv")
@@ -1011,6 +1043,9 @@ def test_manual_export_fresh_run_finalizes_local_csv_without_sheet_access(tmp_pa
         batch_id="manual-batch",
         generation_id="generation-1",
         status="prepared",
+        selected_count=1,
+        shortfall=4,
+        request=SimpleNamespace(requested_quota=5),
     )
     delivered = SimpleNamespace(
         batch_id="manual-batch",
@@ -1071,7 +1106,7 @@ def test_manual_export_fresh_run_finalizes_local_csv_without_sheet_access(tmp_pa
     assert captured["finalize"] == ("manual-batch", "generation-1")
 
 
-def test_live_export_plan_enforces_24h_us_fully_remote_fail_closed_profile():
+def test_live_export_plan_enforces_5_day_us_fully_remote_fail_closed_profile():
     plan_path = (
         Path(__file__).resolve().parents[1]
         / "config/sourcing_plans/taiwo_software_remote_us_v2.json"
@@ -1087,7 +1122,7 @@ def test_live_export_plan_enforces_24h_us_fully_remote_fail_closed_profile():
     assert {mode.value for mode in brief.work_mode.modes} == {"remote"}
     assert brief.work_mode.intent.value == "must"
     assert brief.work_mode.unknown_policy.value == "reject"
-    assert brief.posting_freshness.max_age_hours == 24
+    assert brief.posting_freshness.max_age_hours == 120
     assert brief.posting_freshness.unknown_policy.value == "reject"
 
 
@@ -1099,8 +1134,176 @@ def test_manual_export_artifact_upload_is_success_only_and_short_lived():
     artifact_step = workflow.index("Upload operator-owned CSV export")
     artifact_config = workflow[artifact_step:]
 
-    assert "if: ${{ inputs.manual_export == true && success() }}" in artifact_config
+    assert "Verify manual export artifacts" in workflow
+    assert "test -s /tmp/latest-sourcing.csv" in workflow
+    assert "test -s /tmp/jobsift-run-result.json" in workflow
+    assert "steps.verify-manual-export.outputs.export_ready == 'true'" in artifact_config
     assert "uses: actions/upload-artifact@v4" in artifact_config
     assert "/tmp/latest-sourcing.csv" in artifact_config
     assert "/tmp/jobsift-run-result.json" in artifact_config
     assert "retention-days: 3" in artifact_config
+
+
+
+def test_manual_export_rejects_direct_validation_configuration(tmp_path):
+    with pytest.raises(ValueError, match="manual export cannot be combined"):
+        LiveRunnerConfig(
+            plan_path=tmp_path / "plan.json",
+            database_path=tmp_path / "jobs.sqlite3",
+            csv_path=tmp_path / "jobs.csv",
+            reports_dir=tmp_path / "runs",
+            spreadsheet_id=None,
+            sheet_tab=None,
+            quota=5,
+            interval_seconds=86400,
+            timezone="Africa/Lagos",
+            auto_release=False,
+            allow_partial=False,
+            run_once=True,
+            validation_only=True,
+            manual_export=True,
+        )
+
+
+def test_manual_export_ignores_inherited_sheet_settings(monkeypatch):
+    monkeypatch.setenv("JOBSIFT_DATABASE", "/tmp/jobsift.sqlite3")
+    monkeypatch.setenv("JOBSIFT_CSV", "/tmp/jobsift-export.csv")
+    monkeypatch.setenv("JOBSIFT_MANUAL_EXPORT", "true")
+    monkeypatch.setenv("JOBSIFT_AUTO_RELEASE", "false")
+    monkeypatch.setenv("JOBSIFT_DISCARD_PREPARED", "false")
+    monkeypatch.setenv("JOBSIFT_VALIDATION_ONLY", "false")
+    monkeypatch.setenv("JOBSIFT_PROFILE_MANAGED", "false")
+    monkeypatch.setenv("JOBSIFT_SHEET_ID", "inherited-sheet-id")
+    monkeypatch.delenv("JOBSIFT_SHEET_TAB", raising=False)
+
+    config = LiveRunnerConfig.from_env()
+
+    assert config.manual_export is True
+    assert config.spreadsheet_id is None
+    assert config.sheet_tab is None
+
+
+def test_run_once_discards_resumed_empty_manual_batch_generation(tmp_path, monkeypatch):
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text("{}", encoding="utf-8")
+    config = LiveRunnerConfig(
+        plan_path=tmp_path / "plan.json",
+        database_path=tmp_path / "jobs.sqlite3",
+        csv_path=tmp_path / "jobs.csv",
+        reports_dir=tmp_path / "runs",
+        spreadsheet_id=None,
+        sheet_tab=None,
+        quota=5,
+        interval_seconds=86400,
+        timezone="Africa/Lagos",
+        auto_release=False,
+        allow_partial=False,
+        run_once=True,
+        manual_export=True,
+    )
+    empty_batch = SimpleNamespace(
+        batch_id="resumed-empty",
+        generation_id="generation-9",
+        status="prepared",
+        selected_count=0,
+        shortfall=5,
+        request=SimpleNamespace(requested_quota=5),
+    )
+    observed = {}
+    store = SimpleNamespace(
+        discard_prepared=lambda batch_id, *, expected_generation_id: observed.update(
+            batch_id=batch_id, generation_id=expected_generation_id
+        )
+    )
+    repository = SimpleNamespace(remote_url="")
+    plan = SimpleNamespace(plan_id="operator-plan")
+    brief = SimpleNamespace(client_id="operator-client")
+    monkeypatch.setattr(live_runner, "_runtime_plan", lambda _: (plan, brief_path))
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    monkeypatch.setattr(
+        live_runner,
+        "_unresolved_batch",
+        lambda *_, **__: empty_batch,
+    )
+
+    result = live_runner.run_once(config, repository=repository)
+
+    assert result["action"] == "manual_export_empty"
+    assert result["batch_id"] == "resumed-empty"
+    assert observed == {
+        "batch_id": "resumed-empty",
+        "generation_id": "generation-9",
+    }
+
+
+
+def test_stale_manual_csv_recovery_discards_only_before_image(tmp_path):
+    path = tmp_path / "jobs.csv"
+    batch = SimpleNamespace(
+        batch_id="stale-manual",
+        generation_id="generation-10",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale",
+    )
+    observed = {}
+    store = SimpleNamespace(
+        export_journal=lambda *_, **__: ("absent", "after-image"),
+        discard_stale_manual_export=lambda batch_id, **kwargs: observed.update(
+            batch_id=batch_id, **kwargs
+        ),
+    )
+
+    assert live_runner._discard_stale_manual_export_if_unpublished(
+        store, batch, path
+    )
+    assert observed == {
+        "batch_id": "stale-manual",
+        "expected_generation_id": "generation-10",
+        "observed_destination_digest": "absent",
+    }
+
+
+def test_stale_manual_csv_recovery_preserves_changed_destination(tmp_path):
+    path = tmp_path / "jobs.csv"
+    path.write_text("some output", encoding="utf-8")
+    batch = SimpleNamespace(
+        batch_id="stale-manual",
+        generation_id="generation-11",
+        status="failed",
+        error="prepared posting is no longer fresh at delivery: stale",
+    )
+    observed = []
+    store = SimpleNamespace(
+        export_journal=lambda *_, **__: ("before-image", "after-image"),
+        discard_stale_manual_export=lambda *_, **__: observed.append("discarded"),
+    )
+
+    assert not live_runner._discard_stale_manual_export_if_unpublished(
+        store, batch, path
+    )
+    assert observed == []
+
+def test_manual_export_empty_outcome_exits_successfully(monkeypatch):
+    config = SimpleNamespace(manual_export=True, run_once=True, interval_seconds=1)
+    monkeypatch.setattr(LiveRunnerConfig, "from_env", lambda: config)
+    monkeypatch.setattr(
+        live_runner,
+        "run_once",
+        lambda _: {"action": "manual_export_empty", "batch_status": "discarded"},
+    )
+
+    live_runner.main()
+
+
+def test_manual_export_requires_delivery_for_nonempty_outcome(monkeypatch):
+    config = SimpleNamespace(manual_export=True, run_once=True, interval_seconds=1)
+    monkeypatch.setattr(LiveRunnerConfig, "from_env", lambda: config)
+    monkeypatch.setattr(
+        live_runner,
+        "run_once",
+        lambda _: {"action": "released", "batch_status": "prepared"},
+    )
+
+    with pytest.raises(RuntimeError, match="manual CSV export did not reach delivered status"):
+        live_runner.main()

@@ -17,7 +17,7 @@ from job_scout.delivery_destinations import ClientSheetDestinationStore
 from job_scout.delivery_profiles import ClientDeliveryProfileStore
 from job_scout.domain.daily_batch import BatchConflict, DailyBatchRequest, DailyBatchResult
 from job_scout.domain.models import SearchBrief
-from job_scout.export.batch_csv import destination_lock, plan_csv, publish_csv
+from job_scout.export.batch_csv import destination_lock, file_digest, plan_csv, publish_csv
 from job_scout.export.batch_sheets import GoogleSheetsGateway, sheet_destination
 from job_scout.orchestration.daily_batch import finalize_daily_batch, prepare_daily_batch
 from job_scout.search_brief import load_search_brief
@@ -86,6 +86,18 @@ class LiveRunnerConfig:
     source_before_delivery: bool = True
     manual_export: bool = False
 
+    def __post_init__(self) -> None:
+        if self.manual_export and (
+            self.auto_release
+            or self.discard_prepared
+            or self.validation_only
+            or self.profile_managed
+        ):
+            raise ValueError(
+                "manual export cannot be combined with Sheet release, discard, "
+                "validation, or profile-managed delivery"
+            )
+
     @classmethod
     def from_env(cls) -> LiveRunnerConfig:
         timezone = os.getenv("JOBSIFT_TIMEZONE", "Africa/Lagos").strip() or "Africa/Lagos"
@@ -102,9 +114,14 @@ class LiveRunnerConfig:
         if manual_export and (auto_release or discard_prepared or profile_managed):
             raise ValueError("manual export cannot be combined with Sheet release, discard, or profile-managed delivery")
         destination_id = os.getenv("JOBSIFT_DESTINATION_ID", "").strip() or None
-        spreadsheet_id = os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
-        sheet_tab = os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
-        if (spreadsheet_id is None) != (sheet_tab is None):
+        # Manual CSV export must ignore inherited Sheet settings entirely.
+        spreadsheet_id = (
+            None if manual_export else os.getenv("JOBSIFT_SHEET_ID", "").strip() or None
+        )
+        sheet_tab = (
+            None if manual_export else os.getenv("JOBSIFT_SHEET_TAB", "").strip() or None
+        )
+        if not manual_export and (spreadsheet_id is None) != (sheet_tab is None):
             raise ValueError(
                 "JOBSIFT_SHEET_ID and JOBSIFT_SHEET_TAB must be configured together"
             )
@@ -201,6 +218,32 @@ def _recover_after_stale_release(
     return "continue", recovered
 
 
+def _discard_stale_manual_export_if_unpublished(
+    store: DailyBatchStore,
+    batch: DailyBatchResult,
+    path: Path,
+) -> bool:
+    """Discard a stale manual batch only when its CSV is still at the journal's before-image."""
+    if not _is_stale_release_failure(batch):
+        return False
+    with destination_lock(path):
+        before, _after = store.export_journal(
+            batch.batch_id,
+            expected_generation_id=batch.generation_id,
+        )
+        if before is None:
+            return False
+        observed = file_digest(path)
+        if observed != before:
+            return False
+        store.discard_stale_manual_export(
+            batch.batch_id,
+            expected_generation_id=batch.generation_id,
+            observed_destination_digest=observed,
+        )
+    return True
+
+
 def _unresolved_batch(
     repository: SQLiteRepository, *, client_id: str, destination: str
 ) -> DailyBatchResult | None:
@@ -220,6 +263,24 @@ def _materialize_manual_export(
         rows = store.export_rows(batch.batch_id)
         before, after = plan_csv(path, rows)
         publish_csv(path, rows, before, after)
+
+
+def _discard_empty_manual_batch(store: DailyBatchStore, batch: DailyBatchResult):
+    """Discard an empty manual batch so it cannot consume the operator's daily slot."""
+    if batch.selected_count != 0:
+        return None
+    store.discard_prepared(
+        batch.batch_id,
+        expected_generation_id=batch.generation_id,
+    )
+    return {
+        "action": "manual_export_empty",
+        "batch_status": "discarded",
+        "batch_id": batch.batch_id,
+        "selected_count": 0,
+        "requested_quota": batch.request.requested_quota,
+        "shortfall": batch.shortfall,
+    }
 
 
 def _candidate_job_ids(
@@ -455,6 +516,34 @@ def run_once(
     )
 
     while unresolved is not None:
+        # A stale manual CSV batch can be discarded only if its generation-bound
+        # journal and the locked destination digest prove that publication never
+        # happened. Google Sheets and changed CSV destinations still reconcile.
+        if (
+            config.manual_export
+            and _is_stale_release_failure(unresolved)
+            and _discard_stale_manual_export_if_unpublished(
+                store, unresolved, config.csv_path.resolve()
+            )
+        ):
+            unresolved = store.recover_unresolved(brief.client_id, destination)
+            if unresolved is None:
+                break
+            continue
+
+        # An empty prepared manual batch must not occupy the daily idempotency
+        # slot. Discard with the batch generation so a concurrent replacement
+        # cannot be removed accidentally. Journaled publication remains guarded
+        # by the store's normal discard checks.
+        if (
+            config.manual_export
+            and unresolved.status == "prepared"
+            and unresolved.selected_count == 0
+        ):
+            empty_result = _discard_empty_manual_batch(store, unresolved)
+            if empty_result is not None:
+                return empty_result
+
         # The legacy Live JobSift release workflow predates delivery profiles.
         # If it is releasing a batch for a destination that now has a profile,
         # adopt that profile for this release so pause/quota/reconciliation
@@ -804,6 +893,10 @@ def run_once(
     )
     batch = prepare_daily_batch(repository=repository, request=request)
     if config.manual_export:
+        empty_export = _discard_empty_manual_batch(store, batch)
+        if empty_export is not None:
+            return empty_export
+    if config.manual_export:
         batch = finalize_daily_batch(
             repository=repository,
             batch_id=batch.batch_id,
@@ -972,7 +1065,11 @@ def main() -> None:
         try:
             result = run_once(config)
             print(json.dumps(result, sort_keys=True), flush=True)
-            if config.manual_export and result.get("batch_status") != "delivered":
+            if (
+                config.manual_export
+                and result.get("batch_status") != "delivered"
+                and result.get("action") != "manual_export_empty"
+            ):
                 raise RuntimeError("manual CSV export did not reach delivered status")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(

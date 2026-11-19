@@ -109,18 +109,41 @@ def classify_remote(
     if re.search(r"\b(on[ -]?site|in[ -]?office)\b", combined):
         return RemoteStatus.ONSITE
 
-    # Provider location fields are stronger evidence than generic description text.
-    # A role explicitly located in a US city/state must not become "remote" merely
-    # because the body contains boilerplate such as "#LI-Remote" or mentions
-    # collaborating in a fully remote environment.
     if _explicit_us_city_state(location):
         return RemoteStatus.ONSITE
     if not location and any(_explicit_us_city_state(value) for value in office_location_values):
         return RemoteStatus.ONSITE
 
+    # Structured provider location labels are authoritative. Description text
+    # must identify the role or the applicant's arrangement, not a third party's.
     if re.search(r"\bremote\b", structured):
         return RemoteStatus.REMOTE
-    if re.search(r"\bremote\b", body):
+
+    negated_remote = re.search(
+        r"\b(?:not|isn't|is not|never|no longer|cannot|can't|doesn't|does not)"
+        r"\s+(?:a\s+)?(?:fully\s+)?remote\b"
+        r"|\b(?:cannot|can't|not able to|unable to|aren't able to|are not able to)"
+        r"\s+(?:work(?:ing)?\s+)?(?:fully\s+)?remotely\b"
+        r"|\bremote\s+(?:isn't|is not|is no longer)\b"
+        r"|\bremote\s+work\s+(?:is\s+)?(?:not|no longer)\b",
+        body,
+    )
+    affirmative_remote = re.search(
+        r"\b(?:this|the)\s+(?:role|position|job|opportunity)\s+"
+        r"(?:is|will be|remains)\s+(?:(?:fully|100\s*%|100\s+percent)\s+remote|remote[- ]only)\b"
+        r"|\b(?:this|the)\s+(?:role|position|job|opportunity)\s+is\s+remote[- ]only\b"
+        r"|\b(?:you will|you can|you may)\s+work(?:ing)?\s+"
+        r"(?:fully\s+remotely|remotely\s+from\s+anywhere)\b"
+        r"|\b(?:this|the)\s+(?:is\s+)?(?:a\s+)?"
+        r"(?:fully|100\s*%|100\s+percent)\s+remote"
+        r"(?:\s+[a-z][a-z0-9&/-]*){0,5}\s+"
+        r"(?:role|position|job|opportunity)\b"
+        r"|(?:fully|100\s*%|100\s+percent)\s+remote\s+"
+        r"(?:role|position|job|opportunity)\b"
+        r"|\bremote[- ]only\s+(?:role|position|job|opportunity)\b",
+        body,
+    )
+    if affirmative_remote and not negated_remote:
         return RemoteStatus.REMOTE
     return RemoteStatus.UNKNOWN
 

@@ -48,11 +48,14 @@ SQLite database and does not touch production state.
 In GitHub repository Settings > Secrets and variables > Actions > Secrets, add:
 
 - `NEON_DATABASE_URL`
-- `GOOGLE_SERVICE_ACCOUNT_JSON` (Google Sheets delivery only)
+- `GOOGLE_SERVICE_ACCOUNT_JSON` (scheduled prepare and manual discard runs)
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` is the complete service-account key JSON. Never
-commit it to the repository. Manual CSV export does not require or receive this
-credential.
+commit it to the repository. The workflow checks for this credential before
+scheduled prepare and manual discard runs, even though those operations do not
+publish a Sheet. Manual CSV export and isolated validation skip that credential
+check; manual export needs `NEON_DATABASE_URL`, while validation uses local SQLite
+and needs neither production credential.
 
 ## Required repository variables
 
@@ -74,7 +77,7 @@ source set documented in [Production software sources V2](production-sources-v2.
 That plan now references `config/search_briefs/taiwo_software_remote_us_v2.json`:
 US market evidence and fully remote status are required, unknown market/work-mode
 values are rejected, and postings must have a trustworthy timestamp no older than
-24 hours. The older v1 brief remains unchanged for historical compatibility.
+120 hours (5 days). The older v1 brief remains unchanged for historical compatibility.
 
 The seven-employer set is intentionally bounded. It is large enough to test a
 five-job, five-employer batch, but it is not evidence that 25, 50, or 100 distinct
@@ -101,10 +104,13 @@ days. The artifact is an operator handoff, not a client Sheet publication or
 proof that a client received the jobs.
 
 If a successful CSV export is delivered to the database but artifact upload fails,
-a retry on the same local day rebuilds the missing ephemeral CSV from the
-immutable delivered batch rows before uploading. It does not source a second
-batch or append duplicate rows. The runner's existing production concurrency
-locks remain in force. Manual export cannot be combined with Sheet release,
+automatic recovery looks up the original batch using its original Lagos-local date
+key. A retry on that same date rebuilds the missing ephemeral CSV from immutable
+delivered batch rows before uploading; it does not source a second batch or create
+duplicate rows. A retry after midnight computes a new date key and may select a
+different batch. Cross-midnight recovery therefore requires an explicit original
+batch identifier; the current automatic retry path does not provide that override.
+The runner's existing production concurrency locks remain in force. Manual export cannot be combined with Sheet release,
 discard, validation, or profile-managed delivery.
 
 To use it, open Actions > Live JobSift > Run workflow, set **manual_export=true**,

@@ -21,6 +21,7 @@ from job_scout.domain.models import (
     SearchBrief,
     SourceTarget,
 )
+from job_scout.normalization.core import classify_remote
 from job_scout.sourcing_plan import (
     SourcingPlan,
     SourcingRunReport,
@@ -673,3 +674,62 @@ def test_source_command_routes_plan_without_changing_collect(
 
     assert "plan" in seen and Path(seen["base_dir"]).name
     assert Path(seen["reports_dir"]).name == "runs"
+
+
+
+@pytest.mark.parametrize(
+    ("description", "expected_matches"),
+    [
+        ("This is not a remote role. The team works from its office.", 0),
+        ("This is a fully remote Software Engineer role.", 1),
+    ],
+)
+def test_collector_remote_evidence_flows_into_strict_selection(
+    tmp_path: Path, description: str, expected_matches: int
+) -> None:
+    sourcing_plan = plan(
+        tmp_path,
+        [
+            {
+                "source": "greenhouse",
+                "company": "Example Software",
+                "employer_id": "example-software",
+                "board": "example",
+            }
+        ],
+    )
+    brief_payload = json.loads(
+        Path("config/search_briefs/taiwo_software_remote_us_v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    (tmp_path / "brief.json").write_text(
+        json.dumps(brief_payload), encoding="utf-8"
+    )
+    class RemoteEvidenceCollector:
+        source = "greenhouse"
+
+        def collect(self, requested_target):
+            job = fixture_job("greenhouse", requested_target).model_copy(
+                update={
+                    "title": "Software Engineer",
+                    "description_text": description,
+                    "remote_status": classify_remote(None, description),
+                }
+            )
+            return CollectionResult(
+                source="greenhouse",
+                target=requested_target,
+                status=CollectionStatus.SUCCESS,
+                jobs=[job],
+            )
+
+    report = run_sourcing_plan(
+        sourcing_plan,
+        base_dir=tmp_path,
+        reports_dir=tmp_path / "runs",
+        collector_factory=lambda _source: RemoteEvidenceCollector(),
+    )
+
+    assert report.total_matched == expected_matches
+    assert report.total_rejected == 1 - expected_matches
