@@ -572,6 +572,10 @@ def run_once(
                 profile_timezone = profile.timezone
                 delivered_today = profile_store.delivered_today(profile)
                 effective_quota = max(0, profile.daily_quota - delivered_today)
+                if config.max_profile_batch_size is not None:
+                    if config.max_profile_batch_size < 1:
+                        raise ValueError("max_profile_batch_size must be at least 1")
+                    effective_quota = min(effective_quota, config.max_profile_batch_size)
                 profile_auto_release = profile.delivery_mode == "auto"
 
         if config.discard_prepared:
