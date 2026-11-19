@@ -113,8 +113,8 @@ def test_create_client_persists_sheet_brief_and_active_profile(tmp_path):
     assert client.brief.target_market.unknown_policy == "review"
     assert client.brief.work_mode.modes == {"remote"}
     assert client.brief.work_mode.unknown_policy == "review"
-    assert client.brief.posting_freshness.max_age_hours == 48
-    assert client.brief.posting_freshness.unknown_policy == "allow"
+    assert client.brief.posting_freshness.max_age_hours == 72
+    assert client.brief.posting_freshness.unknown_policy == "reject"
     assert client.brief.avoid_terms == ["Director"]
     assert client.brief.preferred_terms == ["Python"]
 
