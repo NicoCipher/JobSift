@@ -283,6 +283,13 @@ def main() -> None:
                         parser.error(f"unsupported JobSift field in mapping: {source}")
                     if not target:
                         parser.error("client header in mapping must not be blank")
+                gateway = GoogleSheetsGateway()
+                if hasattr(gateway, "ensure_client_sheet"):
+                    gateway.ensure_client_sheet(
+                        args.spreadsheet,
+                        args.tab,
+                        list(mapping.values()),
+                    )
                 result = store.register_google_sheet(
                     client_id=args.client,
                     destination_id=args.destination_id,
@@ -290,7 +297,7 @@ def main() -> None:
                     spreadsheet=args.spreadsheet,
                     tab_name=args.tab,
                     column_mapping=mapping,
-                    gateway=GoogleSheetsGateway(),
+                    gateway=gateway,
                 )
                 print(
                     json.dumps(
@@ -321,6 +328,13 @@ def main() -> None:
                 for source in registration.column_mapping:
                     if source not in DELIVERY_FIELDS:
                         parser.error(f"unsupported JobSift field in mapping: {source}")
+                gateway = GoogleSheetsGateway()
+                if hasattr(gateway, "ensure_client_sheet"):
+                    gateway.ensure_client_sheet(
+                        registration.spreadsheet,
+                        registration.tab,
+                        list(registration.column_mapping.values()),
+                    )
                 result = store.register_google_sheet(
                     client_id=registration.client_id,
                     destination_id=registration.destination_id,
@@ -328,7 +342,7 @@ def main() -> None:
                     spreadsheet=registration.spreadsheet,
                     tab_name=registration.tab,
                     column_mapping=registration.column_mapping,
-                    gateway=GoogleSheetsGateway(),
+                    gateway=gateway,
                 )
                 print(
                     json.dumps(
