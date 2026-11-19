@@ -37,7 +37,7 @@ Report the metrics relevant to the changed stage, not vanity totals:
 
 - targets attempted/succeeded/failed;
 - raw postings and trustworthy-age postings;
-- postings within the configured 72-hour delivery window;
+- postings <=24h old as a diagnostic cohort and postings within the configured 72-hour delivery window;
 - full SearchBrief matches and distinct eligible employers;
 - duplicates/history/policy suppressions;
 - prepared or delivered count and shortfall;
