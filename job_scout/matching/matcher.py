@@ -43,11 +43,11 @@ SENIORITY_PATTERNS = {
     for level in SENIORITY_PRECEDENCE
 }
 
-SUPPORT_FOCUSED_TITLE_PATTERN = re.compile(r"\\b(?:production|technical|customer)\\s+support\\b", re.IGNORECASE)
-TEST_SPECIALIST_TITLE_PATTERN = re.compile(r"\\b(?:software\\s+)?engineer\\s+in\\s+test\\b|\\bSDET\\b", re.IGNORECASE)
+SUPPORT_FOCUSED_TITLE_PATTERN = re.compile(r"\b(?:production|technical|customer)\s+support\b", re.IGNORECASE)
+TEST_SPECIALIST_TITLE_PATTERN = re.compile(r"\b(?:software\s+)?engineer\s+in\s+test\b|\bSDET\b", re.IGNORECASE)
 ON_SITE_ONLY_DESCRIPTION_PATTERNS = (
-    re.compile(r"\\bon[- ]site\\s+in\\s+[A-Z][^.!?\\n]{0,100}", re.IGNORECASE),
-    re.compile(r"\\b(?:this|the)\\s+(?:role|position)\\s+is\\s+(?:primarily\\s+)?on[- ]site\\b", re.IGNORECASE),
+    re.compile(r"\bon[- ]site\s+in\s+[A-Z][^.!?\n]{0,100}", re.IGNORECASE),
+    re.compile(r"\b(?:this|the)\s+(?:role|position)\s+is\s+(?:primarily\s+)?on[- ]site\b", re.IGNORECASE),
 )
 
 US_WORK_ELIGIBILITY_PATTERNS = (
