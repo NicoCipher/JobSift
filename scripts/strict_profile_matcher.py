@@ -14,16 +14,16 @@ from job_scout.normalization.location import normalize_location
 STRICT_PROFILE_ID = "nicocipher"
 
 _ON_SITE_ONLY = (
-    re.compile(r"\bthis\s+(?:role|position)\s+is\s+(?:primarily\s+)?on[- ]site\b", re.I),
-    re.compile(r"\bon[- ]site\s+in\s+[A-Z][^.!?\n]{0,100}", re.I),
+    re.compile(r"\bthis\s+(?:role|position)\s+is\s+(?:primarily\s+)?on[- ]site\b", re.IGNORECASE),
+    re.compile(r"\bon[- ]site\s+in\s+[A-Z][^.!?\n]{0,100}", re.IGNORECASE),
 )
 _US_RESIDENCE_ONLY = (
-    re.compile(r"\bmust\s+(?:already\s+)?be\s+(?:physically\s+)?based\s+in\s+(?:the\s+)?(?:United States|U\.?S\.?|USA)\b", re.I),
-    re.compile(r"\bmust\s+(?:currently\s+)?reside\s+in\s+(?:the\s+)?(?:United States|U\.?S\.?|USA)\b", re.I),
-    re.compile(r"\b(?:applicants|candidates)\s+must\s+be\s+(?:located|based)\s+in\s+(?:the\s+)?(?:United States|U\.?S\.?|USA)\b", re.I),
-    re.compile(r"\b(?:United States|U\.?S\.?|USA)[- ]based\s+(?:applicants|candidates)\s+only\b", re.I),
+    re.compile(r"\bmust\s+(?:already\s+)?be\s+(?:physically\s+)?based\s+in\s+(?:the\s+)?(?:United States|U\.?S\.?|USA)\b", re.IGNORECASE),
+    re.compile(r"\bmust\s+(?:currently\s+)?reside\s+in\s+(?:the\s+)?(?:United States|U\.?S\.?|USA)\b", re.IGNORECASE),
+    re.compile(r"\b(?:applicants|candidates)\s+must\s+be\s+(?:located|based)\s+in\s+(?:the\s+)?(?:United States|U\.?S\.?|USA)\b", re.IGNORECASE),
+    re.compile(r"\b(?:United States|U\.?S\.?|USA)[- ]based\s+(?:applicants|candidates)\s+only\b", re.IGNORECASE),
 )
-_TEST_SPECIALIST = re.compile(r"\b(?:software\s+)?engineer\s+in\s+test\b|\bSDET\b", re.I)
+_TEST_SPECIALIST = re.compile(r"\b(?:software\s+)?engineer\s+in\s+test\b|\bSDET\b", re.IGNORECASE)
 
 
 def match_profile_job(job: Job, brief: SearchBrief) -> JobMatch:
