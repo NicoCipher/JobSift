@@ -18,6 +18,7 @@ from job_scout.domain.models import (
     WorkModeRule,
 )
 from job_scout.normalization.core import normalize_title
+from job_scout.normalization.location import normalize_location
 
 from .experience import extract_required_experience_years
 
@@ -41,6 +42,13 @@ SENIORITY_PATTERNS = {
     level: re.compile(rf"\b{re.escape(level.value)}\b", re.IGNORECASE)
     for level in SENIORITY_PRECEDENCE
 }
+
+SUPPORT_FOCUSED_TITLE_PATTERN = re.compile(r"\\b(?:production|technical|customer)\\s+support\\b", re.IGNORECASE)
+TEST_SPECIALIST_TITLE_PATTERN = re.compile(r"\\b(?:software\\s+)?engineer\\s+in\\s+test\\b|\\bSDET\\b", re.IGNORECASE)
+ON_SITE_ONLY_DESCRIPTION_PATTERNS = (
+    re.compile(r"\\bon[- ]site\\s+in\\s+[A-Z][^.!?\\n]{0,100}", re.IGNORECASE),
+    re.compile(r"\\b(?:this|the)\\s+(?:role|position)\\s+is\\s+(?:primarily\\s+)?on[- ]site\\b", re.IGNORECASE),
+)
 
 US_WORK_ELIGIBILITY_PATTERNS = (
     re.compile(
@@ -158,6 +166,11 @@ def search_brief_from_candidate_profile(profile: CandidateProfile) -> SearchBrie
 
 
 def _job_countries(job: Job) -> set[str]:
+    # Explicit location text is more specific than provider-level eligibility
+    # metadata, which can incorrectly label a Canada-only remote role as US-eligible.
+    location_countries = set(normalize_location(job.location_text, job.offices).countries)
+    if location_countries:
+        return location_countries
     countries = set(job.eligible_countries)
     if not countries and job.country:
         countries.add(job.country)
@@ -232,6 +245,10 @@ def match_job(job: Job, profile: SearchBrief | CandidateProfile) -> JobMatch:
             matcher_version=MATCHER_VERSION,
         )
     reasons.append(f"target role matched: {role_hits[0]}")
+    if SUPPORT_FOCUSED_TITLE_PATTERN.search(job.title):
+        rejects.append("support-focused engineering role is excluded by the brief")
+    if TEST_SPECIALIST_TITLE_PATTERN.search(job.title):
+        reviews.append("test/QA-specialist title needs confirmation against the software-development target")
 
     management_kind = _management_title_kind(job.title)
     if brief.management_roles is RuleIntent.AVOID and management_kind:
@@ -268,6 +285,11 @@ def match_job(job: Job, profile: SearchBrief | CandidateProfile) -> JobMatch:
     )
 
     if brief.work_mode.intent is RuleIntent.MUST:
+        if job.remote_status is RemoteStatus.REMOTE and any(
+            pattern.search(job.description_text or "")
+            for pattern in ON_SITE_ONLY_DESCRIPTION_PATTERNS
+        ):
+            rejects.append("description explicitly identifies the role as on-site despite remote metadata")
         if job.remote_status is RemoteStatus.UNKNOWN:
             _unknown_evidence(
                 label="remote status",
