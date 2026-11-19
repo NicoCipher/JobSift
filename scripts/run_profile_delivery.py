@@ -1,6 +1,8 @@
 """Entrypoint applying profile-scoped qualification without changing frozen core code."""
 from __future__ import annotations
 
+import importlib
+
 from job_scout import sourcing_plan
 from strict_profile_matcher import match_profile_job
 
@@ -8,8 +10,6 @@ from strict_profile_matcher import match_profile_job
 # matcher and all frozen job_scout files remain untouched.
 sourcing_plan.match_job = match_profile_job
 
-from job_scout.profile_delivery_runner import main
-
 
 if __name__ == "__main__":
-    main()
+    importlib.import_module("job_scout.profile_delivery_runner").main()
