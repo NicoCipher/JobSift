@@ -81,7 +81,7 @@ export function ClientOnboardingWizard() {
   const [workModes, setWorkModes] = useState<string[]>(["remote"]);
   const [exclusions, setExclusions] = useState("");
   const [preferred, setPreferred] = useState("");
-  const [freshness, setFreshness] = useState("48");
+  const [freshness, setFreshness] = useState("72");
   const [dailyLimit, setDailyLimit] = useState("100");
   const [deliveryMode, setDeliveryMode] = useState<"review" | "auto">("review");
   const [timezone, setTimezone] = useState("America/New_York");
@@ -465,7 +465,7 @@ export function ClientOnboardingWizard() {
                 <option value="6">Last 6 hours</option>
                 <option value="12">Last 12 hours</option>
                 <option value="24">Last 24 hours</option>
-                <option value="48">Last 48 hours</option>
+                <option value="72">Last 72 hours</option>
               </select>
             </label>
           </div>
@@ -657,7 +657,7 @@ export function ClientOnboardingWizard() {
             <div><span>Client</span><strong>{clientName}</strong></div>
             <div><span>Roles</span><strong>{roleTitles.join(", ")}</strong></div>
             <div><span>Market</span><strong>{country.toUpperCase()} · {workModes.join(", ")}</strong></div>
-            <div><span>Freshness</span><strong>Last {freshness} hours · undated jobs included</strong></div>
+            <div><span>Freshness</span><strong>Last {freshness} hours · undated jobs excluded</strong></div>
             <div><span>Delivery</span><strong>{deliveryMode === "review" ? "Review first" : "Auto"} · up to {dailyLimit}/day</strong></div>
             <div><span>Daily reset</span><strong>{timezone}</strong></div>
             <div><span>Sheet</span><strong>{sheetTab} · required columns mapped</strong></div>
