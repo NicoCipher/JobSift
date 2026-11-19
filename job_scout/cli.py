@@ -17,6 +17,7 @@ from job_scout.delivery_destinations import (
     DELIVERY_FIELDS,
     ClientSheetDestinationStore,
     ClientSheetRegistrationRequest,
+    spreadsheet_id_from_value,
 )
 from job_scout.delivery_profiles import (
     ClientDeliveryProfileStore,
@@ -286,7 +287,7 @@ def main() -> None:
                 gateway = GoogleSheetsGateway()
                 if hasattr(gateway, "ensure_client_sheet"):
                     gateway.ensure_client_sheet(
-                        args.spreadsheet,
+                        spreadsheet_id_from_value(args.spreadsheet),
                         args.tab,
                         list(mapping.values()),
                     )
@@ -331,7 +332,7 @@ def main() -> None:
                 gateway = GoogleSheetsGateway()
                 if hasattr(gateway, "ensure_client_sheet"):
                     gateway.ensure_client_sheet(
-                        registration.spreadsheet,
+                        spreadsheet_id_from_value(registration.spreadsheet),
                         registration.tab,
                         list(registration.column_mapping.values()),
                     )
