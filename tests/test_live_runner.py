@@ -1122,7 +1122,7 @@ def test_live_export_plan_enforces_5_day_us_fully_remote_fail_closed_profile():
     assert {mode.value for mode in brief.work_mode.modes} == {"remote"}
     assert brief.work_mode.intent.value == "must"
     assert brief.work_mode.unknown_policy.value == "reject"
-    assert brief.posting_freshness.max_age_hours == 120
+    assert brief.posting_freshness.max_age_hours == 72
     assert brief.posting_freshness.unknown_policy.value == "reject"
 
 
