@@ -32,7 +32,7 @@ def gateway(metadata, rows):
     value = GoogleSheetsGateway.__new__(GoogleSheetsGateway)
     value.session = Session()
     value.sheet_metadata = lambda spreadsheet_id: metadata
-    value.read_rows = lambda spreadsheet_id, tab: rows
+    value.read_table_rows = lambda spreadsheet_id, tab: rows
     return value
 
 
@@ -64,6 +64,16 @@ def test_preserves_existing_sheet_contents_and_headers():
     value = gateway([{"sheet_id": 12, "title": "Jobs"}], existing)
 
     value.ensure_client_sheet("sheet123", "Jobs", ["Job Title", "Company Name", "Job Link"])
+
+    assert value.session.posts == []
+    assert value.session.puts == []
+
+
+def test_preserves_content_beyond_legacy_a_to_i_range():
+    existing = [["", "", "", "", "", "", "", "", "", "keep me"]]
+    value = gateway([{"sheet_id": 12, "title": "Jobs"}], existing)
+
+    value.ensure_client_sheet("sheet123", "Jobs", ["Job Title", "Company Name"])
 
     assert value.session.posts == []
     assert value.session.puts == []
