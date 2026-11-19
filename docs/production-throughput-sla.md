@@ -130,8 +130,8 @@ At minimum record:
 - source targets attempted/succeeded/failed;
 - raw postings received;
 - postings with trustworthy age evidence;
-- postings <=72h old;
-- full SearchBrief matches;
+- postings <=24h old as a diagnostic cohort;
+- full SearchBrief matches within the configured 72-hour client freshness window;
 - distinct eligible employers;
 - practical duplicates suppressed;
 - employer-policy suppressions;
