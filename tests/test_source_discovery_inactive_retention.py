@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from job_scout.storage.source_discovery import SourceDiscoveryStore
 from job_scout.storage.sqlite import SQLiteRepository
+from job_scout.storage.source_discovery import SourceDiscoveryStore
 
 
 NOW = datetime(2026, 11, 19, 10, 0, tzinfo=UTC)
