@@ -8,7 +8,7 @@ JobSift is built for capacity of **up to 2,000 credible deliverable job links pe
 
 Never silently weaken these invariants to increase counts or speed:
 
-- jobs subject to the freshness gate must be no more than 24 hours old;
+- jobs subject to the freshness gate must be no more than 72 hours old;
 - unknown posting age fails closed for automatic delivery;
 - SearchBrief matching remains deterministic and client-specific;
 - canonical employer/ATS sources are preferred over weaker evidence;
