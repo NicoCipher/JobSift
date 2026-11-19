@@ -24,7 +24,7 @@
   "management_roles": "avoid",
   "max_required_experience_years": null,
   "must_have_terms": [],
-  "notes": "Strict production brief for US software roles: require explicit United States market evidence and explicit fully remote work. Accept trustworthy posting timestamps no older than 5 days (120 hours); reject missing or unverifiable posting timestamps. Unknown market or work-mode evidence is rejected. Work authorization and sponsorship eligibility remain intentionally ignored. Delivery allows at most one job per employer per batch.",
+  "notes": "Strict production brief for US software roles: require explicit United States market evidence and explicit fully remote work. Accept trustworthy posting timestamps no older than 3 days (72 hours); reject missing or unverifiable posting timestamps. Unknown market or work-mode evidence is rejected. Work authorization and sponsorship eligibility remain intentionally ignored. Delivery allows at most one job per employer per batch.",
   "avoid_terms": [],
   "preferred_terms": [
     "software",
@@ -78,7 +78,7 @@
     "employer_cooldown_days": 0
   },
   "posting_freshness": {
-    "max_age_hours": 120,
+    "max_age_hours": 72,
     "unknown_policy": "reject"
   }
 }
