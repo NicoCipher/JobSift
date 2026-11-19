@@ -126,8 +126,8 @@ def test_quota(repo, tmp_path, quota, supply, selected, shortfall):
 
 def test_batch_freshness_gate_suppresses_stale_unknown_and_future_postings(repo, tmp_path):
     jobs = [
-        posting(1, posted_at=NOW - timedelta(hours=23)),
-        posting(2, posted_at=NOW - timedelta(hours=25)),
+        posting(1, posted_at=NOW - timedelta(hours=72)),
+        posting(2, posted_at=NOW - timedelta(hours=72, seconds=1)),
         posting(3, posted_at=None),
         posting(4, posted_at=NOW + timedelta(hours=2)),
     ]
@@ -137,7 +137,7 @@ def test_batch_freshness_gate_suppresses_stale_unknown_and_future_postings(repo,
         tmp_path / "out.csv",
         jobs,
         quota=4,
-        max_posting_age_hours=24,
+        max_posting_age_hours=72,
         unknown_posting_age_policy="reject",
         freshness_evaluated_at=NOW,
     )
