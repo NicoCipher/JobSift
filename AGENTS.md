@@ -8,7 +8,7 @@ JobSift is built for capacity of **up to 2,000 credible deliverable job links pe
 
 Never silently weaken these invariants to increase counts or speed:
 
-- jobs subject to the freshness gate must be no more than 24 hours old;
+- jobs in automatic client delivery subject to the freshness gate must be no more than 24 hours old;
 - unknown posting age fails closed for automatic delivery;
 - SearchBrief matching remains deterministic and client-specific;
 - canonical employer/ATS sources are preferred over weaker evidence;
@@ -16,6 +16,8 @@ Never silently weaken these invariants to increase counts or speed:
 - shared inventory serves multiple clients without re-crawling per client;
 - client quotas, pause/review state, and registered Sheet destinations remain isolated;
 - full active payload retention stays about 72 hours while minimal identity/history may persist longer.
+
+**Operator-owned manual sourcing is a separate workflow from automatic client delivery.** Its freshness window may follow the explicitly approved operator SearchBrief rather than the 24-hour automatic-delivery default. The current `taiwo_software_remote_us_v2` manual profile is approved for a maximum posting age of **120 hours (five days)**. This exception applies only to that operator-owned manual profile; it does not change automatic client-delivery freshness. Unknown or unverifiable posting timestamps must still be rejected.
 
 Historical docs and benchmarks may mention older 150/day or 1,050/week goals. Treat those numbers as historical evidence, not the current product target, unless the task is explicitly about that historical benchmark.
 
