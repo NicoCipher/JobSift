@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import pytest
-
 from datetime import UTC, datetime, timedelta
 
-from job_scout.storage.source_discovery import SourceDiscoveryStore
+import pytest
+
 from job_scout.storage.sqlite import SQLiteRepository
+from job_scout.storage.source_discovery import SourceDiscoveryStore
 
 
 NOW = datetime(2026, 11, 19, 10, 0, tzinfo=UTC)
