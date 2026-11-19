@@ -83,6 +83,7 @@ class LiveRunnerConfig:
     validation_only: bool = False
     inventory_retention_hours: int = 72
     profile_managed: bool = False
+    max_profile_batch_size: int | None = None
     source_before_delivery: bool = True
     manual_export: bool = False
 
@@ -510,6 +511,10 @@ def run_once(
         profile_timezone = profile.timezone
         delivered_today = profile_store.delivered_today(profile)
         effective_quota = max(0, profile.daily_quota - delivered_today)
+        if config.max_profile_batch_size is not None:
+            if config.max_profile_batch_size < 1:
+                raise ValueError("max_profile_batch_size must be at least 1")
+            effective_quota = min(effective_quota, config.max_profile_batch_size)
         profile_auto_release = profile.delivery_mode == "auto"
     unresolved = _unresolved_batch(
         repository, client_id=brief.client_id, destination=destination
@@ -567,6 +572,10 @@ def run_once(
                 profile_timezone = profile.timezone
                 delivered_today = profile_store.delivered_today(profile)
                 effective_quota = max(0, profile.daily_quota - delivered_today)
+                if config.max_profile_batch_size is not None:
+                    if config.max_profile_batch_size < 1:
+                        raise ValueError("max_profile_batch_size must be at least 1")
+                    effective_quota = min(effective_quota, config.max_profile_batch_size)
                 profile_auto_release = profile.delivery_mode == "auto"
 
         if config.discard_prepared:

@@ -10,7 +10,11 @@ from job_scout.live_runner import LiveRunnerConfig
 
 
 def config(
-    tmp_path: Path, *, profile_managed: bool = True, auto_release: bool = False
+    tmp_path: Path,
+    *,
+    profile_managed: bool = True,
+    auto_release: bool = False,
+    max_profile_batch_size: int | None = None,
 ) -> LiveRunnerConfig:
     return LiveRunnerConfig(
         plan_path=tmp_path / "plan.json",
@@ -27,6 +31,7 @@ def config(
         allow_partial=False,
         run_once=True,
         profile_managed=profile_managed,
+        max_profile_batch_size=max_profile_batch_size,
     )
 
 
@@ -235,6 +240,86 @@ def test_profile_quota_is_remaining_today_not_full_daily_target(tmp_path, monkey
     assert captured["request"].requested_quota == 86
     assert captured["request"].include_needs_review is True
     assert result["requested_quota"] == 86
+
+
+def test_profile_batch_cap_preserves_remaining_daily_quota(tmp_path, monkeypatch):
+    profile = SimpleNamespace(
+        client_id="client-a",
+        destination_id="client-jobs",
+        sourcing_plan_id="software-us-v1",
+        daily_quota=200,
+        status="active",
+        delivery_mode="review",
+        timezone="Africa/Lagos",
+    )
+    repository, _, _, destination = base(monkeypatch, tmp_path, profile, delivered=20)
+    repository.prune_stale_inventory = lambda **_: {"deleted_jobs": 0}
+    brief = SimpleNamespace(
+        client_id="client-a",
+        delivery_policy=SimpleNamespace(
+            max_jobs_per_employer_per_batch=1,
+            employer_cooldown_days=0,
+        ),
+        posting_freshness=SimpleNamespace(max_age_hours=24, unknown_policy="reject"),
+    )
+    monkeypatch.setattr(live_runner, "load_search_brief", lambda _: brief)
+    monkeypatch.setattr(live_runner, "_unresolved_batch", lambda *_, **__: None)
+    monkeypatch.setattr(live_runner, "_batch_by_idempotency", lambda *_, **__: None)
+    report = SimpleNamespace(
+        run_id="run-1",
+        status="success",
+        completed_at=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+        targets=[],
+        total_received=1,
+        successful_targets=1,
+        partial_targets=0,
+        failed_targets=0,
+    )
+    monkeypatch.setattr(live_runner, "collect_inventory_plan", lambda *_, **__: report)
+    evaluation = SimpleNamespace(
+        evaluated_at=report.completed_at,
+        total_matched=1,
+        total_rejected=0,
+    )
+    monkeypatch.setattr(live_runner, "evaluate_inventory_run", lambda **_: evaluation)
+    monkeypatch.setattr(
+        live_runner,
+        "InventoryRunStore",
+        lambda _: SimpleNamespace(active_job_ids=lambda _run, **kwargs: ("job-1",)),
+    )
+    store = SimpleNamespace(evidence_digest=lambda *_, **__: "b" * 64)
+    monkeypatch.setattr(live_runner, "DailyBatchStore", lambda _: store)
+    captured = {}
+
+    def prepare(*, repository, request):
+        captured["request"] = request
+        return SimpleNamespace(batch_id="batch-1", selected_count=1)
+
+    monkeypatch.setattr(live_runner, "prepare_daily_batch", prepare)
+    monkeypatch.setattr(
+        live_runner,
+        "_batch_payload",
+        lambda *_args, **kwargs: {
+            "action": kwargs["action"],
+            "requested_quota": captured["request"].requested_quota,
+        },
+    )
+    monkeypatch.setattr(
+        live_runner,
+        "ClientDeliveryProfileStore",
+        lambda _: SimpleNamespace(
+            get=lambda *_args: profile,
+            delivered_today=lambda *_args, **_kwargs: 20,
+        ),
+    )
+
+    result = live_runner.run_once(
+        config(tmp_path, max_profile_batch_size=50)
+    )
+
+    assert captured["request"].destination == destination.logical_uri
+    assert captured["request"].requested_quota == 50
+    assert result["requested_quota"] == 50
 
 
 def test_auto_release_does_not_exceed_current_remaining_quota(tmp_path, monkeypatch):

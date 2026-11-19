@@ -165,6 +165,7 @@ def test_profile_runner_uses_durable_operator_brief_without_repo_plan(tmp_path, 
         config, *, repository=None, recent_inventory_snapshot_loader=None, **kwargs
     ):
         captured.update(kwargs)
+        assert config.max_profile_batch_size == 50
         assert config.source_before_delivery is False
         assert repository is not None
         assert recent_inventory_snapshot_loader() is snapshot
