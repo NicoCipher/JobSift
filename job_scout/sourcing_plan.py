@@ -637,7 +637,8 @@ def load_recent_inventory_snapshot(
             # the wire. TEXT timestamps are canonical ISO-8601 values in this
             # schema, so timestamptz casts preserve the existing retention rule.
             cursor = connection.execute(
-                "SELECT j.payload_json FROM jobs j "
+                "SELECT (j.payload_json::jsonb - ARRAY['description_html','raw_metadata'])::text "
+                "AS payload_json FROM jobs j "
                 "LEFT JOIN job_retention_evidence e ON e.job_id=j.id "
                 "WHERE j.lifecycle!='closed' AND "
                 "COALESCE(NULLIF(e.posted_at,''), "
