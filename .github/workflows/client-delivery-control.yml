@@ -128,7 +128,8 @@ jobs:
           CONTROL_EXPECTED_GENERATION_ID: ${{ inputs.expected_generation_id }}
         run: |
           operation="$CONTROL_OPERATION"
-          profile_id="$CONTROL_PROFILE_ID"
+          profile_id="$(printf '%s' "$CONTROL_PROFILE_ID" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          batch_id="$(printf '%s' "$CONTROL_BATCH_ID" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
           case "$operation" in
             list)
               python -m job_scout.cli delivery-profile list \
@@ -181,32 +182,32 @@ jobs:
               ;;
             release-batch)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
-              test -n "$CONTROL_BATCH_ID" || { echo "batch_id is required"; exit 1; }
+              test -n "$batch_id" || { echo "batch_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile release-batch \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --batch-id "$CONTROL_BATCH_ID" \
-                --confirm-batch-id "$CONTROL_BATCH_ID"
+                --batch-id "$batch_id" \
+                --confirm-batch-id "$batch_id"
               ;;
             release-selection)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
-              test -n "$CONTROL_BATCH_ID" || { echo "batch_id is required"; exit 1; }
+              test -n "$batch_id" || { echo "batch_id is required"; exit 1; }
               test -n "$CONTROL_EXPECTED_GENERATION_ID" || { echo "expected_generation_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile release-selection \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --batch-id "$CONTROL_BATCH_ID" \
+                --batch-id "$batch_id" \
                 --expected-generation-id "$CONTROL_EXPECTED_GENERATION_ID" \
                 --removed-ordinals "$CONTROL_REMOVED_ORDINALS" \
-                --confirm-batch-id "$CONTROL_BATCH_ID"
+                --confirm-batch-id "$batch_id"
               ;;
             discard-batch)
               test -n "$profile_id" || { echo "profile_id is required"; exit 1; }
-              test -n "$CONTROL_BATCH_ID" || { echo "batch_id is required"; exit 1; }
+              test -n "$batch_id" || { echo "batch_id is required"; exit 1; }
               python -m job_scout.cli delivery-profile discard-batch \
                 --database "$JOBSIFT_DATABASE" \
                 --profile-id "$profile_id" \
-                --batch-id "$CONTROL_BATCH_ID"
+                --batch-id "$batch_id"
               ;;
           esac
 
