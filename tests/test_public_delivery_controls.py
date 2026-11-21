@@ -91,8 +91,8 @@ def test_public_control_workflow_passes_untrusted_inputs_through_environment():
     assert "CONTROL_BATCH_ID: ${{ inputs.batch_id }}" in apply
     assert '--profile-id "$profile_id"' in apply
     assert '--timezone "$CONTROL_TIMEZONE"' in apply
-    assert '--batch-id "$CONTROL_BATCH_ID"' in apply
-    assert '--confirm-batch-id "$CONTROL_BATCH_ID"' in apply
+    assert '--batch-id "$batch_id"' in apply
+    assert '--confirm-batch-id "$batch_id"' in apply
     script = apply.split("run: |", 1)[1]
     assert "${{ inputs." not in script
 
